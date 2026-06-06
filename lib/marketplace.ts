@@ -47,6 +47,9 @@ export function getPool() {
   return getDatabase().pool
 }
 
+export type DbPool = ReturnType<typeof getPool>
+export type DbClient = Awaited<ReturnType<DbPool['connect']>>
+
 export function jsonError(error: unknown) {
   if (error instanceof ApiError) {
     return NextResponse.json(
@@ -94,6 +97,36 @@ export async function requireUser(req: Request): Promise<AuthenticatedUser> {
     throw new ApiError(401, 'INVALID_TOKEN', 'Token de usuario invalido.')
   }
 }
+
+/**
+ * Guarda de endpoints administrativos / de sistema (resolucion de disputas,
+ * barrido de auto-release). Exige el header `x-admin-token` igual a
+ * RODAID_ADMIN_TOKEN.
+ */
+export function requireAdmin(req: Request): { id: string } {
+  const expected = process.env.RODAID_ADMIN_TOKEN
+  if (!expected) {
+    throw new ApiError(
+      500,
+      'ADMIN_NOT_CONFIGURED',
+      'RODAID_ADMIN_TOKEN no esta configurado.'
+    )
+  }
+  const provided = req.headers.get('x-admin-token')
+  if (!provided || provided !== expected) {
+    throw new ApiError(403, 'ADMIN_REQUIRED', 'Credenciales de administrador requeridas.')
+  }
+  return { id: 'admin' }
+}
+
+export function optionalText(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null
+  }
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
 
 export function parsePositiveNumber(
   value: unknown,
