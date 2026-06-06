@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { jsonError, optionalText, requireAdmin } from '@/lib/marketplace'
 import {
-  prepararAcunacionBFA,
+  acunarCIT,
   registrarAcunacionBFA,
 } from '@/src/services/cit.service'
 
@@ -17,11 +17,15 @@ interface AcunarBody {
 }
 
 /**
- * POST /api/v1/cit/:id/acunar — anclaje en la Blockchain Federal Argentina.
- * Endpoint de sistema (requiere credenciales de administrador).
+ * POST /api/v1/cit/:id/acunar — acunacion del NFT en la Blockchain Federal
+ * Argentina. Endpoint de sistema (requiere credenciales de administrador).
  *
- *   sin txHash  -> prepara el anclaje y devuelve el payload (huella) a estampar.
- *   con txHash  -> registra la confirmacion on-chain (estado BFA = ACUNADO).
+ *   sin txHash  -> acunacion automatica: construye el NFT desde la huella sellada y
+ *                  lo ancla via el gateway de BFA configurado (estado BFA = ACUNADO).
+ *                  Si no hay gateway configurado, deja el NFT preparado (PENDIENTE)
+ *                  y devuelve el payload a estampar, sin inventar una transaccion.
+ *   con txHash  -> registra una confirmacion on-chain provista de forma externa
+ *                  (estado BFA = ACUNADO).
  */
 export async function POST(
   req: Request,
@@ -34,7 +38,7 @@ export async function POST(
     const txHash = optionalText(body.txHash ?? body.tx_hash)
 
     if (!txHash) {
-      const resultado = await prepararAcunacionBFA({
+      const resultado = await acunarCIT({
         citId: id,
         actorId: null,
         actorRol: 'sistema',
