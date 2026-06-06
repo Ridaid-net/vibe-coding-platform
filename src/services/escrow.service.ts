@@ -7,6 +7,11 @@ import {
   getModo,
   type MercadoPagoModo,
 } from '@/src/services/mercadopago.service'
+import {
+  dispararTransferenciaNft,
+  encolarTransferenciaNft,
+  registrarComision,
+} from '@/src/services/nft.transfer.service'
 
 /**
  * RODAID PAY — maquina de estados del Escrow.
@@ -246,6 +251,28 @@ async function liberarFondos(
     `,
     [tx.publicacion_id, tx.comprador_id, tx.precio_ars, tx.comision_rodaid]
   )
+
+  // Contabilidad del Plan Libre: asienta la retencion del 2.5% y la ganancia
+  // neta de RODAID (idempotente por transaccion).
+  await registrarComision(client, {
+    transaccionId: tx.id,
+    publicacionId: tx.publicacion_id,
+    vendedorId: tx.vendedor_id,
+    compradorId: tx.comprador_id,
+    plan: tx.plan,
+    gateway: tx.gateway,
+    precioFinal: Number(tx.precio_ars),
+    retencionBruta: Number(tx.comision_rodaid),
+    tasaComision: COMISIONES[tx.plan] ?? COMISIONES.LIBRE,
+  })
+
+  // Encola la entrega del NFT (ERC-721) en `nft_transferencias`. El disparo
+  // on-chain fire-and-forget lo realiza el llamador tras el COMMIT del escrow.
+  await encolarTransferenciaNft(client, {
+    transaccionId: tx.id,
+    publicacionId: tx.publicacion_id,
+    compradorId: tx.comprador_id,
+  })
 
   await logEvento(client, {
     transaccionId: tx.id,
@@ -648,7 +675,7 @@ export async function confirmarEntrega(input: {
   transaccionId: string
   compradorId: string
 }) {
-  return withTx(async (client) => {
+  const transaccion = await withTx(async (client) => {
     const tx = await lockTransaccion(client, input.transaccionId)
 
     if (tx.comprador_id !== input.compradorId) {
@@ -669,6 +696,11 @@ export async function confirmarEntrega(input: {
 
     return mapTransaccion(updated)
   })
+
+  // Entrega del NFT en modo fire-and-forget, ya con el escrow COMPLETADA.
+  dispararTransferenciaNft(transaccion.id)
+
+  return transaccion
 }
 
 // ── 5. cancelarTransaccion ──────────────────────────────────────────────────
@@ -795,7 +827,7 @@ export async function resolverDisputa(input: {
   aFavor: 'COMPRADOR' | 'VENDEDOR'
   nota?: string | null
 }) {
-  return withTx(async (client) => {
+  const resultado = await withTx(async (client) => {
     const tx = await lockTransaccion(client, input.transaccionId)
 
     if (tx.estado !== 'DISPUTADA') {
@@ -843,6 +875,14 @@ export async function resolverDisputa(input: {
 
     return { transaccion: mapTransaccion(updated.rows[0]), reembolso }
   })
+
+  // Si se resolvio a favor del vendedor, el escrow quedo COMPLETADA: entrega
+  // del NFT en modo fire-and-forget.
+  if (resultado.transaccion.estado === 'COMPLETADA') {
+    dispararTransferenciaNft(resultado.transaccion.id)
+  }
+
+  return resultado
 }
 
 // ── 8. procesarAutoReleases ─────────────────────────────────────────────────
@@ -887,6 +927,11 @@ export async function procesarAutoReleases(limite = 100) {
     } catch (error) {
       console.error('[escrow] auto-release fallo para', id, error)
     }
+  }
+
+  // Entrega del NFT (fire-and-forget) por cada transaccion auto-liberada.
+  for (const id of liberadas) {
+    dispararTransferenciaNft(id)
   }
 
   return { procesadas: pendientes.rows.length, liberadas }

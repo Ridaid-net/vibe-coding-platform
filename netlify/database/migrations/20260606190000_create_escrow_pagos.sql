@@ -34,8 +34,8 @@ $$;
 CREATE TABLE IF NOT EXISTS escrow_transacciones (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   publicacion_id UUID NOT NULL REFERENCES marketplace_publicaciones (id),
-  comprador_id UUID NOT NULL,
-  vendedor_id UUID NOT NULL,
+  comprador_id UUID NOT NULL REFERENCES usuarios (id),
+  vendedor_id UUID NOT NULL REFERENCES usuarios (id),
   estado escrow_transaccion_estado NOT NULL DEFAULT 'DEPOSITO_PENDIENTE',
   plan VARCHAR(20) NOT NULL DEFAULT 'LIBRE',
   precio_ars NUMERIC(12,2) NOT NULL CHECK (precio_ars > 0),
@@ -102,7 +102,7 @@ CREATE TABLE IF NOT EXISTS escrow_eventos (
   tipo VARCHAR(60) NOT NULL,
   estado_anterior escrow_transaccion_estado,
   estado_nuevo escrow_transaccion_estado,
-  actor_id UUID,
+  actor_id UUID REFERENCES usuarios (id),
   actor_rol VARCHAR(20),
   metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

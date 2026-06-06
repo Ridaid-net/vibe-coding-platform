@@ -14,9 +14,9 @@ $$;
 
 CREATE TABLE IF NOT EXISTS marketplace_publicaciones (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  cit_id UUID NOT NULL,
-  bicicleta_id UUID NOT NULL,
-  vendedor_id UUID NOT NULL,
+  cit_id UUID NOT NULL REFERENCES cits (id),
+  bicicleta_id UUID NOT NULL REFERENCES bicicletas (id),
+  vendedor_id UUID NOT NULL REFERENCES usuarios (id),
   titulo VARCHAR(120) NOT NULL,
   descripcion TEXT NOT NULL,
   precio_ars NUMERIC(12,2) NOT NULL CHECK (precio_ars > 0),
@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS marketplace_publicaciones (
   publicado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   vence_en TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 days'),
   vendido_en TIMESTAMPTZ,
-  comprador_id UUID,
+  comprador_id UUID REFERENCES usuarios (id),
   precio_final_ars NUMERIC(12,2),
   comision_rodaid NUMERIC(10,2),
   search_vector TSVECTOR NOT NULL DEFAULT ''::tsvector,
