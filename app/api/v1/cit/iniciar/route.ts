@@ -78,6 +78,7 @@ export async function POST(req: Request) {
         hash: resultado.huella,
         estado: 'PENDIENTE_VALIDACION',
         alerta_gps: resultado.alertaGps,
+        geocerca: resultado.geocerca,
         expira_en: resultado.expiraEn,
         cit: resultado.cit,
       },

@@ -10,6 +10,11 @@ import {
   type CitBfaEstado,
   type CitEstado,
 } from '@/lib/cit'
+import {
+  extraerCoordenada,
+  verificarGeofencing,
+  RADIO_GEOCERCA_DEFECTO_METROS,
+} from '@/lib/geo'
 
 /**
  * RODAID — Modulo 4: maquina de estados del Certificado de Identidad Tecnica.
@@ -216,17 +221,93 @@ function esViolacionUnicidad(error: unknown): boolean {
 }
 
 /**
- * Control de anomalias (fase temprana): verifica que el intake se haya levantado
- * dentro del radio geografico del taller aliado.
+ * Control de anomalias (fase temprana): geocercado real del intake.
  *
- * TODO: conectar el radio real del taller (geofencing). Por ahora es un stub que
- * devuelve `true` y deja registrada la coordenada en el sello para auditoria.
+ * Cruza las coordenadas levantadas por el mecanico contra la ubicacion
+ * registrada del taller aliado emisor (tabla `talleres`) usando la formula de
+ * Haversine. Si el intake quedo fuera del radio permitido, levanta la bandera
+ * `alerta_gps`, que el worker del pipeline traduce luego a ANOMALIA_DETECTADA.
+ *
+ * Si el aliado no tiene una geocerca registrada o el intake no trae coordenadas,
+ * no se puede evaluar: no se levanta la alerta (no se penaliza al ciclista por
+ * una omision de configuracion del taller) y el motivo queda asentado para la
+ * auditoria.
  */
-export function verificarGeofencing(
-  _aliadoId: string,
-  _coordenadasGps: Record<string, unknown> | null
-): boolean {
-  return true
+export interface ResultadoGeocercaTaller {
+  alertaGps: boolean
+  evaluado: boolean
+  motivo:
+    | 'DENTRO_DEL_RADIO'
+    | 'FUERA_DEL_RADIO'
+    | 'SIN_REFERENCIA_TALLER'
+    | 'SIN_COORDENADAS_INTAKE'
+    | 'COORDENADAS_INTAKE_INVALIDAS'
+  distanciaMetros: number | null
+  radioMetros: number | null
+}
+
+interface TallerGeocercaRow {
+  lat: number
+  lng: number
+  radio_metros: number
+}
+
+export async function evaluarGeocercaTaller(
+  client: DbClient,
+  aliadoId: string,
+  coordenadasGps: Record<string, unknown> | null
+): Promise<ResultadoGeocercaTaller> {
+  const intake = extraerCoordenada(coordenadasGps)
+  if (coordenadasGps === null) {
+    return {
+      alertaGps: false,
+      evaluado: false,
+      motivo: 'SIN_COORDENADAS_INTAKE',
+      distanciaMetros: null,
+      radioMetros: null,
+    }
+  }
+  if (intake === null) {
+    return {
+      alertaGps: false,
+      evaluado: false,
+      motivo: 'COORDENADAS_INTAKE_INVALIDAS',
+      distanciaMetros: null,
+      radioMetros: null,
+    }
+  }
+
+  const taller = await client.query<TallerGeocercaRow>(
+    `SELECT lat, lng, radio_metros FROM talleres WHERE id = $1`,
+    [aliadoId]
+  )
+  const referencia = taller.rows[0]
+  if (!referencia) {
+    return {
+      alertaGps: false,
+      evaluado: false,
+      motivo: 'SIN_REFERENCIA_TALLER',
+      distanciaMetros: null,
+      radioMetros: null,
+    }
+  }
+
+  const radioMetros = referencia.radio_metros ?? RADIO_GEOCERCA_DEFECTO_METROS
+  const { esValido, distanciaMetros } = verificarGeofencing(
+    referencia.lat,
+    referencia.lng,
+    intake.lat,
+    intake.lng,
+    radioMetros
+  )
+
+  return {
+    alertaGps: !esValido,
+    evaluado: true,
+    motivo: esValido ? 'DENTRO_DEL_RADIO' : 'FUERA_DEL_RADIO',
+    distanciaMetros,
+    radioMetros,
+  }
 }
 
 // ── Tipos de entrada ─────────────────────────────────────────────────────────
@@ -244,9 +325,15 @@ export interface IniciarCitInput {
 // ── 1. iniciarCIT (intake + sello de inmutabilidad) ──────────────────────────
 
 export async function iniciarCIT(input: IniciarCitInput) {
-  const alertaGps = verificarGeofencing(input.aliadoId, input.coordenadasGps)
-
   return withTx(async (client) => {
+    // Geocercado real (Haversine) contra la ubicacion registrada del taller.
+    const geocerca = await evaluarGeocercaTaller(
+      client,
+      input.aliadoId,
+      input.coordenadasGps
+    )
+    const alertaGps = geocerca.alertaGps
+
     // Upsert del rodado por numero de serie (identidad fisica unica).
     const existente = await client.query<BicicletaRow>(
       `SELECT * FROM bicicletas WHERE numero_serie = $1 FOR UPDATE`,
@@ -354,10 +441,38 @@ export async function iniciarCIT(input: IniciarCitInput) {
       estadoNuevo: 'PENDIENTE_VALIDACION',
       actorId: input.aliadoId,
       actorRol: 'aliado',
-      metadata: { huella, alertaGps, expiraEn },
+      metadata: {
+        huella,
+        alertaGps,
+        expiraEn,
+        geocerca: {
+          evaluado: geocerca.evaluado,
+          motivo: geocerca.motivo,
+          distanciaMetros: geocerca.distanciaMetros,
+          radioMetros: geocerca.radioMetros,
+        },
+      },
     })
 
-    return { cit: mapCit(citRow), huella, alertaGps, expiraEn }
+    // Si el intake quedo fuera del radio del taller, se asienta un evento de
+    // auditoria dedicado con la distancia excedida (el worker del pipeline lo
+    // resolvera luego como ANOMALIA_DETECTADA).
+    if (geocerca.alertaGps) {
+      await logEvento(client, {
+        citId,
+        tipo: 'CIT_ALERTA_GEOCERCA',
+        estadoNuevo: 'PENDIENTE_VALIDACION',
+        actorId: input.aliadoId,
+        actorRol: 'aliado',
+        metadata: {
+          motivo: 'Coordenadas del intake fuera del radio permitido del taller aliado.',
+          distanciaMetros: geocerca.distanciaMetros,
+          radioMetros: geocerca.radioMetros,
+        },
+      })
+    }
+
+    return { cit: mapCit(citRow), huella, alertaGps, expiraEn, geocerca }
   })
 }
 
@@ -647,4 +762,68 @@ export async function listarEventos(citId: string) {
     [citId]
   )
   return res.rows.map(mapEvento)
+}
+
+// ── Geocerca del taller aliado ───────────────────────────────────────────────
+
+export interface TallerRow {
+  id: string
+  nombre: string | null
+  lat: number
+  lng: number
+  radio_metros: number
+  created_at: string
+  updated_at: string
+}
+
+function mapTaller(row: TallerRow) {
+  return {
+    aliadoId: row.id,
+    nombre: row.nombre,
+    lat: row.lat,
+    lng: row.lng,
+    radioMetros: row.radio_metros,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+/**
+ * Registra (o actualiza) la geocerca del taller aliado: su coordenada y el radio
+ * permitido alrededor de ella. Es la referencia que el intake del CIT cruza con
+ * Haversine para decidir `alerta_gps`. La fila se identifica por el UUID del
+ * aliado autenticado.
+ */
+export async function registrarGeocercaTaller(input: {
+  aliadoId: string
+  nombre: string | null
+  lat: number
+  lng: number
+  radioMetros: number
+}) {
+  const res = await getPool().query<TallerRow>(
+    `
+      INSERT INTO talleres (id, nombre, lat, lng, radio_metros)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (id) DO UPDATE
+        SET nombre = EXCLUDED.nombre,
+            lat = EXCLUDED.lat,
+            lng = EXCLUDED.lng,
+            radio_metros = EXCLUDED.radio_metros,
+            updated_at = NOW()
+      RETURNING *
+    `,
+    [input.aliadoId, input.nombre, input.lat, input.lng, input.radioMetros]
+  )
+  return mapTaller(res.rows[0])
+}
+
+/** Devuelve la geocerca registrada del aliado, o `null` si no la configuro. */
+export async function obtenerGeocercaTaller(aliadoId: string) {
+  const res = await getPool().query<TallerRow>(
+    `SELECT * FROM talleres WHERE id = $1`,
+    [aliadoId]
+  )
+  const row = res.rows[0]
+  return row ? mapTaller(row) : null
 }
