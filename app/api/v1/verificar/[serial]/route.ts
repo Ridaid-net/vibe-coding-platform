@@ -18,6 +18,7 @@ import { NextResponse } from 'next/server'
 import { getCITBySerial } from '@/lib/mockApi'
 import { armarVerificacion, respuestaNoEncontrada } from '@/lib/verificador'
 import { aplicarRateLimit } from '@/lib/rateLimiter'
+import { registrarVerificacion, normalizarOrigen } from '@/lib/analytics'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,6 +41,9 @@ export async function GET(
   // Headers de rate limit inyectados en toda respuesta exitosa.
   const rlHeaders = guardia.headers
 
+  // Origen declarado por el cliente (WEB | QR | APP | API), para la analítica.
+  const origen = normalizarOrigen(new URL(req.url).searchParams.get('origen'))
+
   const { serial: rawSerial } = await params
   const serial = decodeURIComponent(rawSerial ?? '').trim().toUpperCase()
 
@@ -60,6 +64,14 @@ export async function GET(
       // sirviera su página HTML de error en lugar de este JSON. El TTL corto
       // acota el sondeo de seriales.
       const resp = respuestaNoEncontrada(serial, t0)
+      // Registro anónimo best-effort (IP hasheada con salt diario, bots aparte).
+      await registrarVerificacion(req, {
+        serial,
+        estado: resp.estado,
+        encontrado: resp.encontrado,
+        origen,
+        duracionMs: resp.duracionMs,
+      })
       return NextResponse.json(resp, {
         status: 200,
         headers: { ...rlHeaders, 'Cache-Control': 'public, max-age=30' },
@@ -67,6 +79,13 @@ export async function GET(
     }
 
     const resp = armarVerificacion(registro, t0)
+    await registrarVerificacion(req, {
+      serial,
+      estado: resp.estado,
+      encontrado: resp.encontrado,
+      origen,
+      duracionMs: resp.duracionMs,
+    })
     return NextResponse.json(resp, {
       status: 200,
       headers: {
