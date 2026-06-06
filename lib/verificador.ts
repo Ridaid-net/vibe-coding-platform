@@ -11,6 +11,8 @@
 //   3. Estructura de blockchain resiliente: siempre devuelve la validación
 //      simulada de la BFA, incluso si la fuente blockchain falla.
 
+import type { ResultadoOnChain } from '@/lib/bfaService'
+
 // ── Estados canónicos ──────────────────────────────────────────────────────
 
 export type EstadoVerificacion =
@@ -135,6 +137,19 @@ export function ocultarDNI(dni: string): string {
 
 // ── Tipos de la respuesta pública ──────────────────────────────────────────
 
+export interface ValidacionOnChain {
+  consultada: boolean // false si el nodo BFA no respondió (resiliencia fail-open)
+  hashCoincide: boolean | null // null si no hay hash on-chain con que comparar
+  hashDB?: string
+  hashEventoLocal?: string
+  hashOnChain?: string | null
+  bloqueadoOnChain: boolean | null
+  tokenIdOnChain?: number | null
+  latenciaNodo: number
+  nodo: string
+  error?: string
+}
+
 export interface BloquesBFA {
   red: string
   indexado: boolean
@@ -152,6 +167,9 @@ export interface BloquesBFA {
     consultadoEn: string
     disponible: boolean // false si la fuente BFA no respondió (resiliencia)
   }
+  // Cruce on-chain en tiempo real: comparación triple de integridad
+  // (DB ↕ índice local de eventos ↕ hash on-chain). Fail-open.
+  validacionOnChain: ValidacionOnChain
 }
 
 export interface VerificacionPublica {
@@ -209,6 +227,89 @@ export interface VerificacionPublica {
 const RED_BFA = 'Blockchain Federal Argentina (BFA)'
 const CONTRATO_BFA = process.env.RODAID_BFA_CONTRACT ?? 'RodaidCIT@BFA-ONTI'
 
+/** Normaliza un hash para comparación (minúsculas, sin '0x' ni espacios). */
+function normHash(h: string | null | undefined): string {
+  return String(h ?? '').trim().toLowerCase().replace(/^0x/, '')
+}
+
+/** Prefijo legible de un hash para la respuesta pública (16 hex + '...'). */
+function hashPrefijo(h: string | null | undefined): string | undefined {
+  const v = normHash(h)
+  return v ? v.slice(0, 16) + '...' : undefined
+}
+
+/**
+ * Construye el bloque `validacionOnChain` ejecutando la comparación triple de
+ * integridad: hash de la Base de Datos ↕ índice local de eventos ↕ hash on-chain.
+ *
+ *   · Fail-open: si el nodo no respondió (`onchain.consultada === false`),
+ *     `hashCoincide` queda en null y la verificación continúa con datos locales.
+ *   · Si el serial no está indexado on-chain, no hay hash con que comparar →
+ *     `hashCoincide` null.
+ *   · Si hay hash on-chain, `hashCoincide` es true sólo cuando los TRES hashes
+ *     coinciden; cualquier divergencia lo deja en false (dispara HASH_MISMATCH).
+ */
+export function construirValidacionOnChain(
+  hashDB: string | null | undefined,
+  hashEventoLocal: string | null | undefined,
+  onchain: ResultadoOnChain | null | undefined
+): ValidacionOnChain {
+  // Sin resultado on-chain o nodo caído → consultada:false (resiliencia).
+  if (!onchain || !onchain.consultada) {
+    return {
+      consultada: false,
+      hashCoincide: null,
+      hashDB: hashPrefijo(hashDB),
+      hashEventoLocal: hashPrefijo(hashEventoLocal),
+      hashOnChain: null,
+      bloqueadoOnChain: null,
+      tokenIdOnChain: onchain?.tokenId ?? null,
+      latenciaNodo: onchain?.latenciaNodo ?? 0,
+      nodo: onchain?.nodo ?? 'ERROR',
+      error: onchain?.error,
+    }
+  }
+
+  // Consultada, pero sin hash on-chain (serial no minteado): nada que comparar.
+  if (!onchain.indexado || !onchain.hashOnChain) {
+    return {
+      consultada: true,
+      hashCoincide: null,
+      hashDB: hashPrefijo(hashDB),
+      hashEventoLocal: hashPrefijo(hashEventoLocal),
+      hashOnChain: null,
+      bloqueadoOnChain: onchain.bloqueadoOnChain,
+      tokenIdOnChain: onchain.tokenId,
+      latenciaNodo: onchain.latenciaNodo,
+      nodo: onchain.nodo,
+    }
+  }
+
+  const oc = normHash(onchain.hashOnChain)
+  const db = normHash(hashDB)
+  const ev = normHash(hashEventoLocal)
+  // Comparación triple: los tres deben coincidir perfectamente.
+  const coincide = Boolean(db) && db === oc && (ev ? ev === oc : true)
+
+  return {
+    consultada: true,
+    hashCoincide: coincide,
+    hashDB: hashPrefijo(hashDB),
+    hashEventoLocal: hashPrefijo(hashEventoLocal),
+    hashOnChain: hashPrefijo(onchain.hashOnChain),
+    bloqueadoOnChain: onchain.bloqueadoOnChain,
+    tokenIdOnChain: onchain.tokenId,
+    latenciaNodo: onchain.latenciaNodo,
+    nodo: onchain.nodo,
+  }
+}
+
+interface OpcionesBFA {
+  fallbackTokenId?: number | null
+  fallbackTxHash?: string | null
+  validacionOnChain?: ValidacionOnChain
+}
+
 /**
  * Construye el bloque blockchain. NUNCA lanza: si el dato de BFA del registro
  * falta o es inconsistente, devuelve igualmente la estructura de validación
@@ -217,20 +318,28 @@ const CONTRATO_BFA = process.env.RODAID_BFA_CONTRACT ?? 'RodaidCIT@BFA-ONTI'
  */
 export function construirBloqueBFA(
   bfa: Record<string, unknown> | null | undefined,
-  fallbackTokenId?: number | null,
-  fallbackTxHash?: string | null
+  opts: OpcionesBFA = {}
 ): BloquesBFA {
   const consultadoEn = new Date().toISOString()
+  const validacionOnChain =
+    opts.validacionOnChain ??
+    construirValidacionOnChain(
+      typeof bfa?.hashSHA256 === 'string' ? bfa.hashSHA256 : null,
+      null,
+      null
+    )
   try {
     const src = bfa ?? {}
     const indexado = Boolean(src.indexado)
-    const bloqueado = Boolean(src.bloqueado)
+    // El bloqueo on-chain (tiempo real) prevalece sobre el dato del registro.
+    const bloqueado =
+      validacionOnChain.bloqueadoOnChain === true || Boolean(src.bloqueado)
     const tokenId =
       (typeof src.tokenId === 'number' ? src.tokenId : undefined) ??
-      (typeof fallbackTokenId === 'number' ? fallbackTokenId : undefined)
+      (typeof opts.fallbackTokenId === 'number' ? opts.fallbackTokenId : undefined)
     const txHashRaw =
       (typeof src.txHash === 'string' ? src.txHash : undefined) ??
-      (typeof fallbackTxHash === 'string' ? fallbackTxHash : undefined)
+      (typeof opts.fallbackTxHash === 'string' ? opts.fallbackTxHash : undefined)
 
     return {
       red: RED_BFA,
@@ -242,12 +351,13 @@ export function construirBloqueBFA(
       bloqueoMotivo: typeof src.bloqueoMotivo === 'string' ? src.bloqueoMotivo : undefined,
       transferencias: typeof src.transferencias === 'number' ? src.transferencias : 0,
       validacion: {
-        valido: indexado && !bloqueado,
+        valido: indexado && !bloqueado && validacionOnChain.hashCoincide !== false,
         contrato: CONTRATO_BFA,
         metodo: 'verificarIntegridad(hashSHA256)',
         consultadoEn,
         disponible: true,
       },
+      validacionOnChain,
     }
   } catch {
     // Resiliencia total: estructura mínima válida con disponible=false.
@@ -264,6 +374,7 @@ export function construirBloqueBFA(
         consultadoEn,
         disponible: false,
       },
+      validacionOnChain,
     }
   }
 }
@@ -297,7 +408,11 @@ type RegistroCIT = {
 const BASE_URL = process.env.RODAID_BASE_URL ?? 'https://rodaid.netlify.app'
 
 /** Respuesta para un serial inexistente. La BFA igual devuelve su estructura. */
-export function respuestaNoEncontrada(serial: string, t0: number): VerificacionPublica {
+export function respuestaNoEncontrada(
+  serial: string,
+  t0: number,
+  onchain?: ResultadoOnChain | null
+): VerificacionPublica {
   return {
     consultadoEn: new Date().toISOString(),
     duracionMs: Date.now() - t0,
@@ -306,7 +421,9 @@ export function respuestaNoEncontrada(serial: string, t0: number): VerificacionP
     estado: 'NO_ENCONTRADO',
     estadoLabel: estadoLabel('NO_ENCONTRADO'),
     vigente: false,
-    blockchain: construirBloqueBFA(null),
+    blockchain: construirBloqueBFA(null, {
+      validacionOnChain: construirValidacionOnChain(null, null, onchain),
+    }),
     selloTemporal: { emitido: false },
     firmaDigital: { firmado: false },
     links: { verificarURL: `${BASE_URL}/verificar/${encodeURIComponent(serial)}` },
@@ -314,8 +431,18 @@ export function respuestaNoEncontrada(serial: string, t0: number): VerificacionP
   }
 }
 
+export interface ExtrasVerificacion {
+  onchain?: ResultadoOnChain | null
+  denunciasActivas?: Array<{ estado: string; creadoEn?: string }>
+  hashEventoLocal?: string | null
+}
+
 /** Ensambla la respuesta pública completa a partir de un registro de CIT. */
-export function armarVerificacion(registro: RegistroCIT, t0: number): VerificacionPublica {
+export function armarVerificacion(
+  registro: RegistroCIT,
+  t0: number,
+  extras: ExtrasVerificacion = {}
+): VerificacionPublica {
   const ahora = new Date()
   const vencimiento = registro.fechaVencimiento ? new Date(registro.fechaVencimiento) : null
 
@@ -323,8 +450,24 @@ export function armarVerificacion(registro: RegistroCIT, t0: number): Verificaci
   const puntosAprobados = Object.values(puntoDetalle).filter(Boolean).length
   const totalPuntos = typeof registro.puntos === 'number' ? registro.puntos : puntosAprobados
 
-  const tieneDenunciaActiva = (registro.denuncias ?? []).some((d) => d.estado === 'ACTIVA')
-  const bfaBloqueado = Boolean(registro.bfa?.bloqueado)
+  // Cruce on-chain: comparación triple de integridad (DB ↕ índice local ↕ cadena).
+  const validacionOnChain = construirValidacionOnChain(
+    registro.hashSHA256,
+    extras.hashEventoLocal,
+    extras.onchain
+  )
+
+  // Denuncias activas: provienen de la query paralela (tabla de denuncias) o,
+  // en su defecto, de las embebidas en el registro.
+  const denunciasActivas =
+    extras.denunciasActivas ??
+    (registro.denuncias ?? []).filter((d) => d.estado === 'ACTIVA')
+  const tieneDenunciaActiva = denunciasActivas.length > 0
+
+  // El bloqueo on-chain en tiempo real tiene la misma autoridad que el del
+  // registro: cualquiera de los dos muta el estado a BLOQUEADO.
+  const bfaBloqueadoOnChain = validacionOnChain.bloqueadoOnChain === true
+  const bfaBloqueado = Boolean(registro.bfa?.bloqueado) || bfaBloqueadoOnChain
 
   const estado = resolverEstado({
     estadoBase: registro.estado,
@@ -338,7 +481,7 @@ export function armarVerificacion(registro: RegistroCIT, t0: number): Verificaci
 
   // Alertas activas.
   const alertas: VerificacionPublica['alertas'] = []
-  const primeraDenuncia = (registro.denuncias ?? []).find((d) => d.estado === 'ACTIVA')
+  const primeraDenuncia = denunciasActivas[0]
   if (primeraDenuncia) {
     alertas.push({
       tipo: 'DENUNCIA_ROBO',
@@ -353,9 +496,25 @@ export function armarVerificacion(registro: RegistroCIT, t0: number): Verificaci
     })
   }
   if (bfaBloqueado) {
+    const motivo =
+      validacionOnChain.bloqueadoOnChain === true
+        ? String(registro.bfa?.bloqueoMotivo ?? 'denuncia de robo activa')
+        : String(registro.bfa?.bloqueoMotivo ?? 'motivo no especificado')
     alertas.push({
       tipo: 'BLOQUEADO_BFA',
-      mensaje: `Bloqueado en BFA: ${String(registro.bfa?.bloqueoMotivo ?? 'motivo no especificado')}`,
+      mensaje: `Bloqueado en BFA: ${motivo}`,
+    })
+  }
+  // Discrepancia de integridad entre el documento local y la cadena de bloques.
+  // Alerta CRÍTICA: posible manipulación del documento.
+  if (validacionOnChain.hashCoincide === false) {
+    alertas.push({
+      tipo: 'HASH_MISMATCH_ONCHAIN',
+      mensaje:
+        `ALERTA: El hash del certificado en la base de datos ` +
+        `(${validacionOnChain.hashDB ?? '—'}) NO COINCIDE con el hash registrado ` +
+        `en la Blockchain Federal Argentina (${validacionOnChain.hashOnChain ?? '—'}). ` +
+        `El documento puede haber sido manipulado.`,
     })
   }
 
@@ -400,7 +559,11 @@ export function armarVerificacion(registro: RegistroCIT, t0: number): Verificaci
     inspector:
       registro.inspector && registro.inspector.nombre ? registro.inspector : undefined,
 
-    blockchain: construirBloqueBFA(registro.bfa, registro.nftTokenId, registro.bfaTxHash),
+    blockchain: construirBloqueBFA(registro.bfa, {
+      fallbackTokenId: registro.nftTokenId,
+      fallbackTxHash: registro.bfaTxHash,
+      validacionOnChain,
+    }),
 
     selloTemporal: {
       emitido: Boolean(registro.codigoVerif),
@@ -424,4 +587,16 @@ export function armarVerificacion(registro: RegistroCIT, t0: number): Verificaci
 
     alertas,
   }
+}
+
+// ── Detección de la alerta crítica de integridad ───────────────────────────
+
+export const TIPO_HASH_MISMATCH = 'HASH_MISMATCH_ONCHAIN'
+
+/**
+ * true si la verificación detectó una discrepancia de hash on-chain. El
+ * controlador la usa para responder 422 y emitir el log de nivel ERROR.
+ */
+export function tieneMismatchOnChain(resp: VerificacionPublica): boolean {
+  return resp.alertas.some((a) => a.tipo === TIPO_HASH_MISMATCH)
 }

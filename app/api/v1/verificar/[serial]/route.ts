@@ -1,9 +1,19 @@
 // ─── RODAID · GET /api/v1/verificar/[serial] ──────────────────────────────
 //
-// Endpoint público del Verificador (Tarea 6). Recibe un número de serie,
-// consulta la capa de datos (mockApi + Netlify Blobs) y devuelve la
-// respuesta pública unificada: estado canónico, datos de la bicicleta,
-// inspección, propietario anonimizado, validación BFA, sello temporal y firma.
+// Endpoint público del Verificador (Tarea 6). Recibe un número de serie y
+// ejecuta un cruce PARALELO (Promise.all) de tres fuentes: la base de datos
+// local (Netlify Blobs), la tabla de denuncias y la BFA on-chain (función
+// `view` del contrato RodaidCIT.sol, emulada por lib/bfaService). Devuelve la
+// respuesta pública unificada: estado canónico, bicicleta, inspección,
+// propietario anonimizado, validación BFA on-chain, sello temporal y firma.
+//
+// Integridad: compara el hash de la DB contra el índice local de eventos y el
+// hash on-chain (comparación triple). Una discrepancia dispara la alerta
+// crítica HASH_MISMATCH_ONCHAIN → respuesta 422 + log de nivel ERROR.
+//
+// Resiliencia (fail-open): si el nodo BFA no responde (timeout / caído), la
+// validación on-chain marca `consultada: false` y la verificación continúa con
+// los datos locales — nunca traba al inspector en la calle.
 //
 // No requiere autenticación: la respuesta ya viene anonimizada y sin datos
 // internos. Cachea en CDN respuestas encontradas (5 min) y acota las no
@@ -12,11 +22,16 @@
 // Al ser un endpoint público sin auth, se protege con el escudo perimetral
 // anti-abuso (lib/rateLimiter): blocklist + burst (20/10s) + verificador
 // (100/min) por IP, con bloqueos escalonados por strikes. Todas las respuestas
-// —200 y 429— inyectan los headers estándar RFC 6585.
+// —200, 422 y 429— inyectan los headers estándar RFC 6585.
 
 import { NextResponse } from 'next/server'
-import { getCITBySerial } from '@/lib/mockApi'
-import { armarVerificacion, respuestaNoEncontrada } from '@/lib/verificador'
+import { getCITBySerial, getDenunciasActivas, getEventoIndexHash } from '@/lib/mockApi'
+import {
+  armarVerificacion,
+  respuestaNoEncontrada,
+  tieneMismatchOnChain,
+} from '@/lib/verificador'
+import { consultarBFAOnChain } from '@/lib/bfaService'
 import { aplicarRateLimit } from '@/lib/rateLimiter'
 import { registrarVerificacion, normalizarOrigen } from '@/lib/analytics'
 
@@ -42,7 +57,13 @@ export async function GET(
   const rlHeaders = guardia.headers
 
   // Origen declarado por el cliente (WEB | QR | APP | API), para la analítica.
-  const origen = normalizarOrigen(new URL(req.url).searchParams.get('origen'))
+  const url = new URL(req.url)
+  const origen = normalizarOrigen(url.searchParams.get('origen'))
+  // Disparador de la simulación de caída del nodo BFA (resiliencia fail-open):
+  // ?bfa=timeout|down, o la variable de entorno BFA_SIMULAR_TIMEOUT.
+  const forzarTimeout = ['timeout', 'down', 'caido'].includes(
+    (url.searchParams.get('bfa') ?? '').toLowerCase()
+  )
 
   const { serial: rawSerial } = await params
   const serial = decodeURIComponent(rawSerial ?? '').trim().toUpperCase()
@@ -55,7 +76,18 @@ export async function GET(
   }
 
   try {
-    const registro = await getCITBySerial(serial)
+    // ── Cruce paralelo (Promise.all) ───────────────────────────────────────
+    // Tres consultas simultáneas, como el verificador real:
+    //   A. Base de datos local (Netlify Blobs): CIT completo.
+    //   B. Tabla de denuncias: denuncias ACTIVAS del serial.
+    //   C. BFA on-chain: función `view` del contrato RodaidCIT.sol.
+    // La consulta on-chain es fail-open: NUNCA rechaza, de modo que un nodo BFA
+    // caído no tumba el Promise.all ni traba la verificación del inspector.
+    const [registro, denunciasActivas, onchain] = await Promise.all([
+      getCITBySerial(serial),
+      getDenunciasActivas(serial),
+      consultarBFAOnChain(serial, { forzarTimeout }),
+    ])
 
     if (!registro) {
       // Se responde 200 con `encontrado: false` (no 404): la consulta de
@@ -63,7 +95,7 @@ export async function GET(
       // está registrada. Devolver 404 haría que la capa estática de Netlify
       // sirviera su página HTML de error en lugar de este JSON. El TTL corto
       // acota el sondeo de seriales.
-      const resp = respuestaNoEncontrada(serial, t0)
+      const resp = respuestaNoEncontrada(serial, t0, onchain)
       // Registro anónimo best-effort (IP hasheada con salt diario, bots aparte).
       await registrarVerificacion(req, {
         serial,
@@ -78,7 +110,11 @@ export async function GET(
       })
     }
 
-    const resp = armarVerificacion(registro, t0)
+    const resp = armarVerificacion(registro, t0, {
+      onchain,
+      denunciasActivas,
+      hashEventoLocal: getEventoIndexHash(serial),
+    })
     await registrarVerificacion(req, {
       serial,
       estado: resp.estado,
@@ -86,6 +122,27 @@ export async function GET(
       origen,
       duracionMs: resp.duracionMs,
     })
+
+    // ── Intercepción de la alerta crítica de integridad ────────────────────
+    // Si el hash de la DB no coincide con el de la cadena de bloques, se
+    // responde 422 y se emite un log de nivel ERROR para alertar al equipo
+    // RODAID de una posible manipulación del documento. La respuesta conserva
+    // todo el detalle (incluida `blockchain.validacionOnChain`) para auditoría.
+    if (tieneMismatchOnChain(resp)) {
+      const v = resp.blockchain.validacionOnChain
+      console.error('[verificador] HASH_MISMATCH_ONCHAIN', {
+        serial,
+        hashDB: v.hashDB,
+        hashOnChain: v.hashOnChain,
+        tokenIdOnChain: v.tokenIdOnChain,
+        nodo: v.nodo,
+      })
+      return NextResponse.json(resp, {
+        status: 422,
+        headers: { ...rlHeaders, 'Cache-Control': 'no-store' },
+      })
+    }
+
     return NextResponse.json(resp, {
       status: 200,
       headers: {
