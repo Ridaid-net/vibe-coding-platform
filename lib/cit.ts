@@ -29,7 +29,12 @@ export type CitEstado =
   | 'ACTIVO'
   | 'VENCIDO'
   | 'REVOCADO'
-export type CitBfaEstado = 'NO_INICIADA' | 'PENDIENTE' | 'ACUNADO' | 'ERROR'
+export type CitBfaEstado =
+  | 'NO_INICIADA'
+  | 'PENDIENTE'
+  | 'ACUNADO'
+  | 'ERROR'
+  | 'FALLIDO'
 
 export type Json =
   | string
