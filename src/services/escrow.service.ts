@@ -7,6 +7,27 @@ import {
   getModo,
   type MercadoPagoModo,
 } from '@/src/services/mercadopago.service'
+import {
+  notificarCompraCompletada,
+  notificarVentaConfirmada,
+} from '@/src/services/notif.service'
+
+/**
+ * Dispara, fuera de la transaccion (best-effort), las notificaciones de cierre de una
+ * operacion COMPLETADA: VENTA_CONFIRMADA al vendedor y COMPRA_COMPLETADA al comprador.
+ * Un fallo de notificacion nunca afecta la liberacion de fondos ya confirmada.
+ */
+async function notificarOperacionCompletada(
+  tx: ReturnType<typeof mapTransaccion>
+): Promise<void> {
+  await Promise.allSettled([
+    notificarVentaConfirmada(tx.vendedorId, {
+      transaccionId: tx.id,
+      montoVendedor: tx.montoVendedor,
+    }),
+    notificarCompraCompletada(tx.compradorId, { transaccionId: tx.id }),
+  ])
+}
 
 /**
  * RODAID PAY — maquina de estados del Escrow.
@@ -648,7 +669,7 @@ export async function confirmarEntrega(input: {
   transaccionId: string
   compradorId: string
 }) {
-  return withTx(async (client) => {
+  const transaccion = await withTx(async (client) => {
     const tx = await lockTransaccion(client, input.transaccionId)
 
     if (tx.comprador_id !== input.compradorId) {
@@ -669,6 +690,9 @@ export async function confirmarEntrega(input: {
 
     return mapTransaccion(updated)
   })
+
+  await notificarOperacionCompletada(transaccion)
+  return transaccion
 }
 
 // ── 5. cancelarTransaccion ──────────────────────────────────────────────────
@@ -795,7 +819,7 @@ export async function resolverDisputa(input: {
   aFavor: 'COMPRADOR' | 'VENDEDOR'
   nota?: string | null
 }) {
-  return withTx(async (client) => {
+  const resultado = await withTx(async (client) => {
     const tx = await lockTransaccion(client, input.transaccionId)
 
     if (tx.estado !== 'DISPUTADA') {
@@ -812,7 +836,7 @@ export async function resolverDisputa(input: {
         actorRol: 'admin',
         metadata: { aFavor: 'VENDEDOR', nota: input.nota ?? null },
       })
-      return { transaccion: mapTransaccion(updated), reembolso: null }
+      return { transaccion: mapTransaccion(updated), reembolso: null, completada: true }
     }
 
     // A favor del comprador: reembolso + cancelacion + re-activacion.
@@ -841,8 +865,13 @@ export async function resolverDisputa(input: {
       metadata: { aFavor: 'COMPRADOR', nota: input.nota ?? null, reembolsado: Boolean(reembolso) },
     })
 
-    return { transaccion: mapTransaccion(updated.rows[0]), reembolso }
+    return { transaccion: mapTransaccion(updated.rows[0]), reembolso, completada: false }
   })
+
+  if (resultado.completada) {
+    await notificarOperacionCompletada(resultado.transaccion)
+  }
+  return { transaccion: resultado.transaccion, reembolso: resultado.reembolso }
 }
 
 // ── 8. procesarAutoReleases ─────────────────────────────────────────────────
@@ -863,6 +892,7 @@ export async function procesarAutoReleases(limite = 100) {
   )
 
   const liberadas: string[] = []
+  const completadas: Array<ReturnType<typeof mapTransaccion>> = []
   for (const { id } of pendientes.rows) {
     try {
       await withTx(async (client) => {
@@ -873,7 +903,7 @@ export async function procesarAutoReleases(limite = 100) {
         if (new Date(tx.auto_release_en).getTime() > Date.now()) {
           return
         }
-        await liberarFondos(client, tx, { id: null, rol: 'sistema' })
+        const updated = await liberarFondos(client, tx, { id: null, rol: 'sistema' })
         await logEvento(client, {
           transaccionId: tx.id,
           tipo: 'AUTO_RELEASE',
@@ -883,10 +913,16 @@ export async function procesarAutoReleases(limite = 100) {
           metadata: { motivo: `${AUTO_RELEASE_DIAS} dias sin confirmacion del comprador` },
         })
         liberadas.push(tx.id)
+        completadas.push(mapTransaccion(updated))
       })
     } catch (error) {
       console.error('[escrow] auto-release fallo para', id, error)
     }
+  }
+
+  // Notificaciones de cierre (best-effort), fuera de las transacciones.
+  for (const tx of completadas) {
+    await notificarOperacionCompletada(tx)
   }
 
   return { procesadas: pendientes.rows.length, liberadas }

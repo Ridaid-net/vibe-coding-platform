@@ -20,8 +20,12 @@ import {
   bfaConfigurada,
   construirAcunacionNFT,
   enviarAcunacionBFA,
+  esErrorReintentable,
   leerConfigBFA,
+  resolverWalletDestino,
+  subirMetadataIPFSBackground,
 } from '@/lib/bfa'
+import { notificarCITAprobado } from '@/src/services/notif.service'
 
 /**
  * RODAID — Modulo 4: maquina de estados del Certificado de Identidad Tecnica.
@@ -91,6 +95,8 @@ export interface CitRow {
   bfa_metadata: Record<string, unknown> | null
   bfa_intentos: number
   bfa_ultimo_error: string | null
+  bfa_propietario_wallet: string | null
+  bfa_modo_custodia: string | null
   acunado_en: string | null
   revocacion_motivo: string | null
   revocado_por: string | null
@@ -148,6 +154,8 @@ export function mapCit(row: CitRow) {
       metadata: row.bfa_metadata,
       intentos: row.bfa_intentos ?? 0,
       ultimoError: row.bfa_ultimo_error,
+      propietarioWallet: row.bfa_propietario_wallet,
+      modoCustodia: row.bfa_modo_custodia,
       acunadoEn: row.acunado_en,
     },
     revocacion: row.revocado_en
@@ -694,138 +702,43 @@ export async function registrarAcunacionBFA(input: {
   })
 }
 
-// ── 5b. acunarCIT (acunacion automatica del NFT en BFA) ──────────────────────
+// ── 5b. acunarCITEnBFA (acunacion del NFT en BFA, 8 pasos atomicos) ──────────
 
 /**
- * Configuracion Final: acuna el NFT del certificado en la Blockchain Federal
- * Argentina (BFA) de punta a punta, automatizando el puente que antes era manual
- * (preparar -> registrar txHash externo).
+ * Servicio de Acunacion BFA: acuna el NFT del certificado en la Blockchain Federal
+ * Argentina de punta a punta, en 8 pasos atomicos, automatizando el puente que antes
+ * era manual (preparar -> registrar txHash externo).
  *
- * Flujo en dos transacciones, con la llamada de red FUERA del bloqueo de fila para
- * no retener el lock durante la submission on-chain:
+ * Wallet de destino:
+ *   - `propietarioWallet` presente -> transferencia DIRECTA a esa wallet.
+ *   - ausente                      -> Modelo Custodial RODAID (la plataforma custodia
+ *                                     el NFT hasta que el propietario reclame su wallet).
  *
- *   Tx1  -> valida (ACTIVO, no acunado), construye el NFT deterministico desde la
- *           huella sellada y deja el anclaje en PENDIENTE con el token y la metadata
- *           ya persistidos.
- *   Red  -> envia el anclaje al gateway de BFA configurado.
- *   Tx2  -> registra la confirmacion on-chain (ACUNADO) o el error (ERROR).
+ * Clasificacion de errores (`esErrorReintentable`):
+ *   - Red / timeout / conflicto de nonce -> estado REINTENTANDO (bfa_estado ERROR):
+ *     el worker programado lo reintenta automaticamente.
+ *   - Hash duplicado / propietario invalido -> estado FALLIDO: bloqueo definitivo
+ *     para auditoria, no se reintenta solo.
  *
- * Honestidad del estado on-chain: si no hay gateway de BFA configurado, NO se
- * inventa ninguna transaccion; el certificado queda en PENDIENTE con su NFT
- * preparado, a la espera de la configuracion (el barrido programado lo retomara).
+ * La llamada de red va FUERA del bloqueo de fila para no retener el lock durante la
+ * submission on-chain. La subida de metadata a IPFS se despega en background, fuera
+ * de la transaccion principal. Honestidad de estado: si no hay gateway de BFA
+ * configurado, NO se inventa una transaccion; el NFT queda preparado a la espera.
  */
-export async function acunarCIT(input: {
+export async function acunarCITEnBFA(input: {
   citId: string
+  propietarioWallet?: string | null
   actorId: string | null
   actorRol: string
 }) {
   const config = leerConfigBFA()
 
-  // ── Tx1: validar + preparar el NFT (PENDIENTE) ─────────────────────────────
-  const preparado = await withTx(async (client) => {
-    const cit = await lockCit(client, input.citId)
-    if (cit.estado !== 'ACTIVO') {
-      throw new ApiError(
-        409,
-        'CIT_NO_ACTIVO',
-        'Solo se puede acunar un certificado validado (ACTIVO).'
-      )
-    }
-    if (cit.bfa_estado === 'ACUNADO') {
-      throw new ApiError(409, 'BFA_YA_ACUNADO', 'El certificado ya fue acunado en BFA.')
-    }
-
-    const nft = construirAcunacionNFT(
-      {
-        citId: cit.id,
-        huella: cit.huella_sha256,
-        firma: cit.firma_hmac,
-        algoritmo: cit.algoritmo,
-        bicicletaSerial: cit.bicicleta_serial,
-        ciclistaId: cit.ciclista_id,
-        aliadoId: cit.aliado_id,
-        aliadoNombre: cit.aliado_nombre,
-        estado: cit.estado,
-        selladoEn: cit.sellado_en,
-        fechaEmision: cit.fecha_emision,
-        fechaVencimiento: cit.fecha_vencimiento,
-      },
-      config
-    )
-
-    const actualizado = await client.query<CitRow>(
-      `
-        UPDATE cits
-        SET bfa_estado = 'PENDIENTE',
-            bfa_red = $2,
-            bfa_token_id = $3,
-            bfa_metadata_hash = $4,
-            bfa_metadata = $5::jsonb,
-            bfa_intentos = bfa_intentos + 1,
-            bfa_ultimo_error = NULL
-        WHERE id = $1
-        RETURNING *
-      `,
-      [
-        cit.id,
-        nft.red,
-        nft.tokenId,
-        nft.metadataHash,
-        JSON.stringify(nft.metadata),
-      ]
-    )
-
-    await logEvento(client, {
-      citId: cit.id,
-      tipo: 'BFA_ACUNACION_PREPARADA',
-      actorId: input.actorId,
-      actorRol: input.actorRol,
-      metadata: {
-        huella: cit.huella_sha256,
-        tokenId: nft.tokenId,
-        metadataHash: nft.metadataHash,
-        red: nft.red,
-        configurada: bfaConfigurada(config),
-      },
-    })
-
-    return { cit, nft, row: actualizado.rows[0] }
-  })
-
-  // ── Red: submission on-chain (fuera del lock) ──────────────────────────────
-  let resultado
-  try {
-    resultado = await enviarAcunacionBFA(
-      preparado.nft,
-      { citId: preparado.cit.id, huella: preparado.cit.huella_sha256 },
-      config
-    )
-  } catch (error) {
-    if (error instanceof BfaError && error.code === 'BFA_NO_CONFIGURADA') {
-      // Sin gateway: el NFT queda preparado y PENDIENTE, sin inventar una tx.
-      return {
-        acunado: false,
-        motivo: 'BFA_NO_CONFIGURADA' as const,
-        cit: mapCit(preparado.row),
-        payloadBFA: {
-          citId: preparado.cit.id,
-          huellaSHA256: preparado.cit.huella_sha256,
-          firmaHMAC: preparado.cit.firma_hmac,
-          algoritmo: preparado.cit.algoritmo,
-          tokenId: preparado.nft.tokenId,
-          metadataHash: preparado.nft.metadataHash,
-          metadata: preparado.nft.metadata,
-        },
-      }
-    }
-
-    // Falla de red/contrato: se asienta para el reintento del barrido (ERROR,
-    // transitorio) o para re-acunacion manual del admin (FALLIDO, fatal).
+  // Marca el anclaje como fallido/transitorio segun la clasificacion del error.
+  const registrarFallo = async (error: unknown) => {
     const codigo = error instanceof BfaError ? error.code : 'BFA_ACUNACION_FALLIDA'
-    const mensaje =
-      error instanceof Error ? error.message : 'Fallo la acunacion en BFA.'
-    const reintentable = error instanceof BfaError ? error.reintentable : true
-    const estadoBfa = reintentable ? 'ERROR' : 'FALLIDO'
+    const mensaje = error instanceof Error ? error.message : 'Fallo la acunacion en BFA.'
+    const reintentable = esErrorReintentable(error)
+    const estadoBfa = reintentable ? 'ERROR' : 'FALLIDO' // REINTENTANDO vs FALLIDO
     await withTx(async (client) => {
       await lockCit(client, input.citId)
       await client.query(
@@ -840,14 +753,140 @@ export async function acunarCIT(input: {
         metadata: { codigo, mensaje, reintentable, estadoBfa },
       })
     })
-    throw new ApiError(
-      error instanceof BfaError ? error.status : 502,
-      codigo,
-      mensaje
-    )
+    throw new ApiError(error instanceof BfaError ? error.status : 502, codigo, mensaje)
   }
 
-  // ── Tx2: registrar la confirmacion on-chain (ACUNADO) ──────────────────────
+  // ── Pasos 1-4 · Tx1: validar, resolver wallet, construir NFT, dejar EN_PROCESO ─
+  let preparado
+  try {
+    preparado = await withTx(async (client) => {
+      // Paso 1 — Validar el certificado bajo bloqueo de fila.
+      const cit = await lockCit(client, input.citId)
+      if (cit.estado !== 'ACTIVO') {
+        throw new ApiError(
+          409,
+          'CIT_NO_ACTIVO',
+          'Solo se puede acunar un certificado validado (ACTIVO).'
+        )
+      }
+      if (cit.bfa_estado === 'ACUNADO') {
+        throw new ApiError(409, 'BFA_YA_ACUNADO', 'El certificado ya fue acunado en BFA.')
+      }
+
+      // Paso 2 — Resolver la wallet de destino (directo vs. custodial). Una wallet
+      // malformada lanza BfaError fatal (no reintentable).
+      const destino = resolverWalletDestino(
+        input.propietarioWallet,
+        cit.ciclista_id,
+        config
+      )
+
+      // Paso 3 — Construir el NFT de forma deterministica desde la huella sellada.
+      const nft = construirAcunacionNFT(
+        {
+          citId: cit.id,
+          huella: cit.huella_sha256,
+          firma: cit.firma_hmac,
+          algoritmo: cit.algoritmo,
+          bicicletaSerial: cit.bicicleta_serial,
+          ciclistaId: cit.ciclista_id,
+          aliadoId: cit.aliado_id,
+          aliadoNombre: cit.aliado_nombre,
+          estado: cit.estado,
+          selladoEn: cit.sellado_en,
+          fechaEmision: cit.fecha_emision,
+          fechaVencimiento: cit.fecha_vencimiento,
+        },
+        config
+      )
+
+      // Paso 4 — Persistir el estado EN_PROCESO (bfa_estado PENDIENTE) con el token,
+      // la metadata, la wallet y el modo de custodia; incrementar intentos.
+      const actualizado = await client.query<CitRow>(
+        `
+          UPDATE cits
+          SET bfa_estado = 'PENDIENTE',
+              bfa_red = $2,
+              bfa_token_id = $3,
+              bfa_metadata_hash = $4,
+              bfa_metadata = $5::jsonb,
+              bfa_propietario_wallet = $6,
+              bfa_modo_custodia = $7,
+              bfa_intentos = bfa_intentos + 1,
+              bfa_ultimo_error = NULL
+          WHERE id = $1
+          RETURNING *
+        `,
+        [
+          cit.id,
+          nft.red,
+          nft.tokenId,
+          nft.metadataHash,
+          JSON.stringify(nft.metadata),
+          destino.wallet,
+          destino.modo,
+        ]
+      )
+
+      await logEvento(client, {
+        citId: cit.id,
+        tipo: 'BFA_ACUNACION_PREPARADA',
+        actorId: input.actorId,
+        actorRol: input.actorRol,
+        metadata: {
+          huella: cit.huella_sha256,
+          tokenId: nft.tokenId,
+          metadataHash: nft.metadataHash,
+          red: nft.red,
+          modoCustodia: destino.modo,
+          configurada: bfaConfigurada(config),
+        },
+      })
+
+      return { cit, nft, destino, row: actualizado.rows[0] }
+    })
+  } catch (error) {
+    // Errores de negocio (no acunable / ya acunado) se propagan tal cual; un error
+    // fatal de wallet se asienta como FALLIDO para auditoria.
+    if (error instanceof ApiError) throw error
+    if (error instanceof BfaError) return registrarFallo(error)
+    throw error
+  }
+
+  // ── Paso 5 · Submission on-chain (fuera del lock) ──────────────────────────
+  let resultado
+  try {
+    resultado = await enviarAcunacionBFA(
+      preparado.nft,
+      { citId: preparado.cit.id, huella: preparado.cit.huella_sha256 },
+      config,
+      preparado.destino
+    )
+  } catch (error) {
+    if (error instanceof BfaError && error.code === 'BFA_NO_CONFIGURADA') {
+      // Sin gateway: el NFT queda preparado y EN_PROCESO, sin inventar una tx.
+      return {
+        acunado: false,
+        motivo: 'BFA_NO_CONFIGURADA' as const,
+        cit: mapCit(preparado.row),
+        modoCustodia: preparado.destino.modo,
+        wallet: preparado.destino.wallet,
+        payloadBFA: {
+          citId: preparado.cit.id,
+          huellaSHA256: preparado.cit.huella_sha256,
+          firmaHMAC: preparado.cit.firma_hmac,
+          algoritmo: preparado.cit.algoritmo,
+          tokenId: preparado.nft.tokenId,
+          metadataHash: preparado.nft.metadataHash,
+          metadata: preparado.nft.metadata,
+        },
+      }
+    }
+    // Paso 6 — Clasificar el error y asentar REINTENTANDO (ERROR) o FALLIDO.
+    return registrarFallo(error)
+  }
+
+  // ── Paso 7 · Tx2: registrar la confirmacion on-chain (COMPLETADO/ACUNADO) ───
   const final = await withTx(async (client) => {
     const cit = await lockCit(client, input.citId)
     if (cit.bfa_estado === 'ACUNADO') {
@@ -880,11 +919,30 @@ export async function acunarCIT(input: {
         objetoId: resultado.objetoId,
         tokenId: preparado.nft.tokenId,
         red: resultado.red,
+        modoCustodia: preparado.destino.modo,
         explorerUrl: resultado.explorerUrl,
       },
     })
 
     return mapCit(actualizado.rows[0])
+  })
+
+  // ── Paso 8 · Efectos fuera de la transaccion: notificar + IPFS en background ─
+  // Notificacion CIT_APROBADO al ciclista (best-effort; no bloquea la acunacion).
+  await notificarCITAprobado(preparado.cit.ciclista_id, {
+    citId: preparado.cit.id,
+    bicicletaSerial: preparado.cit.bicicleta_serial,
+    txHash: resultado.txHash,
+    explorerUrl: resultado.explorerUrl,
+    red: resultado.red,
+  }).catch((error) => {
+    console.error('[cit] fallo la notificacion CIT_APROBADO', preparado.cit.id, error)
+  })
+
+  // _subirIPFSBackground: pin de la metadata a IPFS, despegado de la transaccion
+  // principal (fire-and-forget). No es critico para la consistencia on-chain.
+  void subirMetadataIPFSBackground(preparado.nft).catch((error) => {
+    console.error('[cit] fallo la subida de metadata a IPFS', preparado.cit.id, error)
   })
 
   return {
@@ -894,9 +952,17 @@ export async function acunarCIT(input: {
     resultado,
     tokenId: preparado.nft.tokenId,
     metadataHash: preparado.nft.metadataHash,
+    modoCustodia: preparado.destino.modo,
+    wallet: preparado.destino.wallet,
     explorerUrl: resultado.explorerUrl,
   }
 }
+
+/**
+ * Alias historico de `acunarCITEnBFA`. Se conserva para los llamadores existentes
+ * (route handler de acunacion) sin cambiar su contrato.
+ */
+export const acunarCIT = acunarCITEnBFA
 
 // ── 6. revocarCIT ────────────────────────────────────────────────────────────
 
@@ -1017,6 +1083,46 @@ export async function listarAcunacionesFallidas(opciones?: {
       bfa: cit.bfa,
     }
   })
+}
+
+// ── Estado de mint (acunacion del NFT en BFA) ────────────────────────────────
+
+/** Correspondencia bfa_estado (canonico) -> vocabulario de mint del servicio. */
+const MINT_ESTADO: Record<string, string> = {
+  NO_INICIADA: 'NO_INICIADO',
+  PENDIENTE: 'EN_PROCESO',
+  ACUNADO: 'COMPLETADO',
+  ERROR: 'REINTENTANDO',
+  FALLIDO: 'FALLIDO',
+}
+
+/**
+ * Estado de la acunacion del NFT de un certificado (GET /admin/cit/:id/mint/status).
+ * Expone el estado de mint, los intentos, el ultimo error y los datos del token/tx.
+ */
+export async function obtenerEstadoMint(citId: string) {
+  const res = await getPool().query<CitRow>(`SELECT * FROM cits WHERE id = $1`, [citId])
+  const cit = res.rows[0]
+  if (!cit) {
+    throw new ApiError(404, 'CIT_NOT_FOUND', 'El certificado no existe.')
+  }
+  return {
+    citId: cit.id,
+    bicicletaSerial: cit.bicicleta_serial,
+    estadoCit: cit.estado,
+    mintEstado: MINT_ESTADO[cit.bfa_estado] ?? cit.bfa_estado,
+    bfaEstado: cit.bfa_estado,
+    intentos: cit.bfa_intentos ?? 0,
+    ultimoError: cit.bfa_ultimo_error,
+    modoCustodia: cit.bfa_modo_custodia,
+    wallet: cit.bfa_propietario_wallet,
+    tokenId: cit.bfa_token_id,
+    metadataHash: cit.bfa_metadata_hash,
+    red: cit.bfa_red,
+    txHash: cit.bfa_tx_hash,
+    objetoId: cit.bfa_objeto_id,
+    acunadoEn: cit.acunado_en,
+  }
 }
 
 // ── Geocerca del taller aliado ───────────────────────────────────────────────
