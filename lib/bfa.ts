@@ -57,6 +57,8 @@ export interface BfaConfig {
   explorerUrl: string | null
   /** Timeout de la submission, en milisegundos. */
   timeoutMs: number
+  /** Wallet custodial de RODAID (Modelo Custodial), si esta configurada. */
+  custodialWallet: string | null
 }
 
 /**
@@ -83,12 +85,84 @@ export function leerConfigBFA(
     explorerUrl: limpio('BFA_EXPLORER_URL'),
     timeoutMs:
       Number.isFinite(timeoutCrudo) && timeoutCrudo > 0 ? timeoutCrudo : 8000,
+    custodialWallet: limpio('RODAID_CUSTODIAL_WALLET'),
   }
 }
 
 /** `true` si hay un gateway configurado capaz de efectuar el anclaje on-chain. */
 export function bfaConfigurada(config: BfaConfig): boolean {
   return config.gatewayUrl !== null
+}
+
+// ── Wallet de destino del NFT (directo vs. custodial) ────────────────────────
+
+export type ModoCustodia = 'DIRECTO' | 'CUSTODIAL'
+
+export interface WalletDestino {
+  wallet: string
+  modo: ModoCustodia
+}
+
+/** Forma aceptable de una wallet: 0x + 40 hex, o un identificador alfanumerico. */
+const WALLET_RE = /^(0x[0-9a-fA-F]{40}|[a-zA-Z0-9:_-]{8,120})$/
+
+/**
+ * Resuelve la wallet de destino del NFT:
+ *   - Si el propietario aporta su wallet -> transferencia DIRECTA (se valida el formato;
+ *     una wallet malformada es un error FATAL, no se reintenta).
+ *   - Si no -> Modelo Custodial RODAID: el NFT se acuna a la wallet custodial de la
+ *     plataforma (configurada por entorno) o, en su defecto, a un identificador
+ *     custodial deterministico por ciclista, para que el certificado quede a la espera
+ *     de ser transferido cuando el propietario reclame su wallet.
+ */
+export function resolverWalletDestino(
+  propietarioWallet: string | null | undefined,
+  ciclistaId: string,
+  config: BfaConfig
+): WalletDestino {
+  const aportada = typeof propietarioWallet === 'string' ? propietarioWallet.trim() : ''
+  if (aportada.length > 0) {
+    if (!WALLET_RE.test(aportada)) {
+      throw new BfaError(
+        'BFA_PROPIETARIO_INVALIDO',
+        'La wallet del propietario no tiene un formato valido.',
+        422,
+        false // fatal: no se reintenta una wallet malformada.
+      )
+    }
+    return { wallet: aportada, modo: 'DIRECTO' }
+  }
+  return {
+    wallet: config.custodialWallet ?? `custodial:rodaid:${ciclistaId}`,
+    modo: 'CUSTODIAL',
+  }
+}
+
+/**
+ * Clasifica un error de acunacion como reintentable o fatal, para decidir el estado
+ * de mint (REINTENTANDO/ERROR vs. FALLIDO):
+ *   - Red / timeout / conflicto de nonce -> reintentable (el worker lo reintenta).
+ *   - Hash duplicado / propietario invalido / rechazo de contrato -> fatal (bloqueo
+ *     definitivo para auditoria; requiere intervencion manual).
+ */
+export function esErrorReintentable(error: unknown): boolean {
+  if (error instanceof BfaError) {
+    return error.reintentable
+  }
+  const mensaje = (error instanceof Error ? error.message : String(error)).toLowerCase()
+  // Fatales explicitos: nunca se reintentan solos.
+  if (
+    mensaje.includes('duplicad') ||
+    mensaje.includes('already') ||
+    mensaje.includes('duplicate') ||
+    mensaje.includes('propietario') ||
+    mensaje.includes('invalid')
+  ) {
+    return false
+  }
+  // Transitorios tipicos: red, timeout, conflicto de nonce.
+  // Por defecto se asume transitorio (mejor reintentar que bloquear por un fallo raro).
+  return true
 }
 
 // ── Serializacion canonica (determinista, local) ─────────────────────────────
@@ -240,7 +314,8 @@ export function construirExplorerUrl(
 export async function enviarAcunacionBFA(
   nft: AcunacionNFT,
   cert: Pick<CertificadoSellado, 'citId' | 'huella'>,
-  config: BfaConfig
+  config: BfaConfig,
+  destino?: WalletDestino
 ): Promise<ResultadoAcunacion> {
   if (!config.gatewayUrl) {
     throw new BfaError(
@@ -268,6 +343,9 @@ export async function enviarAcunacionBFA(
         chainId: config.chainId,
         metadataHash: nft.metadataHash,
         metadata: nft.metadata,
+        ...(destino
+          ? { destino: destino.wallet, modoCustodia: destino.modo }
+          : {}),
       }),
       signal: controlador.signal,
     })
@@ -328,4 +406,58 @@ function textoNoVacio(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : null
+}
+
+// ── Subida de metadata a IPFS (background, fuera de la transaccion) ───────────
+
+/**
+ * Sube la metadata ERC-721 del NFT a IPFS de forma best-effort, FUERA de la
+ * transaccion principal de acunacion (`_subirIPFSBackground`). El pin de IPFS no es
+ * critico para la consistencia on-chain: la metadata ya quedo anclada por su hash en
+ * la base y en la transaccion BFA. Por eso se ejecuta fire-and-forget y nunca hace
+ * fallar la acunacion.
+ *
+ * Si no hay un pinning service configurado (IPFS_API_URL), no se inventa un CID:
+ * se devuelve `null`. Honestidad de estado, igual que el resto del modulo.
+ */
+export async function subirMetadataIPFSBackground(
+  nft: Pick<AcunacionNFT, 'metadata' | 'metadataHash'>,
+  getEnv: (clave: string) => string | undefined = (clave) => process.env[clave]
+): Promise<string | null> {
+  const apiUrl = getEnv('IPFS_API_URL')?.trim()
+  if (!apiUrl) {
+    return null
+  }
+  const apiKey = getEnv('IPFS_API_KEY')?.trim()
+  const timeoutCrudo = Number(getEnv('IPFS_TIMEOUT_MS'))
+  const timeoutMs =
+    Number.isFinite(timeoutCrudo) && timeoutCrudo > 0 ? timeoutCrudo : 10000
+
+  const controlador = new AbortController()
+  const timer = setTimeout(() => controlador.abort(), timeoutMs)
+  try {
+    const respuesta = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+      },
+      body: JSON.stringify({
+        metadataHash: nft.metadataHash,
+        metadata: nft.metadata,
+      }),
+      signal: controlador.signal,
+    })
+    if (!respuesta.ok) {
+      console.error('[bfa-ipfs] el pinning service respondio', respuesta.status)
+      return null
+    }
+    const datos = (await respuesta.json().catch(() => ({}))) as Record<string, unknown>
+    return textoNoVacio(datos.cid ?? datos.IpfsHash ?? datos.Hash)
+  } catch (error) {
+    console.error('[bfa-ipfs] no se pudo subir la metadata a IPFS', error)
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
 }

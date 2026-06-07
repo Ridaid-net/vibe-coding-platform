@@ -82,6 +82,125 @@ class AcunacionError extends Error {
   }
 }
 
+// ── Helpers de notificacion (best-effort, autocontenidos) ────────────────────
+
+function envNotif(clave: string): string | null {
+  const valor = Netlify.env.get(clave)
+  if (typeof valor !== 'string') return null
+  const limpio = valor.trim()
+  return limpio.length > 0 ? limpio : null
+}
+
+function appUrl(path: string): string {
+  const base = (envNotif('RODAID_APP_URL') ?? envNotif('APP_URL') ?? 'https://rodaid.app')
+    .replace(/\/+$/, '')
+  return `${base}${path}`
+}
+
+/** Datos minimos de una acunacion exitosa para el despacho de canales externos. */
+interface AprobadoNotif {
+  citId: string
+  ciclistaId: string
+  serial: string
+  txHash: string
+  explorerUrl: string | null
+}
+
+interface PrefsNotif {
+  email: string | null
+  email_habilitado: boolean
+  push_habilitado: boolean
+  fcm_tokens: string[]
+}
+
+function escaparHtml(texto: string): string {
+  return texto
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function renderEmailAprobado(serial: string, ctaUrl: string): string {
+  return `<!DOCTYPE html><html lang="es"><body style="margin:0;background:#F3F4F6;font-family:Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="padding:24px 12px;"><tr><td align="center">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#fff;border-radius:16px;overflow:hidden;">
+<tr><td style="background:#0F1E35;padding:28px 32px;"><span style="font-size:20px;font-weight:800;color:#fff;">RODA<span style="color:#F97316;">ID</span></span></td></tr>
+<tr><td style="padding:32px;">
+<h1 style="margin:0 0 16px;font-size:20px;color:#0F1E35;">Tu certificado fue acunado en la Blockchain Federal Argentina</h1>
+<p style="font-size:15px;line-height:1.6;color:#1F2937;">El Certificado de Identidad Tecnica de tu rodado ${escaparHtml(
+    serial
+  )} quedo anclado on-chain como NFT. Su identidad es ahora verificable de forma publica.</p>
+<table cellpadding="0" cellspacing="0" style="margin:8px 0;"><tr><td style="border-radius:10px;background:#F97316;">
+<a href="${escaparHtml(
+    ctaUrl
+  )}" style="display:inline-block;padding:13px 26px;font-size:15px;font-weight:700;color:#fff;text-decoration:none;">Ver en RODAID &rarr;</a>
+</td></tr></table>
+</td></tr>
+<tr><td style="background:#1B2C49;padding:22px 32px;"><p style="margin:0;font-size:11px;line-height:1.5;color:#7C8DA8;">RODAID opera el Registro de Certificacion de Identidad Tecnica en el marco de la Ley 9556 de la Provincia de Mendoza.</p></td></tr>
+</table></td></tr></table></body></html>`
+}
+
+/**
+ * Despacha los canales externos (email/push) de las acunaciones exitosas, FUERA de
+ * las transacciones del barrido. La notificacion IN_APP ya quedo persistida. Si un
+ * canal no esta configurado, no se finge el envio.
+ */
+async function despacharAprobados(
+  client: SqlClient,
+  aprobados: AprobadoNotif[]
+): Promise<void> {
+  if (aprobados.length === 0) return
+  const resendKey = envNotif('RESEND_API_KEY')
+  const resendFrom = envNotif('RESEND_FROM')
+  const fcmKey = envNotif('FCM_SERVER_KEY')
+
+  for (const a of aprobados) {
+    try {
+      const { rows } = await client.query<PrefsNotif>(
+        `
+          SELECT email, email_habilitado, push_habilitado,
+                 ARRAY(SELECT jsonb_array_elements_text(fcm_tokens)) AS fcm_tokens
+          FROM notif_preferencias WHERE usuario_id = $1
+        `,
+        [a.ciclistaId]
+      )
+      const prefs = rows[0]
+      const ctaUrl = a.explorerUrl ?? appUrl(`/cit/${a.citId}`)
+
+      if (resendKey && resendFrom && prefs?.email && prefs.email_habilitado) {
+        await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${resendKey}`, 'content-type': 'application/json' },
+          body: JSON.stringify({
+            from: resendFrom,
+            to: [prefs.email],
+            subject: 'Tu certificado fue acunado en la Blockchain Federal Argentina',
+            html: renderEmailAprobado(a.serial, ctaUrl),
+          }),
+        }).catch(() => undefined)
+      }
+
+      if (fcmKey && prefs?.push_habilitado && prefs.fcm_tokens?.length) {
+        await fetch('https://fcm.googleapis.com/fcm/send', {
+          method: 'POST',
+          headers: { authorization: `key=${fcmKey}`, 'content-type': 'application/json' },
+          body: JSON.stringify({
+            registration_ids: prefs.fcm_tokens,
+            notification: {
+              title: 'Tu certificado fue acunado en BFA',
+              body: `El CIT de tu rodado ${a.serial} quedo anclado on-chain como NFT.`,
+            },
+            data: { tipo: 'CIT_APROBADO', citId: a.citId, url: ctaUrl },
+          }),
+        }).catch(() => undefined)
+      }
+    } catch (error) {
+      console.error('[cron-acunacion-bfa] fallo el despacho de notificacion de aprobado', a.citId, error)
+    }
+  }
+}
+
 // ── Construccion deterministica del NFT (espejo de lib/bfa.ts) ────────────────
 
 function ordenar(value: unknown): unknown {
@@ -304,11 +423,12 @@ async function prepararNFT(
 
 async function registrarAcunado(
   client: SqlClient,
-  citId: string,
+  cit: CitRow,
   resultado: ResultadoAcunacion,
   tokenId: string,
   red: string
 ): Promise<void> {
+  const citId = cit.id
   await client.query('BEGIN')
   try {
     await client.query(
@@ -339,6 +459,21 @@ async function registrarAcunado(
           red,
           explorerUrl: resultado.explorerUrl,
         }),
+      ]
+    )
+    // CIT_APROBADO: la notificacion IN_APP se persiste en la MISMA transaccion que
+    // la confirmacion de la acunacion (consistencia transaccional).
+    await client.query(
+      `
+        INSERT INTO notificaciones (usuario_id, tipo, titulo, cuerpo, cta_url, data)
+        VALUES ($1, 'CIT_APROBADO', $2, $3, $4, $5::jsonb)
+      `,
+      [
+        cit.ciclista_id,
+        'Tu certificado fue acunado en la Blockchain Federal Argentina',
+        `El CIT de tu rodado ${cit.bicicleta_serial} quedo anclado on-chain como NFT.`,
+        resultado.explorerUrl ?? appUrl(`/cit/${citId}`),
+        JSON.stringify({ citId, txHash: resultado.txHash, explorerUrl: resultado.explorerUrl }),
       ]
     )
     await client.query('COMMIT')
@@ -415,6 +550,7 @@ export default async (req: Request) => {
     let acunados = 0
     let errores = 0
     let fallidos = 0
+    const aprobados: AprobadoNotif[] = []
 
     for (const { id } of candidatos) {
       try {
@@ -430,12 +566,19 @@ export default async (req: Request) => {
           )
           await registrarAcunado(
             client,
-            id,
+            preparado.cit,
             resultado,
             preparado.nft.tokenId,
             preparado.nft.red
           )
           acunados += 1
+          aprobados.push({
+            citId: preparado.cit.id,
+            ciclistaId: preparado.cit.ciclista_id,
+            serial: preparado.cit.bicicleta_serial,
+            txHash: resultado.txHash,
+            explorerUrl: resultado.explorerUrl,
+          })
         } catch (errorRed) {
           const mensaje =
             errorRed instanceof Error ? errorRed.message : 'Fallo la acunacion en BFA.'
@@ -453,6 +596,9 @@ export default async (req: Request) => {
         errores += 1
       }
     }
+
+    // Despacho best-effort de los canales externos (CIT_APROBADO), fuera de las tx.
+    await despacharAprobados(client, aprobados)
 
     console.log(
       '[cron-acunacion-bfa] barrido completado',
