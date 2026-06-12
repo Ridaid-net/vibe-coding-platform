@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 
 export interface AuthenticatedUser {
   id: string
+  rol: string | null
 }
 
 export interface PublicacionRow {
@@ -89,7 +90,10 @@ export async function requireUser(req: Request): Promise<AuthenticatedUser> {
       throw new ApiError(401, 'INVALID_TOKEN', 'Token de usuario invalido.')
     }
 
-    return { id }
+    const rolClaim = payload.rol
+    const rol = typeof rolClaim === 'string' && rolClaim.length > 0 ? rolClaim : null
+
+    return { id, rol }
   } catch (error) {
     if (error instanceof ApiError) {
       throw error
