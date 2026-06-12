@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { ApiError, getPool, type DbClient } from '@/lib/marketplace'
+import { encolarSeguro } from '@/src/services/queue.service'
 import {
   consultarPago,
   crearPreferencia,
@@ -442,6 +443,13 @@ export async function iniciarCompra(input: IniciarCompraInput) {
       return txRes.rows[0]
     })
 
+    // Notificar al vendedor que tiene una compra con deposito pendiente.
+    void encolarSeguro('notif', {
+      evento: 'COMPRA_INICIADA',
+      transaccionId,
+      destinatario: 'vendedor',
+    })
+
     return {
       transaccion: mapTransaccion(transaccion),
       pago: {
@@ -600,7 +608,7 @@ export async function confirmarEnvio(input: {
   vendedorId: string
   trackingCode?: string | null
 }) {
-  return withTx(async (client) => {
+  const resultado = await withTx(async (client) => {
     const tx = await lockTransaccion(client, input.transaccionId)
 
     if (tx.vendedor_id !== input.vendedorId) {
@@ -640,6 +648,20 @@ export async function confirmarEnvio(input: {
 
     return mapTransaccion(updated.rows[0])
   })
+
+  // Notificar al comprador y programar el auto-release a los 5 dias como un
+  // trabajo demorado en la cola (equivalente al worker diferido de referencia).
+  void encolarSeguro('notif', {
+    evento: 'ENVIO_CONFIRMADO',
+    transaccionId: input.transaccionId,
+    destinatario: 'comprador',
+  })
+  void encolarSeguro(
+    'escrow-release',
+    { transaccionId: input.transaccionId },
+    { disponibleEn: new Date(Date.now() + AUTO_RELEASE_DIAS * 24 * 60 * 60 * 1000) }
+  )
+  return resultado
 }
 
 // ── 4. confirmarEntrega (comprador) ─────────────────────────────────────────
@@ -648,7 +670,7 @@ export async function confirmarEntrega(input: {
   transaccionId: string
   compradorId: string
 }) {
-  return withTx(async (client) => {
+  const resultado = await withTx(async (client) => {
     const tx = await lockTransaccion(client, input.transaccionId)
 
     if (tx.comprador_id !== input.compradorId) {
@@ -669,6 +691,14 @@ export async function confirmarEntrega(input: {
 
     return mapTransaccion(updated)
   })
+
+  // Notificar al vendedor que los fondos fueron liberados.
+  void encolarSeguro('notif', {
+    evento: 'ENTREGA_CONFIRMADA',
+    transaccionId: input.transaccionId,
+    destinatario: 'vendedor',
+  })
+  return resultado
 }
 
 // ── 5. cancelarTransaccion ──────────────────────────────────────────────────
@@ -747,7 +777,7 @@ export async function abrirDisputa(input: {
   actorId: string
   motivo: string
 }) {
-  return withTx(async (client) => {
+  const resultado = await withTx(async (client) => {
     const tx = await lockTransaccion(client, input.transaccionId)
 
     const esParte =
@@ -785,6 +815,14 @@ export async function abrirDisputa(input: {
 
     return mapTransaccion(updated.rows[0])
   })
+
+  // Notificar a la contraparte que se abrio una disputa.
+  void encolarSeguro('notif', {
+    evento: 'DISPUTA_ABIERTA',
+    transaccionId: input.transaccionId,
+    destinatario: 'contraparte',
+  })
+  return resultado
 }
 
 // ── 7. resolverDisputa (admin) ──────────────────────────────────────────────
