@@ -7,11 +7,15 @@
 //   empty   → <GarajeVacio />
 //   data    → KPIs globales + <BicicletaCard /> por rodado
 
+import { useState } from 'react'
 import { useGaraje } from './use-garaje'
 import { SkeletonGaraje } from './skeletons'
 import { BicicletaCard, KPICell } from './bicicleta-card'
 import { ErrorGaraje, GarajeVacio } from './states'
 import { C } from './theme'
+import { CertificadoModal } from '@/components/certificado/certificado-modal'
+import type { CertificadoData } from '@/components/certificado/certificado-cit'
+import type { BicicletaGaraje } from '@/lib/garaje-api'
 
 export interface GarajeDigitalProps {
   onCotizar?: (biciId: string, citId: string) => void
@@ -19,11 +23,38 @@ export interface GarajeDigitalProps {
   onRegistrar?: () => void
 }
 
+/** Construye los datos del documento CIT a partir de una bicicleta del garaje. */
+function aCertificadoData(bici: BicicletaGaraje): CertificadoData | null {
+  const cit = bici.cit
+  if (!cit) return null
+  return {
+    marca: bici.marca,
+    modelo: bici.modelo,
+    numeroSerie: bici.numeroSerie,
+    numeroCIT: cit.numeroCIT,
+    estado: cit.estado,
+    puntosTotal: cit.puntosTotal,
+    puntajeMax: cit.puntajeMax,
+    hasHashBFA: cit.hasHashBFA,
+    nftTokenId: cit.nftTokenId,
+    tasaPagada: cit.tasaPagada,
+    fechaEmision: cit.fechaEmision,
+    fechaVencimiento: cit.fechaVencimiento,
+    hashSHA256: cit.hashSHA256,
+  }
+}
+
 export function GarajeDigital({ onCotizar, onVerCIT, onRegistrar }: GarajeDigitalProps) {
   const { data, loading, error, intentos, refresh } = useGaraje()
+  const [certificado, setCertificado] = useState<CertificadoData | null>(null)
 
   const handleCotizar = (biciId: string, citId: string) => onCotizar?.(biciId, citId)
-  const handleVerCIT = (citId: string) => onVerCIT?.(citId)
+  const handleVerCIT = (citId: string) => {
+    const bici = data?.bicicletas.find((b) => b.cit?.id === citId)
+    const cert = bici ? aCertificadoData(bici) : null
+    if (cert) setCertificado(cert)
+    onVerCIT?.(citId)
+  }
 
   if (loading) {
     return (
@@ -121,6 +152,10 @@ export function GarajeDigital({ onCotizar, onVerCIT, onRegistrar }: GarajeDigita
           ↻ Actualizar
         </button>
       </div>
+
+      {certificado && (
+        <CertificadoModal data={certificado} onClose={() => setCertificado(null)} />
+      )}
     </div>
   )
 }

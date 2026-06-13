@@ -16,12 +16,6 @@ export default function GarajePage() {
     })
   }
 
-  const handleVerCIT = (citId: string) => {
-    toast.info('Certificado de Identidad Tecnológica', {
-      description: `Abriendo el detalle del CIT ${citId}.`,
-    })
-  }
-
   const handleRegistrar = () => {
     toast.info('Registrar bicicleta', {
       description: 'Iniciando el alta de un nuevo rodado.',
@@ -53,7 +47,6 @@ export default function GarajePage() {
 
         <GarajeDigital
           onCotizar={handleCotizar}
-          onVerCIT={handleVerCIT}
           onRegistrar={handleRegistrar}
         />
       </div>
