@@ -8,6 +8,10 @@ import {
   resolverRol,
   type PuntosInspeccion,
 } from '@/src/services/roles.service'
+import {
+  SerialInvalidoError,
+  exigirSerialValido,
+} from '@/src/services/validacion-serial.service'
 
 export const runtime = 'nodejs'
 
@@ -58,6 +62,15 @@ export async function POST(req: Request) {
       throw new ApiError(400, 'VALIDATION_ERROR', 'propietarioNombre es obligatorio (mínimo 3 caracteres).')
     }
 
+    // Pipeline de validación de serial (7 checks). Si algún check es bloqueante
+    // lanza SerialInvalidoError → 422 con el detalle completo de los checks.
+    const validacionSerial = await exigirSerialValido({
+      bicicletaId: body.bicicletaId,
+      propietarioDNI: body.propietarioDNI.trim(),
+      propietarioNombre: body.propietarioNombre.trim(),
+      inspectorId: inspector.inspectorId,
+    })
+
     const result = await iniciarCIT({
       bicicletaId: body.bicicletaId,
       inspectorId: inspector.inspectorId,
@@ -70,8 +83,21 @@ export async function POST(req: Request) {
       propietarioNombre: body.propietarioNombre.trim(),
     })
 
-    return NextResponse.json({ ok: true, data: result }, { status: 201 })
+    return NextResponse.json(
+      { ok: true, data: { ...result, validacionSerial } },
+      { status: 201 }
+    )
   } catch (error) {
+    if (error instanceof SerialInvalidoError) {
+      return NextResponse.json(
+        {
+          error: error.code,
+          message: error.message,
+          validacion: error.validacion,
+        },
+        { status: error.status }
+      )
+    }
     return jsonError(error)
   }
 }
