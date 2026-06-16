@@ -361,6 +361,18 @@ export interface RegistroConsulta {
   citId?: string | null
   ipHash: string | null
   userAgent: string | null
+  /**
+   * Geo RECORTADO a nivel barrio (centro de celda, nunca la coordenada exacta).
+   * Alimenta el mapa de calor de la analitica de seguridad (Hito 8). Opcional.
+   */
+  geo?: {
+    celda: string
+    lat: number
+    lon: number
+    ciudad: string
+    zona: string
+    simulada: boolean
+  } | null
 }
 
 /**
@@ -373,8 +385,9 @@ export async function registrarConsulta(reg: RegistroConsulta): Promise<void> {
       `
         INSERT INTO logs_verificaciones
           (consulta, tipo_busqueda, encontrada, veredicto,
-           bicicleta_id, cit_id, ip_hash, user_agent)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           bicicleta_id, cit_id, ip_hash, user_agent,
+           geo_celda, geo_lat, geo_lon, geo_ciudad, geo_zona, geo_simulada)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       `,
       [
         reg.consulta.slice(0, 120),
@@ -385,6 +398,12 @@ export async function registrarConsulta(reg: RegistroConsulta): Promise<void> {
         reg.citId ?? null,
         reg.ipHash,
         reg.userAgent ? reg.userAgent.slice(0, 200) : null,
+        reg.geo?.celda ?? null,
+        reg.geo?.lat ?? null,
+        reg.geo?.lon ?? null,
+        reg.geo?.ciudad ?? null,
+        reg.geo?.zona ?? null,
+        reg.geo?.simulada ?? false,
       ]
     )
   } catch (error) {

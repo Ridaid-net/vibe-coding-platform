@@ -7,6 +7,7 @@ import {
   normalizarTermino,
   registrarConsulta,
 } from '@/src/services/verificacion.service'
+import { resolverGeoRecortado } from '@/src/services/analytics.service'
 
 export const runtime = 'nodejs'
 
@@ -70,6 +71,11 @@ export async function GET(
     // Busqueda + veredicto (sin datos del propietario).
     const veredicto = await buscarYVerificar(termino)
 
+    // Geo RECORTADO a nivel barrio para el mapa de calor (Hito 8). La semilla
+    // (hash de IP + termino) hace estable la posicion simulada en preview sin
+    // identificar a nadie. La coordenada exacta nunca se persiste.
+    const geo = resolverGeoRecortado(req, `${ipHash}:${termino}`)
+
     // Bitacora anonima (best-effort, no bloquea la respuesta).
     await registrarConsulta({
       consulta: termino,
@@ -78,6 +84,7 @@ export async function GET(
       encontrada: veredicto.encontrada,
       ipHash,
       userAgent: req.headers.get('user-agent'),
+      geo,
     })
 
     return NextResponse.json(veredicto, {

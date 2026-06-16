@@ -5,6 +5,10 @@ import {
   cargarInspectorContexto,
   reportarDiscrepancia,
 } from '@/src/services/inspeccion.service'
+import {
+  registrarDiscrepancia,
+  resolverGeoRecortado,
+} from '@/src/services/analytics.service'
 
 export const runtime = 'nodejs'
 
@@ -45,6 +49,17 @@ export async function POST(
       inspector: ctx,
       aliadoId,
       motivo,
+    })
+
+    // Analitica de seguridad (Hito 8): asienta la discrepancia como un "punto
+    // rojo" geolocalizado a nivel barrio (anonimo, recortado). Best-effort: no
+    // afecta el resultado de la inspeccion.
+    await registrarDiscrepancia({
+      tipo: 'discrepancia',
+      geo: resolverGeoRecortado(req, `disc:${citId}`),
+      citId,
+      inspeccionId: resultado.inspeccionId,
+      detalle: motivo,
     })
 
     return NextResponse.json(resultado, { status: 201 })
