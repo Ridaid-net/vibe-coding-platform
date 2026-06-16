@@ -223,6 +223,8 @@ export interface UsuarioRow {
   proveedor: string
   proveedor_uid: string | null
   email_verificado: boolean
+  /** Sello gubernamental (Hito 9): identidad verificada contra el Estado (MxM). */
+  sello_gubernamental: boolean
   /** Identidad digital del inspector (Hito 11). NULL si no la configuro. */
   wallet_address: string | null
   created_at: string
@@ -241,6 +243,27 @@ export interface SesionRow {
   user_agent: string | null
   ip: string | null
   created_at: string
+}
+
+// ---------------------------------------------------------------------------
+// identidades_federadas (Hito 9: Integracion Institucional MxM)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fila cruda de `identidades_federadas`: mapeo entre una cuenta de RODAID y la
+ * identidad de la persona en un IDP externo (hoy 'mxm'). NUNCA guarda el
+ * access_token del proveedor: solo `external_uid` y los datos oficiales para
+ * pre-llenar el perfil (cuil, dni, nombre) en `datos_oficiales`.
+ */
+export interface IdentidadFederadaRow {
+  id: string
+  user_id: string
+  provider_id: string
+  external_uid: string
+  verified_at: string
+  datos_oficiales: Record<string, unknown>
+  created_at: string
+  updated_at: string
 }
 
 // ---------------------------------------------------------------------------
