@@ -66,6 +66,12 @@ export function Nav() {
             Mi Garaje
           </Link>
           <Link
+            href="/ingresar"
+            className="hidden rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:text-ink sm:inline-flex"
+          >
+            Ingresar
+          </Link>
+          <Link
             href="/publicar"
             className="inline-flex items-center rounded-full bg-ink px-4 py-2 text-sm font-semibold text-paper shadow-sm transition-transform hover:-translate-y-0.5"
           >

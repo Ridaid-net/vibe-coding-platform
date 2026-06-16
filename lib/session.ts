@@ -176,6 +176,40 @@ export async function register(
   return authenticate('/api/v1/auth/registro', { email, password, nombre })
 }
 
+/**
+ * Completa el ingreso con Mendoza por Mí (Hito 9). Tras el callback OIDC, el
+ * servidor entrega un ticket de un solo uso; aca se canjea por la sesion real
+ * (mismos tokens que el login local) y se persiste. La estructura de la sesion
+ * es identica sin importar el origen.
+ */
+export async function completarSesionMxm(ticket: string): Promise<RodaidSession> {
+  const res = await fetch('/api/v1/auth/mxm/sesion', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ticket }),
+  })
+  const data = (await res.json().catch(() => ({}))) as {
+    accessToken?: string
+    refreshToken?: string | null
+    userId?: string
+    nombre?: string
+    rol?: string
+    message?: string
+  }
+  if (!res.ok || !data.accessToken || !data.userId) {
+    throw new Error(data.message ?? 'No se pudo completar el ingreso con Mendoza por Mí.')
+  }
+  const stored: StoredSession = {
+    accessToken: data.accessToken,
+    refreshToken: data.refreshToken ?? null,
+    userId: data.userId,
+    nombre: data.nombre ?? 'Usuario',
+    rol: data.rol ?? null,
+  }
+  write(stored)
+  return toSession(stored)
+}
+
 async function authenticate(
   url: string,
   body: Record<string, unknown>
