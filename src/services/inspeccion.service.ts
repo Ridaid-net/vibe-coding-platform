@@ -7,6 +7,7 @@ import {
   type ProcesarJobResultado,
 } from '@/src/services/validation.service'
 import { anclarCITEnSegundoPlano } from '@/src/services/blockchain.service'
+import { emitirEvento } from '@/src/services/notification.service'
 
 /**
  * RODAID — Hito 11: Portal de Inspectores y Aliados (validacion presencial).
@@ -458,6 +459,7 @@ interface CitInspeccionRow {
   hash_sha256: string | null
   bicicleta_id: string
   numero_serie: string
+  propietario_id: string
 }
 
 async function cargarCitParaInspeccion(
@@ -467,7 +469,7 @@ async function cargarCitParaInspeccion(
   const res = await client.query<CitInspeccionRow>(
     `
       SELECT c.id AS cit_id, c.estado AS cit_estado, c.codigo_cit, c.hash_sha256,
-             b.id AS bicicleta_id, b.numero_serie
+             b.id AS bicicleta_id, b.numero_serie, b.propietario_id
       FROM cits c
       JOIN bicicletas b ON b.id = c.bicicleta_id
       WHERE c.id = $1
@@ -612,6 +614,8 @@ export async function aprobarInspeccionFisica(opts: {
       citEstadoPrevio: cit.cit_estado,
       hashSha256: cit.hash_sha256,
       numeroSerie: cit.numero_serie,
+      propietarioId: cit.propietario_id,
+      codigoCit: cit.codigo_cit,
     }
   })
 
@@ -649,6 +653,21 @@ export async function aprobarInspeccionFisica(opts: {
     if (hashSha256) {
       anclarCITEnSegundoPlano(opts.citId, hashSha256, atomico.numeroSerie)
     }
+  }
+
+  // Hito 10: avisar al propietario que un inspector firmo el acta fisica de su
+  // bici (best-effort). No se notifica si la unidad quedo bloqueada por robo.
+  if (!bloqueada) {
+    await emitirEvento({
+      tipo: 'inspeccion.acta_firmada',
+      usuarioId: atomico.propietarioId,
+      data: {
+        citId: opts.citId,
+        codigoCit: atomico.codigoCit,
+        aliadoNombre: inspector.aliado?.nombre ?? null,
+        inspectorNombre: inspector.nombre,
+      },
+    })
   }
 
   return {

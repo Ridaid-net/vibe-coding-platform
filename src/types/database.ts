@@ -341,3 +341,39 @@ export interface InspeccionFisicaRow {
   metadata: Record<string, unknown>
   created_at: string
 }
+
+// ---------------------------------------------------------------------------
+// Hito 10 — Notificaciones Push (arquitectura de eventos).
+// Fuente: 20260616180000_create_notificaciones_suscripciones.sql
+// ---------------------------------------------------------------------------
+
+/**
+ * Fila cruda de `notificaciones_suscripciones`: la suscripcion de Web Push de un
+ * navegador (opt-in). `p256dh` y `auth` son las claves de cifrado de la Web Push
+ * API (`subscription.keys`).
+ */
+export interface NotificacionSuscripcionRow {
+  id: string
+  usuario_id: string
+  endpoint: string
+  p256dh: string
+  auth: string
+  user_agent: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** Fila cruda de `notificaciones_enviadas` (bitacora de envios por evento). */
+export interface NotificacionEnviadaRow {
+  id: string
+  usuario_id: string | null
+  evento: string
+  canal: string
+  titulo: string
+  cuerpo: string
+  entregas: number
+  exito: boolean
+  error: string | null
+  metadata: Record<string, unknown>
+  created_at: string
+}

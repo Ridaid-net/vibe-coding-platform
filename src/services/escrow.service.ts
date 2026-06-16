@@ -7,6 +7,7 @@ import {
   getModo,
   type MercadoPagoModo,
 } from '@/src/services/mercadopago.service'
+import { emitirEvento } from '@/src/services/notification.service'
 
 /**
  * RODAID PAY — maquina de estados del Escrow.
@@ -442,6 +443,13 @@ export async function iniciarCompra(input: IniciarCompraInput) {
       return txRes.rows[0]
     })
 
+    // Hito 10: avisar al vendedor que recibio una oferta (best-effort).
+    await emitirEvento({
+      tipo: 'marketplace.oferta',
+      usuarioId: pub.vendedor_id,
+      data: { publicacionId: input.publicacionId, publicacionTitulo: pub.titulo },
+    })
+
     return {
       transaccion: mapTransaccion(transaccion),
       pago: {
@@ -488,7 +496,7 @@ export async function webhookPago(
     return { accion: 'IGNORADO', transaccionId: null }
   }
 
-  return withTx(async (client) => {
+  const resultado = (await withTx(async (client) => {
     const tx = await lockTransaccion(client, transaccionId)
 
     if (pago.status === 'approved') {
@@ -567,7 +575,7 @@ export async function webhookPago(
         metadata: { paymentId: input.paymentId, monto: pago.monto },
       })
 
-      return { accion: 'APROBADO', transaccionId }
+      return { accion: 'APROBADO', transaccionId, vendedorId: tx.vendedor_id }
     }
 
     if (pago.status === 'rejected' || pago.status === 'cancelled') {
@@ -590,7 +598,22 @@ export async function webhookPago(
     }
 
     return { accion: 'IGNORADO', transaccionId }
-  })
+  })) as {
+    accion: AccionWebhook
+    transaccionId: string | null
+    vendedorId?: string
+  }
+
+  // Hito 10: fondos retenidos -> avisar al vendedor (best-effort, fuera de la tx).
+  if (resultado.accion === 'APROBADO' && resultado.vendedorId) {
+    await emitirEvento({
+      tipo: 'escrow.fondos_retenidos',
+      usuarioId: resultado.vendedorId,
+      data: { transaccionId: resultado.transaccionId },
+    })
+  }
+
+  return { accion: resultado.accion, transaccionId: resultado.transaccionId }
 }
 
 // ── 3. confirmarEnvio (vendedor) ────────────────────────────────────────────

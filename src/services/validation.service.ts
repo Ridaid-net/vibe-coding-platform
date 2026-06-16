@@ -490,6 +490,7 @@ export async function procesarJob(
           anclar: { hash, serial: datos.numero_serie },
           notificar: {
             destinatario: null,
+            propietarioId: datos.propietario_id,
             citId: datos.cit_id,
             codigoCit: datos.codigo_cit,
             resultado: 'APROBADO',
@@ -549,6 +550,7 @@ export async function procesarJob(
         resultado: 'BLOQUEADO',
         notificar: {
           destinatario: null,
+          propietarioId: datos.propietario_id,
           citId: datos.cit_id,
           codigoCit: datos.codigo_cit,
           resultado: 'BLOQUEADO',
