@@ -9,6 +9,8 @@ import {
   type PublicacionRow,
 } from '@/lib/marketplace'
 
+export const runtime = 'nodejs'
+
 interface FacetaRow {
   valor: string
   conteo: string
