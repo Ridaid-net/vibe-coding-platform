@@ -3,6 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import {
   hashPassword,
   USUARIO_PUBLIC_COLUMNS,
+  type UsuarioRol,
   type UsuarioRow,
 } from '@/lib/auth'
 import { buildAuthResponse } from '@/lib/auth-http'
@@ -14,6 +15,19 @@ export const runtime = 'nodejs'
 interface Body {
   nombre?: unknown
   email?: unknown
+  rol?: unknown
+}
+
+const ROLES_DEMO: ReadonlySet<string> = new Set([
+  'ciclista',
+  'inspector',
+  'admin',
+  'aliado',
+])
+
+/** Wallet de demo (formato EVM) para ejercitar el panel de inspecciones. */
+function walletDemo(): string {
+  return `0x${randomBytes(20).toString('hex')}`
 }
 
 /**
@@ -47,17 +61,26 @@ export async function POST(req: Request) {
       optionalText(body.email)?.toLowerCase() ??
       `demo-${randomUUID().slice(0, 12)}@rodaid.test`
 
+    // Rol de demo (solo fuera de LIVE): permite ejercitar el panel de
+    // inspecciones (Hito 11) con una cuenta inspector/aliado/admin de prueba.
+    const rolPedido = optionalText(body.rol)?.toLowerCase()
+    const rol: UsuarioRol = (
+      rolPedido && ROLES_DEMO.has(rolPedido) ? rolPedido : 'ciclista'
+    ) as UsuarioRol
+    // Los roles de inspeccion reciben una wallet de demo para poder firmar.
+    const wallet = rol === 'inspector' || rol === 'admin' ? walletDemo() : null
+
     // Contrasena aleatoria (no se devuelve): la cuenta demo opera por tokens.
     const passwordHash = await hashPassword(randomBytes(24).toString('base64url'))
 
     const pool = getPool()
     const insert = await pool.query<UsuarioRow>(
       `
-        INSERT INTO usuarios (email, password_hash, rol, datos_perfil, proveedor)
-        VALUES ($1, $2, 'ciclista', $3::jsonb, 'local')
+        INSERT INTO usuarios (email, password_hash, rol, datos_perfil, proveedor, wallet_address)
+        VALUES ($1, $2, $3::usuario_rol, $4::jsonb, 'local', $5)
         RETURNING ${USUARIO_PUBLIC_COLUMNS}, password_hash
       `,
-      [email, passwordHash, JSON.stringify({ nombre, demo: true })]
+      [email, passwordHash, rol, JSON.stringify({ nombre, demo: true }), wallet]
     ).catch(async (error: unknown) => {
       // Email demo ya existente (poco probable): reutilizamos esa cuenta.
       if (
@@ -85,6 +108,7 @@ export async function POST(req: Request) {
       userId: row.id,
       nombre,
       email: row.email,
+      rol: row.rol,
       modo: getModo(),
     })
   } catch (error) {

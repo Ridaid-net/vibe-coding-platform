@@ -34,7 +34,7 @@ export async function GET(
         SELECT
           c.id AS cit_id, c.estado, c.codigo_cit, c.hash_sha256,
           c.fecha_vencimiento, c.bfa_estado, c.bfa_tx_hash, c.bfa_token_id,
-          c.bfa_anclado_en,
+          c.bfa_anclado_en, c.metadata_json,
           b.id AS bici_id, b.marca, b.modelo, b.tipo, b.numero_serie,
           b.anio, b.color, b.rodado, b.talle_cuadro, b.propietario_id,
           u.datos_perfil AS titular_perfil, u.email AS titular_email
@@ -102,6 +102,7 @@ export async function GET(
       },
       titular: nombreTitular(fila),
       verifierUrl: verifierUrl(req, fila.numero_serie),
+      inspeccion: inspeccionNota(fila),
     }
 
     const certificado = await obtenerCertificado(datos)
@@ -133,6 +134,7 @@ interface FilaCert {
   bfa_tx_hash: string | null
   bfa_token_id: string | null
   bfa_anclado_en: string | null
+  metadata_json: Record<string, unknown> | null
   bici_id: string
   marca: string
   modelo: string
@@ -145,6 +147,32 @@ interface FilaCert {
   propietario_id: string
   titular_perfil: Record<string, unknown> | null
   titular_email: string | null
+}
+
+/**
+ * Nota tecnica de la inspeccion fisica (Hito 11) para el certificado. Se lee de
+ * `metadata_json.inspeccionFisica` y solo se incluye si fue una APROBADA.
+ */
+function inspeccionNota(fila: FilaCert): CertificadoDatos['inspeccion'] {
+  const meta = fila.metadata_json ?? {}
+  const insp = (meta as Record<string, unknown>).inspeccionFisica
+  if (!insp || typeof insp !== 'object') return null
+  const i = insp as Record<string, unknown>
+  if (i.resultado !== 'APROBADA') return null
+  const inspector =
+    typeof i.inspectorNombre === 'string' && i.inspectorNombre.trim()
+      ? i.inspectorNombre.trim()
+      : 'Inspector verificado'
+  const taller =
+    typeof i.aliadoNombre === 'string' && i.aliadoNombre.trim()
+      ? i.aliadoNombre.trim()
+      : null
+  return {
+    taller,
+    inspector,
+    firmaHash: typeof i.firmaHash === 'string' ? i.firmaHash : '',
+    aprobadaEn: typeof i.aprobadaEn === 'string' ? i.aprobadaEn : null,
+  }
 }
 
 /** Nombre legible del titular para el documento (privado del propietario). */

@@ -12,6 +12,7 @@
  *   - 20260616130000_create_validaciones_pipeline.sql
  *   - 20260616150000_create_usuarios_sesiones.sql
  *   - 20260616160000_create_logs_verificaciones.sql
+ *   - 20260616170000_create_inspecciones_aliados.sql
  */
 
 // ---------------------------------------------------------------------------
@@ -208,7 +209,7 @@ export function mapCit(row: CitRow): Cit {
 // ---------------------------------------------------------------------------
 
 /** Rol del usuario (enum `usuario_rol` en Postgres). */
-export type UsuarioRol = 'ciclista' | 'inspector' | 'admin'
+export type UsuarioRol = 'ciclista' | 'inspector' | 'admin' | 'aliado'
 
 /** Fila cruda de la tabla `usuarios`. `password_hash` NUNCA se expone a la app. */
 export interface UsuarioRow {
@@ -221,6 +222,8 @@ export interface UsuarioRow {
   proveedor: string
   proveedor_uid: string | null
   email_verificado: boolean
+  /** Identidad digital del inspector (Hito 11). NULL si no la configuro. */
+  wallet_address: string | null
   created_at: string
   updated_at: string
 }
@@ -276,4 +279,65 @@ export interface RateLimitVerificacionRow {
   ip_hash: string
   ventana_inicio: string
   contador: number
+}
+
+// ---------------------------------------------------------------------------
+// Inspecciones / Aliados (Hito 11: Portal de Inspectores y Aliados)
+// ---------------------------------------------------------------------------
+
+/** Estado de una solicitud de aliado (enum `aliado_estado`). */
+export type AliadoEstado = 'pendiente' | 'aprobado' | 'rechazado'
+
+/** Tipo de aliado (enum `aliado_tipo`). */
+export type AliadoTipo = 'taller' | 'tienda' | 'otro'
+
+/** Resultado de una inspeccion fisica (enum `inspeccion_resultado`). */
+export type InspeccionResultado = 'APROBADA' | 'DISCREPANCIA'
+
+/** Fila cruda de la tabla `aliados` (talleres/tiendas). */
+export interface AliadoRow {
+  id: string
+  nombre: string
+  tipo: AliadoTipo
+  email: string
+  telefono: string | null
+  direccion: string | null
+  ciudad: string | null
+  cuit: string | null
+  estado: AliadoEstado
+  usuario_id: string | null
+  datos: Record<string, unknown>
+  solicitado_en: string
+  resuelto_en: string | null
+  resuelto_por: string | null
+  motivo_rechazo: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** Fila cruda de `aliado_servicios` (vinculo bici <-> aliado: alcance). */
+export interface AliadoServicioRow {
+  id: string
+  aliado_id: string
+  bicicleta_id: string
+  tipo_servicio: string
+  detalle: string | null
+  created_at: string
+}
+
+/** Fila cruda de `inspecciones_fisicas` (acta de auditoria de la inspeccion). */
+export interface InspeccionFisicaRow {
+  id: string
+  cit_id: string
+  bicicleta_id: string
+  inspector_id: string
+  aliado_id: string | null
+  resultado: InspeccionResultado
+  inspector_wallet: string
+  firma_hash: string
+  notas: string | null
+  discrepancia_motivo: string | null
+  acelero_pipeline: boolean
+  metadata: Record<string, unknown>
+  created_at: string
 }
