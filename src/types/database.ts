@@ -11,6 +11,7 @@
  *   - 20260616120000_create_bicicletas_cits.sql
  *   - 20260616130000_create_validaciones_pipeline.sql
  *   - 20260616150000_create_usuarios_sesiones.sql
+ *   - 20260616160000_create_logs_verificaciones.sql
  */
 
 // ---------------------------------------------------------------------------
@@ -236,4 +237,43 @@ export interface SesionRow {
   user_agent: string | null
   ip: string | null
   created_at: string
+}
+
+// ---------------------------------------------------------------------------
+// Verificador Publico (Hito 7): logs_verificaciones / rate_limit_verificaciones
+// ---------------------------------------------------------------------------
+
+/** Veredicto semaforico devuelto por el verificador publico. */
+export type VeredictoEstado =
+  | 'SEGURO'
+  | 'ROBADA'
+  | 'EN_VALIDACION'
+  | 'SIN_VERIFICAR'
+  | 'NO_ENCONTRADA'
+
+/** Como se interpreto el termino consultado. */
+export type TipoBusquedaVerificacion = 'serial' | 'cit'
+
+/**
+ * Fila cruda de `logs_verificaciones` (bitacora ANONIMA del verificador). No
+ * contiene datos personales: la IP vive solo como hash (`ip_hash`).
+ */
+export interface LogVerificacionRow {
+  id: string
+  consulta: string
+  tipo_busqueda: TipoBusquedaVerificacion
+  encontrada: boolean
+  veredicto: VeredictoEstado
+  bicicleta_id: string | null
+  cit_id: string | null
+  ip_hash: string | null
+  user_agent: string | null
+  created_at: string
+}
+
+/** Fila cruda de `rate_limit_verificaciones` (contador fixed-window por IP). */
+export interface RateLimitVerificacionRow {
+  ip_hash: string
+  ventana_inicio: string
+  contador: number
 }

@@ -408,6 +408,81 @@ export async function anclarPendientes(limite = 25): Promise<{
   }
 }
 
+// ── Verificacion de coincidencia del hash con la BFA ─────────────────────────
+
+export interface VerificacionHashBFA {
+  /** El hash del CIT coincide con el registro anclado en la BFA. */
+  coincide: boolean
+  modo: BfaModo
+  tokenId: string
+  /** Hash leido de la cadena (ONCHAIN) o el esperado confirmado (STUB). */
+  hashOnchain: string | null
+  motivo?: string
+}
+
+/**
+ * Verifica si la huella SHA-256 de un CIT coincide con la registrada en la BFA.
+ *
+ * - ONCHAIN: lee `citHash(tokenId)` del contrato y lo compara con el hash
+ *   esperado (el almacenado en `cits.hash_sha256`). Es la verificacion fuerte:
+ *   confirma que lo anclado en la cadena es exactamente la identidad de la bici.
+ * - STUB (preview sin credenciales de BFA): no hay cadena que consultar; se
+ *   considera coincidente cuando hay un hash anclado, reproduciendo el veredicto
+ *   end-to-end.
+ *
+ * Best-effort: nunca lanza. Ante un error de red devuelve `coincide: false` con
+ * el motivo, para que el verificador publico no se caiga por la BFA.
+ */
+export async function verificarHashEnBFA(
+  serial: string | number | bigint,
+  hashEsperado: string | null,
+  opciones: { ancladoEnDb?: boolean } = {}
+): Promise<VerificacionHashBFA> {
+  const modo = getBfaModo()
+  const tokenId = serialToTokenId(serial)
+
+  if (!hashEsperado) {
+    return { coincide: false, modo, tokenId: tokenId.toString(), hashOnchain: null, motivo: 'El CIT no tiene huella SHA-256.' }
+  }
+
+  if (modo === 'STUB') {
+    // Sin cadena real: el anclaje registrado en la base es la fuente de verdad.
+    const coincide = opciones.ancladoEnDb === true
+    return {
+      coincide,
+      modo,
+      tokenId: tokenId.toString(),
+      hashOnchain: coincide ? hashEsperado : null,
+      motivo: coincide ? undefined : 'Todavia no anclado en la BFA.',
+    }
+  }
+
+  try {
+    const provider = new JsonRpcProvider(rpcUrl()!)
+    const contract = new Contract(contractAddress()!, RODAID_CIT_ABI, provider)
+    const onchain = (await contract.citHash(tokenId)) as string
+    const coincide =
+      typeof onchain === 'string' &&
+      onchain.length > 0 &&
+      onchain.toLowerCase() === hashEsperado.toLowerCase()
+    return {
+      coincide,
+      modo,
+      tokenId: tokenId.toString(),
+      hashOnchain: onchain || null,
+      motivo: coincide ? undefined : 'El hash on-chain no coincide o aun no fue minteado.',
+    }
+  } catch (error) {
+    return {
+      coincide: false,
+      modo,
+      tokenId: tokenId.toString(),
+      hashOnchain: null,
+      motivo: mensajeError(error),
+    }
+  }
+}
+
 // ── Lock / Unlock: marcar una bici como 'denunciada' (robo) ──────────────────
 
 export interface DenunciaResultado {

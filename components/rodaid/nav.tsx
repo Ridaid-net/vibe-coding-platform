@@ -48,6 +48,12 @@ export function Nav() {
 
         <div className="flex items-center gap-2">
           <Link
+            href="/verificar"
+            className="hidden rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:text-ink sm:inline-flex"
+          >
+            Verificar
+          </Link>
+          <Link
             href="/garaje"
             className="hidden rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:text-ink sm:inline-flex"
           >
