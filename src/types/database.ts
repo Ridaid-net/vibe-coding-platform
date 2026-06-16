@@ -10,6 +10,7 @@
  * Fuente de verdad: netlify/database/migrations/
  *   - 20260616120000_create_bicicletas_cits.sql
  *   - 20260616130000_create_validaciones_pipeline.sql
+ *   - 20260616150000_create_usuarios_sesiones.sql
  */
 
 // ---------------------------------------------------------------------------
@@ -60,7 +61,7 @@ export interface BicicletaRow {
   anio: number | null
   color: string | null
   foto_url: string | null
-  /** FK logica a `usuarios` (la tabla se agrega en el Hito 1). */
+  /** FK a `usuarios(id)` (constraint agregada en el Hito 1). */
   propietario_id: string
   /** NUMERIC(4,1): llega como string desde Postgres. */
   rodado: string | null
@@ -199,4 +200,40 @@ export function mapCit(row: CitRow): Cit {
     bfaIntentos: row.bfa_intentos,
     bfaUltimoError: row.bfa_ultimo_error,
   }
+}
+
+// ---------------------------------------------------------------------------
+// usuarios / sesiones (Hito 1: Autenticacion Definitiva)
+// ---------------------------------------------------------------------------
+
+/** Rol del usuario (enum `usuario_rol` en Postgres). */
+export type UsuarioRol = 'ciclista' | 'inspector' | 'admin'
+
+/** Fila cruda de la tabla `usuarios`. `password_hash` NUNCA se expone a la app. */
+export interface UsuarioRow {
+  id: string
+  email: string
+  password_hash: string | null
+  rol: UsuarioRol
+  datos_perfil: Record<string, unknown>
+  /** 'local' (email + contrasena) o un proveedor federado (p. ej. 'mxm'). */
+  proveedor: string
+  proveedor_uid: string | null
+  email_verificado: boolean
+  created_at: string
+  updated_at: string
+}
+
+/** Fila cruda de la tabla `sesiones` (RefreshTokens). */
+export interface SesionRow {
+  id: string
+  usuario_id: string
+  refresh_token_hash: string
+  emitido_en: string
+  expira_en: string
+  revocado_en: string | null
+  reemplazada_por: string | null
+  user_agent: string | null
+  ip: string | null
+  created_at: string
 }
