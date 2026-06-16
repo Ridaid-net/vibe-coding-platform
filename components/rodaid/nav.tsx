@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { RodaidLogo } from './logo'
 import { useEffect, useState } from 'react'
 
@@ -46,18 +47,18 @@ export function Nav() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <a
-            href="#comprar"
+          <Link
+            href="/garaje"
             className="hidden rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:text-ink sm:inline-flex"
           >
-            Ingresar
-          </a>
-          <a
-            href="#vender"
+            Mi Garaje
+          </Link>
+          <Link
+            href="/publicar"
             className="inline-flex items-center rounded-full bg-ink px-4 py-2 text-sm font-semibold text-paper shadow-sm transition-transform hover:-translate-y-0.5"
           >
             Publicar mi bici
-          </a>
+          </Link>
         </div>
       </div>
     </header>

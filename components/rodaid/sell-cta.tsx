@@ -1,4 +1,5 @@
 import { ArrowRight, Camera, Fingerprint, BadgeDollarSign } from 'lucide-react'
+import Link from 'next/link'
 
 const PASOS = [
   {
@@ -35,13 +36,13 @@ export function SellCta() {
               Publicar es gratis. Cobrás una comisión transparente solo cuando
               la venta se concreta — sin sorpresas, sin letra chica.
             </p>
-            <a
-              href="#comprar"
+            <Link
+              href="/publicar"
               className="group mt-8 inline-flex items-center gap-2 rounded-full bg-ink px-7 py-4 text-sm font-semibold text-paper transition-transform hover:-translate-y-0.5"
             >
               Publicar mi bicicleta
               <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
-            </a>
+            </Link>
           </div>
 
           <ol className="space-y-3">

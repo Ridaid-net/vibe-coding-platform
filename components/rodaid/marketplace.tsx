@@ -374,7 +374,7 @@ function EmptyState({
         </button>
       ) : (
         <a
-          href="#vender"
+          href="/publicar"
           className="mt-6 inline-flex items-center gap-1.5 rounded-full bg-ink px-5 py-2.5 text-sm font-semibold text-paper transition-colors hover:bg-ink-soft"
         >
           Publicar mi bici
