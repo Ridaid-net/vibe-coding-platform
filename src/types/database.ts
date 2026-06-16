@@ -43,6 +43,9 @@ export type ValidacionEstado =
 /** Resultado final del cross-reference (decision del pipeline). */
 export type ResultadoValidacion = 'APROBADO' | 'BLOQUEADO'
 
+/** Estado del anclaje on-chain del CIT en la BFA (enum `bfa_anclaje_estado`). */
+export type BfaAnclajeEstado = 'pendiente' | 'anclando' | 'anclado' | 'error'
+
 // ---------------------------------------------------------------------------
 // bicicletas
 // ---------------------------------------------------------------------------
@@ -104,6 +107,14 @@ export interface CitRow {
   fecha_vencimiento: string
   creado_en: string
   actualizado_en: string
+  // Anclaje en la BFA (Hito 4).
+  bfa_estado: BfaAnclajeEstado
+  bfa_tx_hash: string | null
+  /** uint256 del tokenId; NUMERIC(78,0) llega como string desde Postgres. */
+  bfa_token_id: string | null
+  bfa_anclado_en: string | null
+  bfa_intentos: number
+  bfa_ultimo_error: string | null
 }
 
 /** CIT normalizado para uso en la aplicacion. */
@@ -117,6 +128,13 @@ export interface Cit {
   fechaVencimiento: string
   creadoEn: string
   actualizadoEn: string
+  // Anclaje en la BFA (Hito 4).
+  bfaEstado: BfaAnclajeEstado
+  bfaTxHash: string | null
+  bfaTokenId: string | null
+  bfaAncladoEn: string | null
+  bfaIntentos: number
+  bfaUltimoError: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -174,5 +192,11 @@ export function mapCit(row: CitRow): Cit {
     fechaVencimiento: row.fecha_vencimiento,
     creadoEn: row.creado_en,
     actualizadoEn: row.actualizado_en,
+    bfaEstado: row.bfa_estado,
+    bfaTxHash: row.bfa_tx_hash,
+    bfaTokenId: row.bfa_token_id,
+    bfaAncladoEn: row.bfa_anclado_en,
+    bfaIntentos: row.bfa_intentos,
+    bfaUltimoError: row.bfa_ultimo_error,
   }
 }
