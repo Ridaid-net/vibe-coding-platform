@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { ApiError, getPool, type DbClient } from '@/lib/marketplace'
 import type { UsuarioRol } from '@/lib/auth'
 import {
@@ -8,6 +7,13 @@ import {
 } from '@/src/services/validation.service'
 import { anclarCITEnSegundoPlano } from '@/src/services/blockchain.service'
 import { emitirEvento } from '@/src/services/notification.service'
+import {
+  firmarActa,
+  firmaHashActa,
+  verificarFirmaCanonica,
+  type ActaFirmada,
+  type ActaPayload,
+} from '@/src/services/acta-firma.service'
 
 /**
  * RODAID — Hito 11: Portal de Inspectores y Aliados (validacion presencial).
@@ -29,7 +35,13 @@ import { emitirEvento } from '@/src/services/notification.service'
  *
  * Identidad digital:
  *   - El inspector DEBE tener `wallet_address` en su perfil. La aprobacion queda
- *     firmada/vinculada a esa wallet (`firma_hash` = SHA-256 del acta canonica).
+ *     vinculada a esa wallet y, ademas, FIRMADA DIGITALMENTE: el acta canonica se
+ *     firma con la Web Crypto API usando la clave de un certificado X.509 cargado
+ *     desde un bundle PKCS#12 (ver `acta-firma.service.ts`). La firma + el
+ *     certificado se guardan en el acta para verificacion offline (validez legal).
+ *
+ * Trazabilidad (Hito 11): cada validacion queda asociada a su `inspector_id` y a
+ * su `taller_id` (el aliado bajo el que se inspecciono, si aplica).
  */
 
 // ── Contexto del inspector ───────────────────────────────────────────────────
@@ -61,11 +73,11 @@ async function withTx<T>(fn: (client: DbClient) => Promise<T>): Promise<T> {
 }
 
 /**
- * "Firma" del acta de inspeccion: SHA-256 del payload canonico. Vincula la
- * aprobacion a la identidad digital (wallet) del inspector y es verificable
- * recomputando el hash sobre los mismos datos.
+ * Arma el payload canonico del acta (lo que se firma y verifica). Centraliza la
+ * construccion para que la firma digital y la huella SHA-256 cubran exactamente
+ * los mismos datos.
  */
-export function firmaActa(payload: {
+function buildActaPayload(opts: {
   citId: string
   codigoCit: string
   numeroSerie: string
@@ -73,21 +85,20 @@ export function firmaActa(payload: {
   resultado: 'APROBADA' | 'DISCREPANCIA'
   inspectorId: string
   walletAddress: string
-  aliadoId: string | null
+  tallerId: string | null
   emitidoEn: string
-}): string {
-  const canonico = JSON.stringify({
-    aliadoId: payload.aliadoId,
-    citId: payload.citId,
-    codigoCit: payload.codigoCit,
-    emitidoEn: payload.emitidoEn,
-    hashIdentidad: payload.hashIdentidad,
-    inspectorId: payload.inspectorId,
-    numeroSerie: payload.numeroSerie,
-    resultado: payload.resultado,
-    walletAddress: payload.walletAddress,
-  })
-  return createHash('sha256').update(canonico).digest('hex')
+}): ActaPayload {
+  return {
+    citId: opts.citId,
+    codigoCit: opts.codigoCit,
+    numeroSerie: opts.numeroSerie,
+    hashIdentidad: opts.hashIdentidad,
+    resultado: opts.resultado,
+    inspectorId: opts.inspectorId,
+    walletAddress: opts.walletAddress,
+    tallerId: opts.tallerId,
+    emitidoEn: opts.emitidoEn,
+  }
 }
 
 // ── Resolucion del aliado del usuario y del alcance ──────────────────────────
@@ -235,8 +246,17 @@ export interface ActaInspeccion {
   resultado: 'APROBADA' | 'DISCREPANCIA'
   inspectorId: string
   aliadoId: string | null
+  tallerId: string | null
   inspectorWallet: string
   firmaHash: string
+  /** Firma digital (Web Crypto / PKCS#12), si el acta fue firmada. */
+  firma: {
+    algoritmo: string
+    valor: string
+    certSerie: string | null
+    certFingerprint: string | null
+    modo: string | null
+  } | null
   notas: string | null
   discrepanciaMotivo: string | null
   aceleroPipeline: boolean
@@ -362,8 +382,10 @@ export async function buscarParaInspeccion(
   // Historial de actas de inspeccion de la bici.
   const actasRes = await getPool().query<ActaRow>(
     `
-      SELECT id, resultado, inspector_id, aliado_id, inspector_wallet,
-             firma_hash, notas, discrepancia_motivo, acelero_pipeline, created_at
+      SELECT id, resultado, inspector_id, aliado_id, taller_id, inspector_wallet,
+             firma_hash, firma_algoritmo, firma_valor, firma_cert_serie,
+             firma_cert_fingerprint, firma_modo, notas, discrepancia_motivo,
+             acelero_pipeline, created_at
       FROM inspecciones_fisicas
       WHERE bicicleta_id = $1
       ORDER BY created_at DESC
@@ -427,8 +449,14 @@ interface ActaRow {
   resultado: 'APROBADA' | 'DISCREPANCIA'
   inspector_id: string
   aliado_id: string | null
+  taller_id: string | null
   inspector_wallet: string
   firma_hash: string
+  firma_algoritmo: string | null
+  firma_valor: string | null
+  firma_cert_serie: string | null
+  firma_cert_fingerprint: string | null
+  firma_modo: string | null
   notas: string | null
   discrepancia_motivo: string | null
   acelero_pipeline: boolean
@@ -441,8 +469,19 @@ function mapActa(r: ActaRow): ActaInspeccion {
     resultado: r.resultado,
     inspectorId: r.inspector_id,
     aliadoId: r.aliado_id,
+    tallerId: r.taller_id,
     inspectorWallet: r.inspector_wallet,
     firmaHash: r.firma_hash,
+    firma:
+      r.firma_algoritmo && r.firma_valor
+        ? {
+            algoritmo: r.firma_algoritmo,
+            valor: r.firma_valor,
+            certSerie: r.firma_cert_serie,
+            certFingerprint: r.firma_cert_fingerprint,
+            modo: r.firma_modo,
+          }
+        : null,
     notas: r.notas,
     discrepanciaMotivo: r.discrepancia_motivo,
     aceleroPipeline: r.acelero_pipeline,
@@ -490,6 +529,17 @@ export interface AprobacionResultado {
   inspeccionId: string
   resultado: 'APROBADA'
   firmaHash: string
+  /** Firma digital del acta (Web Crypto / PKCS#12). */
+  firma: {
+    algoritmo: string
+    valor: string
+    modo: string
+    certSerie: string
+    certFingerprint: string
+    commonName: string
+  }
+  tallerId: string | null
+  inspectorId: string
   aceleroPipeline: boolean
   /** Estado final del CIT tras correr el pipeline acelerado. */
   citEstado: string
@@ -525,6 +575,7 @@ export async function aprobarInspeccionFisica(opts: {
   }
 
   const emitidoEn = new Date().toISOString()
+  const tallerId = opts.aliadoId
 
   const atomico = await withTx(async (client) => {
     const cit = await cargarCitParaInspeccion(client, opts.citId)
@@ -538,7 +589,7 @@ export async function aprobarInspeccionFisica(opts: {
       )
     }
 
-    const firmaHash = firmaActa({
+    const payload = buildActaPayload({
       citId: cit.cit_id,
       codigoCit: cit.codigo_cit,
       numeroSerie: cit.numero_serie,
@@ -546,17 +597,23 @@ export async function aprobarInspeccionFisica(opts: {
       resultado: 'APROBADA',
       inspectorId: inspector.id,
       walletAddress: wallet,
-      aliadoId: opts.aliadoId,
+      tallerId,
       emitidoEn,
     })
+    const firmaHash = firmaHashActa(payload)
+    // Firma digital del acta con la Web Crypto API (clave del bundle PKCS#12).
+    const firma: ActaFirmada = await firmarActa(payload)
 
-    // 1. Acta de inspeccion (auditoria + firma).
+    // 1. Acta de inspeccion (auditoria + firma digital).
     const inserted = await client.query<{ id: string }>(
       `
         INSERT INTO inspecciones_fisicas
-          (cit_id, bicicleta_id, inspector_id, aliado_id, resultado,
-           inspector_wallet, firma_hash, notas, acelero_pipeline, metadata)
-        VALUES ($1, $2, $3, $4, 'APROBADA', $5, $6, $7, TRUE, $8::jsonb)
+          (cit_id, bicicleta_id, inspector_id, aliado_id, taller_id, resultado,
+           inspector_wallet, firma_hash, firma_algoritmo, firma_valor,
+           firma_certificado, firma_cert_serie, firma_cert_fingerprint, firma_modo,
+           notas, acelero_pipeline, metadata)
+        VALUES ($1, $2, $3, $4, $5, 'APROBADA', $6, $7, $8, $9, $10, $11, $12, $13,
+                $14, TRUE, $15::jsonb)
         RETURNING id
       `,
       [
@@ -564,10 +621,21 @@ export async function aprobarInspeccionFisica(opts: {
         cit.bicicleta_id,
         inspector.id,
         opts.aliadoId,
+        tallerId,
         wallet,
         firmaHash,
+        firma.algoritmo,
+        firma.valor,
+        firma.certificadoPem,
+        firma.certSerie,
+        firma.certFingerprint,
+        firma.modo,
         opts.notas ?? null,
-        JSON.stringify({ emitidoEn, inspectorNombre: inspector.nombre }),
+        JSON.stringify({
+          emitidoEn,
+          inspectorNombre: inspector.nombre,
+          canonico: firma.canonico,
+        }),
       ]
     )
 
@@ -588,8 +656,13 @@ export async function aprobarInspeccionFisica(opts: {
             inspectorNombre: inspector.nombre,
             walletAddress: wallet,
             aliadoId: opts.aliadoId,
+            tallerId,
             aliadoNombre: inspector.aliado?.nombre ?? null,
             firmaHash,
+            firmaAlgoritmo: firma.algoritmo,
+            firmaModo: firma.modo,
+            certSerie: firma.certSerie,
+            certFingerprint: firma.certFingerprint,
             aprobadaEn: emitidoEn,
           },
         }),
@@ -610,6 +683,7 @@ export async function aprobarInspeccionFisica(opts: {
     return {
       inspeccionId: inserted.rows[0].id,
       firmaHash,
+      firma,
       jobId: jobRes.rows[0]?.id ?? null,
       citEstadoPrevio: cit.cit_estado,
       hashSha256: cit.hash_sha256,
@@ -674,6 +748,16 @@ export async function aprobarInspeccionFisica(opts: {
     inspeccionId: atomico.inspeccionId,
     resultado: 'APROBADA',
     firmaHash: atomico.firmaHash,
+    firma: {
+      algoritmo: atomico.firma.algoritmo,
+      valor: atomico.firma.valor,
+      modo: atomico.firma.modo,
+      certSerie: atomico.firma.certSerie,
+      certFingerprint: atomico.firma.certFingerprint,
+      commonName: atomico.firma.commonName,
+    },
+    tallerId,
+    inspectorId: inspector.id,
     aceleroPipeline: true,
     citEstado,
     bloqueadaPorSeguridad: bloqueada,
@@ -687,6 +771,16 @@ export interface DiscrepanciaResultado {
   inspeccionId: string
   resultado: 'DISCREPANCIA'
   firmaHash: string
+  firma: {
+    algoritmo: string
+    valor: string
+    modo: string
+    certSerie: string
+    certFingerprint: string
+    commonName: string
+  }
+  tallerId: string | null
+  inspectorId: string
   citEstado: string
 }
 
@@ -716,11 +810,12 @@ export async function reportarDiscrepancia(opts: {
   }
 
   const emitidoEn = new Date().toISOString()
+  const tallerId = opts.aliadoId
 
   return withTx(async (client) => {
     const cit = await cargarCitParaInspeccion(client, opts.citId)
 
-    const firmaHash = firmaActa({
+    const payload = buildActaPayload({
       citId: cit.cit_id,
       codigoCit: cit.codigo_cit,
       numeroSerie: cit.numero_serie,
@@ -728,16 +823,21 @@ export async function reportarDiscrepancia(opts: {
       resultado: 'DISCREPANCIA',
       inspectorId: inspector.id,
       walletAddress: wallet,
-      aliadoId: opts.aliadoId,
+      tallerId,
       emitidoEn,
     })
+    const firmaHash = firmaHashActa(payload)
+    const firma: ActaFirmada = await firmarActa(payload)
 
     const inserted = await client.query<{ id: string }>(
       `
         INSERT INTO inspecciones_fisicas
-          (cit_id, bicicleta_id, inspector_id, aliado_id, resultado,
-           inspector_wallet, firma_hash, discrepancia_motivo, metadata)
-        VALUES ($1, $2, $3, $4, 'DISCREPANCIA', $5, $6, $7, $8::jsonb)
+          (cit_id, bicicleta_id, inspector_id, aliado_id, taller_id, resultado,
+           inspector_wallet, firma_hash, firma_algoritmo, firma_valor,
+           firma_certificado, firma_cert_serie, firma_cert_fingerprint, firma_modo,
+           discrepancia_motivo, metadata)
+        VALUES ($1, $2, $3, $4, $5, 'DISCREPANCIA', $6, $7, $8, $9, $10, $11, $12,
+                $13, $14, $15::jsonb)
         RETURNING id
       `,
       [
@@ -745,10 +845,21 @@ export async function reportarDiscrepancia(opts: {
         cit.bicicleta_id,
         inspector.id,
         opts.aliadoId,
+        tallerId,
         wallet,
         firmaHash,
+        firma.algoritmo,
+        firma.valor,
+        firma.certificadoPem,
+        firma.certSerie,
+        firma.certFingerprint,
+        firma.modo,
         motivo,
-        JSON.stringify({ emitidoEn, inspectorNombre: inspector.nombre }),
+        JSON.stringify({
+          emitidoEn,
+          inspectorNombre: inspector.nombre,
+          canonico: firma.canonico,
+        }),
       ]
     )
 
@@ -770,8 +881,13 @@ export async function reportarDiscrepancia(opts: {
             inspectorNombre: inspector.nombre,
             walletAddress: wallet,
             aliadoId: opts.aliadoId,
+            tallerId,
             aliadoNombre: inspector.aliado?.nombre ?? null,
             firmaHash,
+            firmaAlgoritmo: firma.algoritmo,
+            firmaModo: firma.modo,
+            certSerie: firma.certSerie,
+            certFingerprint: firma.certFingerprint,
             motivo,
             reportadaEn: emitidoEn,
           },
@@ -796,7 +912,112 @@ export async function reportarDiscrepancia(opts: {
       inspeccionId: inserted.rows[0].id,
       resultado: 'DISCREPANCIA' as const,
       firmaHash,
+      firma: {
+        algoritmo: firma.algoritmo,
+        valor: firma.valor,
+        modo: firma.modo,
+        certSerie: firma.certSerie,
+        certFingerprint: firma.certFingerprint,
+        commonName: firma.commonName,
+      },
+      tallerId,
+      inspectorId: inspector.id,
       citEstado: 'rechazado',
     }
   })
+}
+
+// ── Verificacion de la firma de un acta ──────────────────────────────────────
+
+export interface VerificacionActa {
+  actaId: string
+  resultado: 'APROBADA' | 'DISCREPANCIA'
+  valido: boolean
+  algoritmo: string | null
+  modo: string | null
+  certSerie: string | null
+  certFingerprint: string | null
+  commonName: string | null
+  inspectorId: string
+  tallerId: string | null
+  emitidoEn: string | null
+}
+
+interface ActaVerificacionRow {
+  id: string
+  resultado: 'APROBADA' | 'DISCREPANCIA'
+  inspector_id: string
+  taller_id: string | null
+  firma_algoritmo: string | null
+  firma_valor: string | null
+  firma_certificado: string | null
+  firma_cert_serie: string | null
+  firma_cert_fingerprint: string | null
+  firma_modo: string | null
+  metadata: { canonico?: string; emitidoEn?: string } | null
+  created_at: string
+}
+
+/**
+ * Verifica la firma digital de un acta de inspeccion (validez legal). Recompone
+ * el texto canonico firmado (guardado en el acta) y valida la firma con la Web
+ * Crypto API contra el certificado embebido — verificacion offline autocontenida.
+ * Respeta el alcance del inspector: un aliado solo verifica sus actas.
+ */
+export async function verificarActaPorId(
+  actaId: string,
+  ctx: InspectorContexto
+): Promise<VerificacionActa> {
+  const res = await getPool().query<ActaVerificacionRow & { bicicleta_id: string }>(
+    `
+      SELECT id, resultado, inspector_id, taller_id, bicicleta_id,
+             firma_algoritmo, firma_valor, firma_certificado, firma_cert_serie,
+             firma_cert_fingerprint, firma_modo, metadata, created_at
+      FROM inspecciones_fisicas
+      WHERE id = $1
+      LIMIT 1
+    `,
+    [actaId]
+  )
+  const row = res.rows[0]
+  if (!row) {
+    throw new ApiError(404, 'ACTA_NOT_FOUND', 'No encontramos el acta a verificar.')
+  }
+
+  const { autorizado } = await puedeInspeccionar(ctx, row.bicicleta_id)
+  if (!autorizado) {
+    throw new ApiError(
+      403,
+      'FUERA_DE_ALCANCE',
+      'No podes verificar el acta de una bicicleta fuera de tu alcance.'
+    )
+  }
+
+  const canonico = row.metadata?.canonico ?? null
+  const base: VerificacionActa = {
+    actaId: row.id,
+    resultado: row.resultado,
+    valido: false,
+    algoritmo: row.firma_algoritmo,
+    modo: row.firma_modo,
+    certSerie: row.firma_cert_serie,
+    certFingerprint: row.firma_cert_fingerprint,
+    commonName: null,
+    inspectorId: row.inspector_id,
+    tallerId: row.taller_id,
+    emitidoEn: row.metadata?.emitidoEn ?? row.created_at,
+  }
+
+  if (!canonico || !row.firma_valor || !row.firma_certificado) {
+    // Acta historica sin firma digital (solo huella SHA-256): no verificable aqui.
+    return base
+  }
+
+  const verif = await verificarFirmaCanonica({
+    canonico,
+    firmaBase64: row.firma_valor,
+    certificadoPem: row.firma_certificado,
+  })
+
+  return { ...base, valido: verif.valido, commonName: verif.commonName }
 }

@@ -10,6 +10,7 @@ import {
   Search,
   ShieldAlert,
   ShieldCheck,
+  Stamp,
   Wallet,
   Zap,
 } from 'lucide-react'
@@ -21,8 +22,11 @@ import {
   fetchContexto,
   guardarWallet,
   reportarDiscrepancia,
+  verificarActa,
+  type ActaInspeccion,
   type BusquedaInspeccion,
   type InspectorContextoCliente,
+  type VerificacionRespuesta,
 } from '@/lib/inspecciones'
 
 const ROL_LABEL: Record<string, string> = {
@@ -413,8 +417,8 @@ function Acciones({
             'El cross-reference detectó una denuncia. La bici quedó BLOQUEADA.',
         })
       } else {
-        toast.success('Inspección aprobada', {
-          description: `Pipeline acelerado. CIT: ${r.citEstado}. Firma ${r.firmaHash.slice(0, 10)}…`,
+        toast.success('Inspección aprobada y firmada', {
+          description: `Acta firmada (${r.firma.algoritmo}). Pipeline acelerado. CIT: ${r.citEstado}.`,
         })
       }
       setNotas('')
@@ -550,39 +554,102 @@ function Historial({ actas }: { actas: BusquedaInspeccion['actas'] }) {
       </p>
       <ul className="mt-3 space-y-2">
         {actas.map((a) => (
-          <li
-            key={a.id}
-            className="flex flex-wrap items-center gap-2 rounded-xl border border-ink/10 bg-paper-dim/30 px-3 py-2 text-xs"
-          >
-            <span
-              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold ${
-                a.resultado === 'APROBADA'
-                  ? 'bg-lime/30 text-ink'
-                  : 'bg-clay/15 text-clay'
-              }`}
-            >
-              {a.resultado === 'APROBADA' ? (
-                <ShieldCheck className="size-3" />
-              ) : (
-                <AlertTriangle className="size-3" />
-              )}
-              {a.resultado}
-            </span>
-            <span className="text-slate-warm">
-              {new Date(a.createdAt).toLocaleString('es-AR')}
-            </span>
-            {a.aceleroPipeline && (
-              <span className="inline-flex items-center gap-1 text-lime-deep">
-                <Zap className="size-3" /> aceleró el pipeline
-              </span>
-            )}
-            <code className="ml-auto font-mono text-[0.65rem] text-ink/60">
-              firma {a.firmaHash.slice(0, 12)}…
-            </code>
-          </li>
+          <ActaItem key={a.id} acta={a} />
         ))}
       </ul>
     </div>
+  )
+}
+
+function ActaItem({ acta: a }: { acta: ActaInspeccion }) {
+  const [verif, setVerif] = useState<VerificacionRespuesta | null>(null)
+  const [verificando, setVerificando] = useState(false)
+
+  const verificar = async () => {
+    if (verificando) return
+    setVerificando(true)
+    try {
+      const r = await verificarActa(a.id)
+      setVerif(r)
+      if (r.valido) {
+        toast.success('Firma válida', {
+          description: `Acta firmada por ${r.commonName ?? 'la autoridad'} (serie ${r.certSerie ?? '—'}).`,
+        })
+      } else {
+        toast.error('Firma inválida o no verificable', {
+          description: 'El acta no tiene una firma digital válida.',
+        })
+      }
+    } catch (err) {
+      toast.error('No pudimos verificar el acta', {
+        description: (err as Error).message,
+      })
+    } finally {
+      setVerificando(false)
+    }
+  }
+
+  return (
+    <li className="rounded-xl border border-ink/10 bg-paper-dim/30 px-3 py-2 text-xs">
+      <div className="flex flex-wrap items-center gap-2">
+        <span
+          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold ${
+            a.resultado === 'APROBADA' ? 'bg-lime/30 text-ink' : 'bg-clay/15 text-clay'
+          }`}
+        >
+          {a.resultado === 'APROBADA' ? (
+            <ShieldCheck className="size-3" />
+          ) : (
+            <AlertTriangle className="size-3" />
+          )}
+          {a.resultado}
+        </span>
+        <span className="text-slate-warm">
+          {new Date(a.createdAt).toLocaleString('es-AR')}
+        </span>
+        {a.aceleroPipeline && (
+          <span className="inline-flex items-center gap-1 text-lime-deep">
+            <Zap className="size-3" /> aceleró el pipeline
+          </span>
+        )}
+        {a.firma && (
+          <button
+            onClick={verificar}
+            disabled={verificando}
+            className="ml-auto inline-flex items-center gap-1 rounded-full border border-ink/15 bg-white px-2.5 py-1 font-semibold text-ink/80 transition-colors hover:border-ink/40 disabled:opacity-50"
+          >
+            {verificando ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : verif ? (
+              verif.valido ? (
+                <ShieldCheck className="size-3 text-lime-deep" />
+              ) : (
+                <ShieldAlert className="size-3 text-clay" />
+              )
+            ) : (
+              <Stamp className="size-3" />
+            )}
+            {verif ? (verif.valido ? 'Firma válida' : 'Firma inválida') : 'Verificar firma'}
+          </button>
+        )}
+      </div>
+
+      {a.firma ? (
+        <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[0.65rem] text-ink/60">
+          <span>{a.firma.algoritmo}</span>
+          {a.firma.certSerie && <span>cert {a.firma.certSerie.slice(0, 14)}…</span>}
+          {a.firma.modo && (
+            <span className="rounded bg-white/70 px-1.5 py-0.5 not-italic">
+              {a.firma.modo === 'PKCS12' ? 'PKCS#12' : a.firma.modo}
+            </span>
+          )}
+        </p>
+      ) : (
+        <p className="mt-1.5 font-mono text-[0.65rem] text-ink/50">
+          firma {a.firmaHash.slice(0, 16)}…
+        </p>
+      )}
+    </li>
   )
 }
 
