@@ -2,22 +2,28 @@ import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { ApiError, getPool, jsonError, requireUser } from '@/lib/marketplace'
 import { getModo } from '@/src/services/mercadopago.service'
+import {
+  encolarValidacion,
+  procesarJob,
+} from '@/src/services/validation.service'
 
 export const runtime = 'nodejs'
 
 /**
- * POST /api/v1/bicicletas/[id]/verificar — Solicitar verificacion de identidad
- * (CIT) de una bicicleta.
+ * POST /api/v1/bicicletas/[id]/verificar — Solicitar la verificacion de
+ * identidad (CIT) de una bicicleta e iniciar el Pipeline de Validacion de 72hs.
  *
- * Reduce la friccion en el momento de la venta: en lugar de obligar al usuario
- * a un tramite externo, desde "Mi Garaje" (o el modal rapido del flujo de
- * publicacion) puede pedir la verificacion de su bici.
+ * Flujo (Hito 5):
+ *   1. Crea el CIT en estado 'pendiente'.
+ *   2. ENCOLA el cit_id en `cola_validaciones` (worker espera 72hs y corre el
+ *      cross-reference contra el Ministerio de Seguridad).
+ *   3. La decision (activo / bloqueado) la toma el worker, no este endpoint.
  *
- * Como el sistema de cuentas y el peritaje real son hitos posteriores, este
- * endpoint sigue el mismo criterio que la sesion de prueba del checkout: fuera
- * del modo LIVE de MercadoPago (STUB/SANDBOX) emite un CIT 'activo' al instante
- * para poder ejercitar el flujo de publicacion de punta a punta. En LIVE crea
- * un CIT 'pendiente' que queda a la espera del peritaje real.
+ * Para no romper el flujo de demo de los hitos anteriores (publicar de punta a
+ * punta sin esperar 72hs), fuera del modo LIVE de MercadoPago el pipeline se
+ * ejecuta INLINE al instante (misma logica, ventana ignorada): el CIT queda
+ * 'activo' o 'bloqueado' en la misma solicitud. En LIVE queda 'pendiente' a la
+ * espera del worker programado.
  */
 export async function POST(
   req: Request,
@@ -26,6 +32,8 @@ export async function POST(
   const pool = getPool()
   const client = await pool.connect()
 
+  let citId: string
+  let codigoCit: string
   try {
     const { id } = await params
     const user = await requireUser(req)
@@ -75,49 +83,59 @@ export async function POST(
       })
     }
 
-    // 3. Emitir el CIT. En demo (no LIVE) se activa al instante; en LIVE queda
-    //    pendiente del peritaje.
-    const demo = getModo() !== 'LIVE'
-    const estado = demo ? 'activo' : 'pendiente'
-    const codigoCit = generarCodigoCit(bici.numero_serie)
-
-    const insert = await client.query<{
-      id: string
-      estado: string
-      codigo_cit: string
-      fecha_vencimiento: string
-    }>(
+    // 3. Emitir el CIT en estado 'pendiente': el pipeline decide su destino.
+    codigoCit = generarCodigoCit(bici.numero_serie)
+    const insert = await client.query<{ id: string; codigo_cit: string }>(
       `
         INSERT INTO cits (bicicleta_id, estado, codigo_cit, metadata_json)
-        VALUES ($1, $2::cit_estado, $3, $4::jsonb)
-        RETURNING id, estado, codigo_cit, fecha_vencimiento
+        VALUES ($1, 'pendiente'::cit_estado, $2, $3::jsonb)
+        RETURNING id, codigo_cit
       `,
       [
         bici.id,
-        estado,
         codigoCit,
-        JSON.stringify({ origen: demo ? 'demo-auto' : 'solicitud', solicitadoPor: user.id }),
+        JSON.stringify({ origen: 'solicitud', solicitadoPor: user.id }),
       ]
     )
 
     await client.query('COMMIT')
+    citId = insert.rows[0].id
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined)
+    client.release()
+    return jsonError(error)
+  }
+  client.release()
 
-    const cit = insert.rows[0]
+  // 4. Encolar el cit_id recien solicitado en el pipeline de validacion.
+  try {
+    const job = await encolarValidacion(citId)
+
+    // 5. En demo (no LIVE) ejecutar el pipeline al instante para no frenar el
+    //    flujo de publicacion; en LIVE queda pendiente del worker de 72hs.
+    if (getModo() !== 'LIVE') {
+      const resultado = await procesarJob(job.id, { ignorarVentana: true })
+      if (resultado.estado === 'APROBADO') {
+        return NextResponse.json(
+          { estado: 'activo', codigoCit, yaVerificada: false, hashSha256: resultado.hash ?? null },
+          { status: 201 }
+        )
+      }
+      if (resultado.estado === 'BLOQUEADO') {
+        return NextResponse.json(
+          { estado: 'bloqueado', codigoCit, yaVerificada: false, bloqueada: true },
+          { status: 201 }
+        )
+      }
+    }
+
+    // LIVE (o demo que no llego a decidir): el CIT queda pendiente del worker.
     return NextResponse.json(
-      {
-        estado: cit.estado,
-        codigoCit: cit.codigo_cit,
-        yaVerificada: false,
-        // En LIVE el CIT queda pendiente; el frontend muestra el aviso adecuado.
-        pendienteRevision: cit.estado === 'pendiente',
-      },
+      { estado: 'pendiente', codigoCit, yaVerificada: false, pendienteRevision: true },
       { status: 201 }
     )
   } catch (error) {
-    await client.query('ROLLBACK').catch(() => undefined)
     return jsonError(error)
-  } finally {
-    client.release()
   }
 }
 
