@@ -1,6 +1,7 @@
 import { getDatabase } from '@netlify/database'
 import { jwtVerify } from 'jose'
 import { NextResponse } from 'next/server'
+import { getModo } from '@/src/services/mercadopago.service'
 
 export interface AuthenticatedUser {
   id: string
@@ -67,6 +68,27 @@ export function jsonError(error: unknown) {
   )
 }
 
+/**
+ * Secreto de firma de los JWT de usuario. En produccion se exige
+ * JWT_SECRET (o AUTH_SECRET). Mientras el sistema de cuentas todavia no
+ * existe (Hito 1), y SOLO cuando no se opera con dinero real (modo
+ * STUB/SANDBOX de MercadoPago), se habilita un secreto de desarrollo para
+ * poder ejercitar el checkout de RODAID PAY de punta a punta. En modo LIVE
+ * nunca se usa el fallback: se exige un secreto configurado.
+ */
+const DEV_AUTH_SECRET = 'rodaid-dev-secret-checkout-no-usar-en-produccion'
+
+export function getAuthSecret(): string | null {
+  const configured = process.env.JWT_SECRET ?? process.env.AUTH_SECRET
+  if (configured && configured.trim().length > 0) {
+    return configured.trim()
+  }
+  if (getModo() !== 'LIVE') {
+    return DEV_AUTH_SECRET
+  }
+  return null
+}
+
 export async function requireUser(req: Request): Promise<AuthenticatedUser> {
   const authHeader = req.headers.get('authorization')
   const token = authHeader?.match(/^Bearer\s+(.+)$/i)?.[1]
@@ -75,7 +97,7 @@ export async function requireUser(req: Request): Promise<AuthenticatedUser> {
     throw new ApiError(401, 'AUTH_REQUIRED', 'Token de usuario requerido.')
   }
 
-  const secret = process.env.JWT_SECRET ?? process.env.AUTH_SECRET
+  const secret = getAuthSecret()
   if (!secret) {
     throw new ApiError(500, 'AUTH_NOT_CONFIGURED', 'Autenticacion no configurada.')
   }
