@@ -92,7 +92,7 @@ export async function POST(req: Request) {
         'El vendedor no es el propietario del rodado.'
       )
     }
-    if (cit.cit_estado !== 'ACTIVO') {
+    if (cit.cit_estado !== 'activo') {
       throw new ApiError(422, 'CIT_NOT_ACTIVE', 'El CIT no esta activo.')
     }
     if (new Date(cit.fecha_vencimiento).getTime() <= Date.now()) {
