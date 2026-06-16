@@ -9,6 +9,7 @@ import {
   enviarNotificacion,
   type NotificacionValidacion,
 } from '@/src/services/notification.service'
+import { anclarCIT, type AnclajeResultado } from '@/src/services/blockchain.service'
 
 /**
  * RODAID — Hito 5: Pipeline de Validacion de 72hs.
@@ -337,7 +338,11 @@ export async function procesarJob(
 ): Promise<ProcesarJobResultado> {
   // El payload de notificacion se devuelve desde la transaccion (no se muta una
   // variable externa) para que el control de flujo de tipos sea correcto.
-  type Interno = ProcesarJobResultado & { notificar?: NotificacionValidacion }
+  type Interno = ProcesarJobResultado & {
+    notificar?: NotificacionValidacion
+    // Datos para anclar el CIT en la BFA (Hito 4) tras aprobar, fuera de la tx.
+    anclar?: { hash: string; serial: string }
+  }
 
   try {
     const full = await withTx<Interno>(async (client) => {
@@ -482,6 +487,7 @@ export async function procesarJob(
           estado: 'APROBADO',
           resultado: 'APROBADO',
           hash,
+          anclar: { hash, serial: datos.numero_serie },
           notificar: {
             destinatario: null,
             citId: datos.cit_id,
@@ -553,10 +559,20 @@ export async function procesarJob(
 
     // Notificacion fuera de la transaccion (side-effect best-effort). Se hace
     // solo si el pipeline llego a una decision en este intento.
-    const { notificar, ...out } = full
+    const { notificar, anclar, ...out } = full
     if (notificar) {
       const acuse = await enviarNotificacion(notificar)
       await registrarNotificacion(out.jobId, out.citId, notificar.resultado, acuse)
+    }
+
+    // Hito 4: anclar el CIT aprobado en la BFA (mint del NFT de identidad).
+    // Fuera de la transaccion y best-effort: si la red BFA falla o tiene
+    // latencia, el CIT ya quedo 'activo' y el anclaje se reintenta despues.
+    if (anclar) {
+      const anclaje = await anclarCIT(out.citId, anclar.hash, anclar.serial)
+      await registrarAnclaje(out.jobId, out.citId, anclaje).catch((err) =>
+        console.error('[validacion] no se pudo auditar el anclaje BFA', err)
+      )
     }
 
     return out
@@ -583,6 +599,31 @@ async function registrarNotificacion(
       metadata: { resultado, enviada: acuse.enviada, canal: acuse.canal },
     })
   }).catch((err) => console.error('[validacion] no se pudo auditar la notificacion', err))
+}
+
+/** Audita el resultado del anclaje del CIT en la BFA (Hito 4). */
+async function registrarAnclaje(
+  jobId: string,
+  citId: string,
+  anclaje: AnclajeResultado
+) {
+  await withTx(async (client) => {
+    await logPaso(client, {
+      colaId: jobId,
+      citId,
+      paso: anclaje.estado === 'anclado' ? 'BFA_ANCLADO' : 'BFA_ANCLAJE_PENDIENTE',
+      detalle:
+        anclaje.estado === 'anclado'
+          ? `CIT anclado en la BFA (${anclaje.modo}). tx=${anclaje.txHash}`
+          : `Anclaje BFA ${anclaje.estado} (${anclaje.modo}).${anclaje.motivo ? ' ' + anclaje.motivo : ''}`,
+      metadata: {
+        modo: anclaje.modo,
+        estado: anclaje.estado,
+        txHash: anclaje.txHash,
+        tokenId: anclaje.tokenId,
+      },
+    })
+  })
 }
 
 /** Registra un fallo de procesamiento y programa el backoff o el dead-letter. */
