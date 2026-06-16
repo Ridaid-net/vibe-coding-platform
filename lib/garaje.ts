@@ -18,6 +18,7 @@ export interface BicicletaGaraje {
   fotoUrl: string | null
   rodado: number | null
   talleCuadro: string | null
+  citId: string | null
   citEstado: string | null
   citVencimiento: string | null
   citActivo: boolean
@@ -42,4 +43,40 @@ export async function fetchMisBicicletas(
 
 export function etiquetaBici(b: BicicletaGaraje): string {
   return [b.marca, b.modelo].filter(Boolean).join(' ') || 'Bicicleta'
+}
+
+/**
+ * Descarga el Certificado Digital de Propiedad y Verificacion (PDF firmado) de
+ * una bici verificada y dispara la descarga en el navegador.
+ *
+ * El endpoint esta protegido (Bearer), por eso se baja con `authedFetch` y se
+ * abre como blob — un `<a href>` plano no adjuntaria el token de sesion.
+ */
+export async function descargarCertificado(b: BicicletaGaraje): Promise<void> {
+  // El endpoint acepta el id del CIT o, en su defecto, el de la bici.
+  const id = b.citId ?? b.id
+  const res = await authedFetch(`/api/v1/cit/${encodeURIComponent(id)}/certificado`)
+  if (!res.ok) {
+    const detalle = await res.json().catch(() => null)
+    throw new Error(
+      (detalle && (detalle.message as string)) ??
+        'No pudimos generar el certificado.'
+    )
+  }
+
+  const blob = await res.blob()
+  const numero =
+    res.headers.get('x-rodaid-cert-numero') ??
+    `RODAID-CERT-${b.numeroSerie}`
+  const url = URL.createObjectURL(blob)
+  try {
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${numero}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  } finally {
+    URL.revokeObjectURL(url)
+  }
 }

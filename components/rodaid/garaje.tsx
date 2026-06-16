@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ArrowRight,
   Bike,
+  Download,
   Fingerprint,
   Loader2,
   Plus,
@@ -15,6 +16,7 @@ import { toast } from 'sonner'
 import { authedFetch } from '@/lib/session'
 import { parseApiError } from '@/lib/api-errors'
 import {
+  descargarCertificado,
   etiquetaBici,
   fetchMisBicicletas,
   type BicicletaGaraje,
@@ -209,10 +211,13 @@ function EstadoCit({
 }) {
   if (bici.citActivo) {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-lime/25 px-3 py-1.5 text-xs font-semibold text-ink">
-        <ShieldCheck className="size-3.5" />
-        CIT verificada
-      </span>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-lime/25 px-3 py-1.5 text-xs font-semibold text-ink">
+          <ShieldCheck className="size-3.5" />
+          CIT verificada
+        </span>
+        <DescargarCertificadoButton bici={bici} />
+      </div>
     )
   }
   if (bici.citEstado === 'pendiente') {
@@ -229,6 +234,48 @@ function EstadoCit({
     >
       <Fingerprint className="size-3.5" />
       Verificar
+    </button>
+  )
+}
+
+/**
+ * Boton de descarga del Certificado Digital de Propiedad y Verificacion (PDF
+ * firmado). Disponible para las bicis con un CIT verificado y vigente; se baja
+ * desde "Mi Garaje" con la sesion del usuario.
+ */
+function DescargarCertificadoButton({ bici }: { bici: BicicletaGaraje }) {
+  const [descargando, setDescargando] = useState(false)
+
+  const onClick = async () => {
+    if (descargando) return
+    setDescargando(true)
+    try {
+      await descargarCertificado(bici)
+      toast.success('Certificado generado', {
+        description: 'Se descargó el PDF firmado de tu bici.',
+      })
+    } catch (err) {
+      toast.error('No pudimos generar el certificado', {
+        description:
+          (err as Error).message ?? 'Probá de nuevo en unos instantes.',
+      })
+    } finally {
+      setDescargando(false)
+    }
+  }
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={descargando}
+      className="inline-flex items-center gap-1.5 rounded-full bg-ink px-3.5 py-2 text-xs font-semibold text-paper transition-colors hover:bg-ink-soft disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      {descargando ? (
+        <Loader2 className="size-3.5 animate-spin" />
+      ) : (
+        <Download className="size-3.5 text-lime" />
+      )}
+      {descargando ? 'Generando…' : 'Certificado'}
     </button>
   )
 }

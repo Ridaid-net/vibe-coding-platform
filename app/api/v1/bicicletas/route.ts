@@ -15,6 +15,7 @@ interface BiciGarajeRow {
   foto_url: string | null
   rodado: string | null
   talle_cuadro: string | null
+  cit_id: string | null
   cit_estado: string | null
   cit_vencimiento: string | null
   cit_activo: boolean
@@ -50,6 +51,7 @@ export async function GET(req: Request) {
           b.foto_url,
           b.rodado,
           b.talle_cuadro,
+          c.id AS cit_id,
           c.estado AS cit_estado,
           c.fecha_vencimiento AS cit_vencimiento,
           COALESCE(
@@ -64,7 +66,7 @@ export async function GET(req: Request) {
           ) AS tiene_publicacion_activa
         FROM bicicletas b
         LEFT JOIN LATERAL (
-          SELECT estado, fecha_vencimiento
+          SELECT id, estado, fecha_vencimiento
           FROM cits
           WHERE cits.bicicleta_id = b.id
           ORDER BY
@@ -90,6 +92,7 @@ export async function GET(req: Request) {
       fotoUrl: row.foto_url,
       rodado: row.rodado === null ? null : Number(row.rodado),
       talleCuadro: row.talle_cuadro,
+      citId: row.cit_id,
       citEstado: row.cit_estado,
       citVencimiento: row.cit_vencimiento,
       citActivo: row.cit_activo,

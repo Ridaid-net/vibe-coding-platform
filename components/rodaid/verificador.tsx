@@ -1,7 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
   ArrowRight,
@@ -83,8 +83,8 @@ const CONFIG: Record<VeredictoEstado, EstadoConfig> = {
  * semaforico. Consulta el endpoint abierto sin autenticacion y nunca muestra
  * datos del propietario, solo el estado del bien.
  */
-export function Verificador() {
-  const [valor, setValor] = useState('')
+export function Verificador({ inicial }: { inicial?: string } = {}) {
+  const [valor, setValor] = useState(inicial ?? '')
   const [cargando, setCargando] = useState(false)
   const [veredicto, setVeredicto] = useState<VerificacionVeredicto | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -126,6 +126,16 @@ export function Verificador() {
     e.preventDefault()
     consultar(valor)
   }
+
+  // Si llega un termino inicial (p. ej. desde el QR /verificar/:serial), se
+  // dispara la consulta automaticamente al montar.
+  useEffect(() => {
+    if (inicial && inicial.trim().length >= 3) {
+      consultar(inicial)
+    }
+    // Solo en el primer render con el termino inicial.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const onScan = useCallback(
     (texto: string) => {
