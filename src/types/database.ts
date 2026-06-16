@@ -9,6 +9,7 @@
  *
  * Fuente de verdad: netlify/database/migrations/
  *   - 20260616120000_create_bicicletas_cits.sql
+ *   - 20260616130000_create_validaciones_pipeline.sql
  */
 
 // ---------------------------------------------------------------------------
@@ -26,6 +27,21 @@ export type Rodado = 12 | 16 | 20 | 24 | 26 | 27.5 | 29 | 700
 
 /** Talle del cuadro como categoria de indumentaria. */
 export type TalleCuadro = 'S' | 'M' | 'L' | 'XL'
+
+/**
+ * Estado de un job del Pipeline de Validacion de 72hs (enum `validacion_estado`
+ * en Postgres). PENDIENTE -> EN_PROCESO -> APROBADO | BLOQUEADO; ERROR es el
+ * dead-letter tras agotar los reintentos.
+ */
+export type ValidacionEstado =
+  | 'PENDIENTE'
+  | 'EN_PROCESO'
+  | 'APROBADO'
+  | 'BLOQUEADO'
+  | 'ERROR'
+
+/** Resultado final del cross-reference (decision del pipeline). */
+export type ResultadoValidacion = 'APROBADO' | 'BLOQUEADO'
 
 // ---------------------------------------------------------------------------
 // bicicletas
