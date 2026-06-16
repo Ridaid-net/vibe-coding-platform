@@ -31,6 +31,8 @@ export interface PublicacionRow {
   anio?: number | null
   tipo?: string | null
   numero_serie?: string | null
+  rodado?: string | null
+  talle_cuadro?: string | null
 }
 
 export class ApiError extends Error {
@@ -232,6 +234,8 @@ export function mapPublicacion(row: PublicacionRow) {
       anio: row.anio ?? null,
       tipo: row.tipo ?? null,
       numeroSerie: row.numero_serie ?? null,
+      rodado: row.rodado === null || row.rodado === undefined ? null : Number(row.rodado),
+      talleCuadro: row.talle_cuadro ?? null,
     },
   }
 }
