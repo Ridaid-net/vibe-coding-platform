@@ -1,6 +1,6 @@
 import { getDatabase } from '@netlify/database'
-import { jwtVerify } from 'jose'
 import { NextResponse } from 'next/server'
+import { requireAuth, requireRole, type UsuarioRol } from '@/lib/auth'
 import { getModo } from '@/src/services/mercadopago.service'
 
 export interface AuthenticatedUser {
@@ -69,12 +69,11 @@ export function jsonError(error: unknown) {
 }
 
 /**
- * Secreto de firma de los JWT de usuario. En produccion se exige
- * JWT_SECRET (o AUTH_SECRET). Mientras el sistema de cuentas todavia no
- * existe (Hito 1), y SOLO cuando no se opera con dinero real (modo
- * STUB/SANDBOX de MercadoPago), se habilita un secreto de desarrollo para
- * poder ejercitar el checkout de RODAID PAY de punta a punta. En modo LIVE
- * nunca se usa el fallback: se exige un secreto configurado.
+ * Secreto de firma de los JWT de usuario. En produccion (modo LIVE de
+ * MercadoPago) se EXIGE JWT_SECRET (o AUTH_SECRET): sin el, la autenticacion no
+ * opera. Fuera de LIVE (preview/STUB), si no hay secreto configurado se usa un
+ * secreto de desarrollo para poder ejercitar el flujo de punta a punta. En LIVE
+ * nunca se usa el fallback.
  */
 const DEV_AUTH_SECRET = 'rodaid-dev-secret-checkout-no-usar-en-produccion'
 
@@ -89,38 +88,18 @@ export function getAuthSecret(): string | null {
   return null
 }
 
+/**
+ * Middleware de proteccion de endpoints privados. Exige un AccessToken valido y
+ * devuelve el usuario autenticado. Delega en `requireAuth` (lib/auth), la unica
+ * fuente de verdad de la autenticacion; se mantiene aqui por compatibilidad con
+ * los servicios que ya lo importan desde `@/lib/marketplace`.
+ */
 export async function requireUser(req: Request): Promise<AuthenticatedUser> {
-  const authHeader = req.headers.get('authorization')
-  const token = authHeader?.match(/^Bearer\s+(.+)$/i)?.[1]
-
-  if (!token) {
-    throw new ApiError(401, 'AUTH_REQUIRED', 'Token de usuario requerido.')
-  }
-
-  const secret = getAuthSecret()
-  if (!secret) {
-    throw new ApiError(500, 'AUTH_NOT_CONFIGURED', 'Autenticacion no configurada.')
-  }
-
-  try {
-    const { payload } = await jwtVerify(
-      token,
-      new TextEncoder().encode(secret)
-    )
-    const id = payload.sub ?? payload.userId ?? payload.id
-
-    if (typeof id !== 'string' || id.length === 0) {
-      throw new ApiError(401, 'INVALID_TOKEN', 'Token de usuario invalido.')
-    }
-
-    return { id }
-  } catch (error) {
-    if (error instanceof ApiError) {
-      throw error
-    }
-    throw new ApiError(401, 'INVALID_TOKEN', 'Token de usuario invalido.')
-  }
+  return requireAuth(req)
 }
+
+// Re-exportes de la capa de autenticacion (Hito 1) para consumo desde la API.
+export { requireAuth, requireRole } from '@/lib/auth'
 
 /**
  * Guarda de endpoints administrativos / de sistema (resolucion de disputas,
@@ -141,6 +120,25 @@ export function requireAdmin(req: Request): { id: string } {
     throw new ApiError(403, 'ADMIN_REQUIRED', 'Credenciales de administrador requeridas.')
   }
   return { id: 'admin' }
+}
+
+/**
+ * Guarda para acciones de back-office (resolucion de disputas, peritaje, etc.).
+ * Acepta dos vias de acceso:
+ *   - Un usuario autenticado con rol staff (admin/inspector) — panel humano.
+ *   - El token de sistema `x-admin-token` — operaciones y funciones programadas.
+ * Si llega un Bearer token, se autoriza por rol; si no, por el token de sistema.
+ */
+export async function requireStaff(
+  req: Request,
+  ...roles: UsuarioRol[]
+): Promise<{ id: string }> {
+  const hasBearer = /^Bearer\s+/i.test(req.headers.get('authorization') ?? '')
+  if (hasBearer) {
+    const permitidos = roles.length ? roles : (['admin', 'inspector'] as UsuarioRol[])
+    return requireRole(...permitidos)(req)
+  }
+  return requireAdmin(req)
 }
 
 export function optionalText(value: unknown): string | null {
