@@ -13,6 +13,7 @@
  *   - 20260616150000_create_usuarios_sesiones.sql
  *   - 20260616160000_create_logs_verificaciones.sql
  *   - 20260616170000_create_inspecciones_aliados.sql
+ *   - 20260616190000_create_analitica_geo.sql
  */
 
 // ---------------------------------------------------------------------------
@@ -271,6 +272,14 @@ export interface LogVerificacionRow {
   cit_id: string | null
   ip_hash: string | null
   user_agent: string | null
+  // Geo RECORTADO a nivel barrio (Hito 8). Nunca la coordenada exacta: solo el
+  // centro de la celda de grilla. Nullable en filas previas a la migracion.
+  geo_celda: string | null
+  geo_lat: string | null
+  geo_lon: string | null
+  geo_ciudad: string | null
+  geo_zona: string | null
+  geo_simulada: boolean
   created_at: string
 }
 
@@ -376,4 +385,60 @@ export interface NotificacionEnviadaRow {
   error: string | null
   metadata: Record<string, unknown>
   created_at: string
+}
+
+// ---------------------------------------------------------------------------
+// Analitica de Seguridad (Hito 8: Mapa de Calor)
+// ---------------------------------------------------------------------------
+
+/** Tipo de denuncia/discrepancia geolocalizada (enum `discrepancia_tipo`). */
+export type DiscrepanciaTipo = 'discrepancia' | 'robo' | 'sospecha'
+
+/** Severidad de una alerta de seguridad (enum `alerta_severidad`). */
+export type AlertaSeveridad = 'media' | 'alta' | 'critica'
+
+/** Estado de una alerta de seguridad (enum `alerta_estado`). */
+export type AlertaEstado = 'abierta' | 'reconocida' | 'descartada'
+
+/**
+ * Fila cruda de `discrepancias_reportadas`: denuncias/discrepancias ANONIMAS y
+ * geolocalizadas a nivel barrio (centro de celda recortada, nunca el punto real).
+ */
+export interface DiscrepanciaReportadaRow {
+  id: string
+  tipo: DiscrepanciaTipo
+  bicicleta_id: string | null
+  cit_id: string | null
+  inspeccion_id: string | null
+  geo_celda: string | null
+  geo_lat: string | null
+  geo_lon: string | null
+  geo_ciudad: string | null
+  geo_zona: string | null
+  geo_simulada: boolean
+  detalle: string | null
+  created_at: string
+}
+
+/**
+ * Fila cruda de `alertas_seguridad`: "Puntos Calientes" detectados por el motor
+ * de analitica (zonas con volumen de consultas sobre el umbral critico).
+ */
+export interface AlertaSeguridadRow {
+  id: string
+  tipo: string
+  geo_celda: string
+  geo_lat: string | null
+  geo_lon: string | null
+  geo_ciudad: string | null
+  geo_zona: string | null
+  volumen: number
+  umbral: number
+  ventana_horas: number
+  severidad: AlertaSeveridad
+  estado: AlertaEstado
+  detalle: Record<string, unknown>
+  primera_deteccion: string
+  created_at: string
+  updated_at: string
 }
