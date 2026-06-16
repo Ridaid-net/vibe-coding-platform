@@ -364,9 +364,19 @@ export interface InspeccionFisicaRow {
   bicicleta_id: string
   inspector_id: string
   aliado_id: string | null
+  /** Taller (aliado) asociado a la validacion. Trazabilidad del Hito 11. */
+  taller_id: string | null
   resultado: InspeccionResultado
   inspector_wallet: string
+  /** Huella SHA-256 (hex) del payload canonico del acta (sello de integridad). */
   firma_hash: string
+  /** Firma digital (Web Crypto / PKCS#12). NULL en actas historicas. */
+  firma_algoritmo: string | null
+  firma_valor: string | null
+  firma_certificado: string | null
+  firma_cert_serie: string | null
+  firma_cert_fingerprint: string | null
+  firma_modo: string | null
   notas: string | null
   discrepancia_motivo: string | null
   acelero_pipeline: boolean

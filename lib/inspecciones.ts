@@ -16,13 +16,23 @@ export interface InspectorContextoCliente {
   aliado: { id: string; nombre: string } | null
 }
 
+export interface ActaFirmaCliente {
+  algoritmo: string
+  valor: string
+  certSerie: string | null
+  certFingerprint: string | null
+  modo: string | null
+}
+
 export interface ActaInspeccion {
   id: string
   resultado: 'APROBADA' | 'DISCREPANCIA'
   inspectorId: string
   aliadoId: string | null
+  tallerId: string | null
   inspectorWallet: string
   firmaHash: string
+  firma: ActaFirmaCliente | null
   notas: string | null
   discrepanciaMotivo: string | null
   aceleroPipeline: boolean
@@ -89,14 +99,26 @@ export async function guardarWallet(
 
 export async function buscarBici(q: string): Promise<BusquedaInspeccion> {
   return leer(
-    await authedFetch(`/api/v1/inspecciones/buscar?q=${encodeURIComponent(q)}`)
+    await authedFetch(`/api/inspector/cit?q=${encodeURIComponent(q)}`)
   )
+}
+
+export interface ActaFirmaRespuesta {
+  algoritmo: string
+  valor: string
+  modo: string
+  certSerie: string
+  certFingerprint: string
+  commonName: string
 }
 
 export interface AprobacionRespuesta {
   inspeccionId: string
   resultado: 'APROBADA'
   firmaHash: string
+  firma: ActaFirmaRespuesta
+  tallerId: string | null
+  inspectorId: string
   aceleroPipeline: boolean
   citEstado: string
   bloqueadaPorSeguridad: boolean
@@ -108,23 +130,59 @@ export async function aprobarInspeccion(
   notas?: string
 ): Promise<AprobacionRespuesta> {
   return leer(
-    await authedFetch(`/api/v1/inspecciones/${encodeURIComponent(citId)}/aprobar`, {
+    await authedFetch('/api/inspector/cit', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ notas: notas ?? null }),
+      body: JSON.stringify({ accion: 'aprobar', citId, notas: notas ?? null }),
     })
   )
+}
+
+export interface DiscrepanciaRespuesta {
+  inspeccionId: string
+  resultado: 'DISCREPANCIA'
+  firmaHash: string
+  firma: ActaFirmaRespuesta
+  tallerId: string | null
+  inspectorId: string
+  citEstado: string
 }
 
 export async function reportarDiscrepancia(
   citId: string,
   motivo: string
-): Promise<{ inspeccionId: string; resultado: 'DISCREPANCIA'; citEstado: string }> {
+): Promise<DiscrepanciaRespuesta> {
   return leer(
-    await authedFetch(`/api/v1/inspecciones/${encodeURIComponent(citId)}/discrepancia`, {
+    await authedFetch('/api/inspector/cit', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ motivo }),
+      body: JSON.stringify({ accion: 'discrepancia', citId, motivo }),
+    })
+  )
+}
+
+export interface VerificacionRespuesta {
+  actaId: string
+  resultado: 'APROBADA' | 'DISCREPANCIA'
+  valido: boolean
+  algoritmo: string | null
+  modo: string | null
+  certSerie: string | null
+  certFingerprint: string | null
+  commonName: string | null
+  inspectorId: string
+  tallerId: string | null
+  emitidoEn: string | null
+}
+
+export async function verificarActa(
+  actaId: string
+): Promise<VerificacionRespuesta> {
+  return leer(
+    await authedFetch('/api/inspector/cit', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ accion: 'verificar', actaId }),
     })
   )
 }
