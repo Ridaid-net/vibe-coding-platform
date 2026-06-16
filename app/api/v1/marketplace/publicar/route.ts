@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import {
   ApiError,
@@ -10,6 +11,8 @@ import {
   slugify,
   type PublicacionRow,
 } from '@/lib/marketplace'
+
+export const runtime = 'nodejs'
 
 interface PublicarBody {
   citId?: unknown
@@ -117,8 +120,11 @@ export async function POST(req: Request) {
       )
     }
 
+    // Sufijo aleatorio: el slug es UNIQUE y una misma bicicleta puede
+    // re-publicarse tras una venta o cancelacion previa. Sin esta entropia,
+    // la segunda publicacion colisionaria con el slug de la primera.
     const slugBase = slugify([cit.marca, cit.modelo, cit.anio])
-    const slug = `${slugBase}-${cit.bicicleta_id.slice(0, 6)}`
+    const slug = `${slugBase}-${randomUUID().slice(0, 8)}`
 
     const insertResult = await client.query<PublicacionRow>(
       `
