@@ -22,6 +22,8 @@ export interface RodaidSession {
   refreshToken: string | null
   userId: string
   nombre: string
+  /** Rol del usuario (ciclista/inspector/aliado/admin), si se conoce. */
+  rol: string | null
 }
 
 const STORAGE_KEY = 'rodaid.session.v2'
@@ -31,6 +33,7 @@ interface StoredSession {
   refreshToken: string | null
   userId: string
   nombre: string
+  rol: string | null
 }
 
 function read(): StoredSession | null {
@@ -45,6 +48,7 @@ function read(): StoredSession | null {
         refreshToken: parsed.refreshToken ?? null,
         userId: parsed.userId,
         nombre: parsed.nombre ?? 'Usuario',
+        rol: parsed.rol ?? null,
       }
     }
   } catch {
@@ -65,6 +69,7 @@ function toSession(stored: StoredSession): RodaidSession {
     refreshToken: stored.refreshToken,
     userId: stored.userId,
     nombre: stored.nombre,
+    rol: stored.rol,
   }
 }
 
@@ -97,12 +102,58 @@ export async function ensureSession(): Promise<RodaidSession> {
     refreshToken?: string | null
     userId: string
     nombre?: string
+    rol?: string
   }
   const stored: StoredSession = {
     accessToken: data.accessToken ?? data.token ?? '',
     refreshToken: data.refreshToken ?? null,
     userId: data.userId,
     nombre: data.nombre ?? 'Usuario',
+    rol: data.rol ?? null,
+  }
+  write(stored)
+  return toSession(stored)
+}
+
+/**
+ * Garantiza una sesion cuyo rol este dentro de `permitidos`. Si la sesion actual
+ * no alcanza, en preview arranca una sesion demo con el rol `demoRol` (los
+ * endpoints de demo solo operan fuera de LIVE). Pensado para los paneles de
+ * inspector / admin (Hito 11).
+ */
+export async function ensureRoleSession(
+  permitidos: string[],
+  demoRol: string
+): Promise<RodaidSession> {
+  const current = read()
+  if (current?.rol && permitidos.includes(current.rol)) {
+    return toSession(current)
+  }
+
+  const res = await fetch('/api/v1/auth/demo-session', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ rol: demoRol }),
+  })
+  if (!res.ok) {
+    // No se pudo elevar (p. ej. modo LIVE): devolvemos lo que haya.
+    if (current) return toSession(current)
+    throw new Error('No se pudo iniciar la sesion con el rol requerido.')
+  }
+  const data = (await res.json()) as {
+    accessToken?: string
+    token?: string
+    refreshToken?: string | null
+    userId: string
+    nombre?: string
+    rol?: string
+  }
+  const stored: StoredSession = {
+    accessToken: data.accessToken ?? data.token ?? '',
+    refreshToken: data.refreshToken ?? null,
+    userId: data.userId,
+    nombre: data.nombre ?? 'Usuario',
+    rol: data.rol ?? demoRol,
   }
   write(stored)
   return toSession(stored)
@@ -137,7 +188,7 @@ async function authenticate(
   const data = (await res.json().catch(() => ({}))) as {
     accessToken?: string
     refreshToken?: string | null
-    usuario?: { id: string; datosPerfil?: { nombre?: string }; email?: string }
+    usuario?: { id: string; rol?: string; datosPerfil?: { nombre?: string }; email?: string }
     error?: string
     message?: string
   }
@@ -149,6 +200,7 @@ async function authenticate(
     refreshToken: data.refreshToken ?? null,
     userId: data.usuario.id,
     nombre: data.usuario.datosPerfil?.nombre ?? data.usuario.email ?? 'Usuario',
+    rol: data.usuario.rol ?? null,
   }
   write(stored)
   return toSession(stored)

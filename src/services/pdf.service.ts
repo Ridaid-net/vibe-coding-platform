@@ -68,6 +68,20 @@ export interface CertificadoBfa {
   ancladoEn: string | null
 }
 
+/**
+ * Nota tecnica de la inspeccion fisica (Hito 11). Cuando un inspector aprueba la
+ * bici presencialmente, el certificado deja constancia del taller (si aplica) y
+ * del inspector que la realizo.
+ */
+export interface CertificadoInspeccion {
+  /** Nombre del taller/aliado, o null si la hizo un inspector global. */
+  taller: string | null
+  inspector: string
+  /** Firma del acta (SHA-256). */
+  firmaHash: string
+  aprobadaEn: string | null
+}
+
 export interface CertificadoDatos {
   citId: string
   codigoCit: string
@@ -80,6 +94,8 @@ export interface CertificadoDatos {
   titular: string | null
   /** URL absoluta del Verificador Publico para esta bici (destino del QR). */
   verifierUrl: string
+  /** Nota tecnica de la inspeccion fisica, si la bici fue inspeccionada. */
+  inspeccion?: CertificadoInspeccion | null
 }
 
 export interface CertificadoGenerado {
@@ -194,6 +210,7 @@ function fingerprintDatos(d: CertificadoDatos): string {
         bfa: d.bfa,
         titular: d.titular,
         url: d.verifierUrl,
+        insp: d.inspeccion ?? null,
       })
     )
   )
@@ -319,6 +336,7 @@ async function componerCertificado(
   dibujarDatosBici(page, f, d)
   dibujarIdentidad(page, f, d)
   dibujarQr(page, f, d, meta)
+  dibujarNotaInspeccion(page, f, d)
   dibujarSello(page, f)
   dibujarPie(page, f, d, meta)
 }
@@ -624,6 +642,56 @@ function dibujarQr(
   })
 }
 
+// Nota tecnica de la inspeccion fisica (Hito 11), en el hueco de la columna
+// derecha (entre el QR y el sello). Solo se dibuja si la bici fue inspeccionada.
+function dibujarNotaInspeccion(
+  page: PDFPage,
+  f: Fuentes,
+  d: CertificadoDatos
+): void {
+  const insp = d.inspeccion
+  if (!insp) return
+
+  const x = COL_RIGHT_X
+  const w = QR_SIZE + 16
+  const boxX = x - 8
+  const boxH = 70
+  const boxY = 286
+  const innerW = w - 20
+
+  // Tarjeta con acento de marca.
+  page.drawRectangle({ x: boxX, y: boxY, width: w, height: boxH, color: C.white, borderColor: C.ink, borderWidth: 1 })
+  page.drawRectangle({ x: boxX, y: boxY, width: 4, height: boxH, color: C.limeDeep })
+
+  page.drawText('INSPECCION FISICA', {
+    x,
+    y: boxY + boxH - 16,
+    size: 7.5,
+    font: f.bodyBold,
+    color: C.ink,
+  })
+
+  // Texto requerido: realizada por Taller [Nombre], Inspector [Nombre].
+  const nota = insp.taller
+    ? `Realizada por Taller ${insp.taller}, Inspector ${insp.inspector}.`
+    : `Realizada por Inspector ${insp.inspector}.`
+  const lineas = envolver(nota, f.body, 8, innerW).slice(0, 3)
+  let y = boxY + boxH - 30
+  for (const linea of lineas) {
+    page.drawText(linea, { x, y, size: 8, font: f.body, color: C.inkSoft })
+    y -= 10
+  }
+
+  // Firma del acta (huella).
+  page.drawText(`Firma ${insp.firmaHash.slice(0, 12)}…`, {
+    x,
+    y: boxY + 8,
+    size: 6.5,
+    font: f.mono,
+    color: C.slate,
+  })
+}
+
 // Sello de seguridad (emblema vectorial), columna derecha inferior.
 function dibujarSello(page: PDFPage, f: Fuentes): void {
   const cx = COL_RIGHT_X + QR_SIZE / 2
@@ -747,6 +815,29 @@ function recortar(texto: string, font: PDFFont, size: number, maxW: number): str
     out = out.slice(0, -1)
   }
   return `${out}…`
+}
+
+/** Envuelve un texto en varias lineas para que cada una entre en `maxW`. */
+function envolver(
+  texto: string,
+  font: PDFFont,
+  size: number,
+  maxW: number
+): string[] {
+  const palabras = texto.split(/\s+/).filter(Boolean)
+  const lineas: string[] = []
+  let actual = ''
+  for (const palabra of palabras) {
+    const tentativa = actual ? `${actual} ${palabra}` : palabra
+    if (font.widthOfTextAtSize(tentativa, size) <= maxW) {
+      actual = tentativa
+    } else {
+      if (actual) lineas.push(actual)
+      actual = palabra
+    }
+  }
+  if (actual) lineas.push(actual)
+  return lineas
 }
 
 // ── QR ───────────────────────────────────────────────────────────────────────

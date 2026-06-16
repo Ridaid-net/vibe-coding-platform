@@ -60,11 +60,12 @@ const SCRYPT_R = 8
 const SCRYPT_P = 1
 const SCRYPT_KEYLEN = 64
 
-export type UsuarioRol = 'ciclista' | 'inspector' | 'admin'
+export type UsuarioRol = 'ciclista' | 'inspector' | 'admin' | 'aliado'
 const ROLES_VALIDOS: ReadonlySet<string> = new Set([
   'ciclista',
   'inspector',
   'admin',
+  'aliado',
 ])
 
 /** Usuario autenticado, derivado del AccessToken validado. */
@@ -412,6 +413,7 @@ export interface UsuarioRow {
   proveedor: string
   proveedor_uid: string | null
   email_verificado: boolean
+  wallet_address: string | null
   created_at: string
   updated_at: string
 }
@@ -424,6 +426,8 @@ export interface UsuarioPublico {
   datosPerfil: Record<string, unknown>
   proveedor: string
   emailVerificado: boolean
+  /** Identidad digital del inspector (Hito 11). NULL si no la configuro. */
+  walletAddress: string | null
   createdAt: string
   updatedAt: string
 }
@@ -440,6 +444,7 @@ export function toUsuarioPublico(row: UsuarioRow): UsuarioPublico {
     datosPerfil: row.datos_perfil ?? {},
     proveedor: row.proveedor,
     emailVerificado: row.email_verificado,
+    walletAddress: row.wallet_address ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -448,5 +453,5 @@ export function toUsuarioPublico(row: UsuarioRow): UsuarioPublico {
 /** Columnas seguras de `usuarios` (sin `password_hash`) para los SELECT. */
 export const USUARIO_PUBLIC_COLUMNS = `
   id, email, rol, datos_perfil, proveedor, proveedor_uid,
-  email_verificado, created_at, updated_at
+  email_verificado, wallet_address, created_at, updated_at
 `
