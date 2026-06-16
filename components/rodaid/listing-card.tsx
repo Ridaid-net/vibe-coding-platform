@@ -1,7 +1,7 @@
 'use client'
 
+import Link from 'next/link'
 import { Eye, Fingerprint, ShieldCheck } from 'lucide-react'
-import { toast } from 'sonner'
 
 export interface Publicacion {
   id: string
@@ -86,19 +86,13 @@ export function ListingCard({ pub }: { pub: Publicacion }) {
             </span>
           </div>
 
-          <button
-            type="button"
-            onClick={() =>
-              toast('Compra protegida con RODAID PAY', {
-                description:
-                  'El pago queda retenido hasta que confirmás la entrega de la bici.',
-              })
-            }
+          <Link
+            href={`/marketplace/${pub.id}`}
             className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full bg-ink px-4 py-2.5 text-sm font-semibold text-paper transition-colors hover:bg-ink-soft"
           >
             <ShieldCheck className="size-4 text-lime" />
             Comprar protegido
-          </button>
+          </Link>
         </div>
       </div>
     </article>
