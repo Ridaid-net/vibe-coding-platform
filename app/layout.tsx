@@ -1,34 +1,44 @@
-import { NuqsAdapter } from 'nuqs/adapters/next/app'
-import { ChatProvider } from '@/lib/chat-context'
-import { CommandLogsStream } from '@/components/commands-logs/commands-logs-stream'
-import { ErrorMonitor } from '@/components/error-monitor/error-monitor'
-import { SandboxState } from '@/components/modals/sandbox-state'
+import { Bricolage_Grotesque, Hanken_Grotesk } from 'next/font/google'
 import { Toaster } from '@/components/ui/sonner'
 import type { ReactNode } from 'react'
 import type { Metadata } from 'next'
-import { Suspense } from 'react'
 import './globals.css'
 
-const title = 'OSS Vibe Coding Platform'
-const description = `This is a demo of an end-to-end coding platform where the user can enter text prompts, and the agent will create a full stack application. It uses Vercel's AI Cloud services like Sandbox for secure code execution, AI Gateway for GPT-5 and other models support, Fluid Compute for efficient rendering and streaming, and it's built with Next.js and the AI SDK.`
+const display = Bricolage_Grotesque({
+  subsets: ['latin'],
+  variable: '--font-rodaid-display',
+  display: 'swap',
+  weight: ['500', '600', '700', '800'],
+})
+
+const body = Hanken_Grotesk({
+  subsets: ['latin'],
+  variable: '--font-rodaid-body',
+  display: 'swap',
+})
+
+const title = 'RODAID — Marketplace de bicicletas verificadas en Argentina'
+const description =
+  'Comprá y vendé bicicletas con identidad verificada (CIT) y pago protegido por RODAID PAY. El escrow retiene los fondos hasta que la bici llega a destino.'
 
 export const metadata: Metadata = {
   title,
   description,
+  applicationName: 'RODAID',
+  keywords: [
+    'bicicletas',
+    'marketplace',
+    'Argentina',
+    'comprar bici',
+    'vender bici',
+    'RODAID PAY',
+    'escrow',
+  ],
   openGraph: {
-    images: [
-      {
-        url: 'https://assets.vercel.com/image/upload/v1754588799/OSSvibecodingplatform/OG.png',
-      },
-    ],
-  },
-  twitter: {
-    card: 'summary_large_image',
-    images: [
-      {
-        url: 'https://assets.vercel.com/image/upload/v1754588799/OSSvibecodingplatform/OG.png',
-      },
-    ],
+    title,
+    description,
+    type: 'website',
+    locale: 'es_AR',
   },
 }
 
@@ -36,18 +46,10 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="en">
-      <body className="antialiased">
-        <Suspense fallback={null}>
-          <NuqsAdapter>
-            <ChatProvider>
-              <ErrorMonitor>{children}</ErrorMonitor>
-            </ChatProvider>
-          </NuqsAdapter>
-        </Suspense>
+    <html lang="es-AR" className={`${display.variable} ${body.variable}`}>
+      <body className="font-body bg-paper text-ink antialiased">
+        {children}
         <Toaster />
-        <CommandLogsStream />
-        <SandboxState />
       </body>
     </html>
   )
