@@ -39,6 +39,7 @@ export type NotificacionEventoTipo =
   | 'cit.aprobado'
   | 'cit.bloqueado'
   | 'cit.recuperada'
+  | 'denuncia.activa'
   | 'marketplace.oferta'
   | 'escrow.fondos_retenidos'
   | 'inspeccion.acta_firmada'
@@ -111,6 +112,17 @@ function construirMensaje(evento: NotificacionEvento): MensajeNotificacion {
           : 'El Ministerio de Seguridad informó la recuperación de tu bici. Su Cédula se desbloqueó y volvió a estado activo.',
         url: '/garaje',
         tag: 'cit',
+      }
+    }
+    case 'denuncia.activa': {
+      const exp = texto(data, 'expediente')
+      return {
+        titulo: 'Denuncia judicial activa',
+        cuerpo: exp
+          ? `Registramos tu denuncia ante el MPF (expediente ${exp}). Bloqueamos la bici en el Marketplace y avisamos al Ministerio de Seguridad.`
+          : 'Registramos tu denuncia ante el MPF. Bloqueamos la bici en el Marketplace y avisamos al Ministerio de Seguridad.',
+        url: '/garaje',
+        tag: 'denuncia',
       }
     }
     case 'marketplace.oferta': {

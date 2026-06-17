@@ -31,6 +31,7 @@ import {
 } from '@/lib/garaje-digital'
 import { AgregarBicicletaForm } from './garaje'
 import { SolicitarVerificacionModal } from './solicitar-verificacion-modal'
+import { DenunciaMpfModal } from './denuncia-mpf-modal'
 
 /**
  * "Mi Garaje Digital" — Hito 14: el hub central del usuario.
@@ -47,6 +48,7 @@ export function GarajeDigital() {
   const { data, error, isLoading, mutate } = useActivosGaraje()
   const { data: perfil } = useMiPerfil()
   const [verificar, setVerificar] = useState<ActivoGaraje | null>(null)
+  const [denunciar, setDenunciar] = useState<ActivoGaraje | null>(null)
   const [agregando, setAgregando] = useState(false)
 
   const activos = data?.activos ?? null
@@ -197,6 +199,8 @@ export function GarajeDigital() {
                 key={a.id}
                 activo={a}
                 onVerificar={() => setVerificar(a)}
+                puedeDenunciar={perfil?.selloGubernamental === true}
+                onDenunciar={() => setDenunciar(a)}
               />
             ))}
           </ul>
@@ -209,6 +213,13 @@ export function GarajeDigital() {
         onOpenChange={(o) => !o && setVerificar(null)}
         onVerificada={() => mutate()}
       />
+
+      <DenunciaMpfModal
+        bici={denunciar}
+        open={denunciar !== null}
+        onOpenChange={(o) => !o && setDenunciar(null)}
+        onDenunciada={() => mutate()}
+      />
     </section>
   )
 }
@@ -218,9 +229,13 @@ export function GarajeDigital() {
 function ActivoCard({
   activo,
   onVerificar,
+  puedeDenunciar,
+  onDenunciar,
 }: {
   activo: ActivoGaraje
   onVerificar: () => void
+  puedeDenunciar: boolean
+  onDenunciar: () => void
 }) {
   const visual = ESTADO_VISUAL[activo.estado]
   const specs = [
@@ -339,6 +354,21 @@ function ActivoCard({
               Publicar en Marketplace
             </Link>
           ))}
+
+        {/* Denuncia ciudadana (Hito 18) — solo para identidad gubernamental (MxM)
+            y bicis con identidad que no estén ya bloqueadas. */}
+        {puedeDenunciar &&
+          (activo.estado === 'verificado' ||
+            activo.estado === 'pendiente' ||
+            activo.estado === 'vencido') && (
+            <button
+              onClick={onDenunciar}
+              className="inline-flex items-center gap-1.5 rounded-full border border-clay/40 bg-clay/5 px-3.5 py-2 text-xs font-semibold text-clay transition-colors hover:bg-clay/10"
+            >
+              <ShieldAlert className="size-3.5" />
+              Denunciar robo
+            </button>
+          )}
       </div>
     </li>
   )
