@@ -42,6 +42,9 @@ export type NotificacionEventoTipo =
   | 'marketplace.oferta'
   | 'escrow.fondos_retenidos'
   | 'inspeccion.acta_firmada'
+  | 'iot.geovalla_salida'
+  | 'iot.mantenimiento'
+  | 'iot.robo_en_curso'
 
 /**
  * Evento de dominio. `usuarioId` es el destinatario (propietario de la bici,
@@ -141,6 +144,38 @@ function construirMensaje(evento: NotificacionEvento): MensajeNotificacion {
           : 'Un inspector firmó el acta física de tu bici. Su identidad se acelera en la verificación.',
         url: '/garaje',
         tag: 'inspeccion',
+      }
+    }
+    case 'iot.geovalla_salida': {
+      const zona = texto(data, 'zonaSegura')
+      const bici = texto(data, 'biciNombre')
+      return {
+        titulo: '⚠️ Tu bici salió de la zona segura',
+        cuerpo: zona
+          ? `${bici ?? 'Tu bicicleta'} salió de "${zona}" sin autorización. Revisá su ubicación en tiempo real.`
+          : `${bici ?? 'Tu bicicleta'} salió de una zona segura sin autorización. Revisá su ubicación en tiempo real.`,
+        url: '/garaje',
+        tag: 'iot-geovalla',
+      }
+    }
+    case 'iot.mantenimiento': {
+      const detalle = texto(data, 'resumen')
+      return {
+        titulo: 'Mantenimiento predictivo RODAID',
+        cuerpo:
+          detalle ??
+          'Detectamos una señal de desgaste en tu bici. Revisá la recomendación de mantenimiento.',
+        url: '/garaje',
+        tag: 'iot-mantenimiento',
+      }
+    }
+    case 'iot.robo_en_curso': {
+      return {
+        titulo: '🚨 Reporte de robo en curso enviado',
+        cuerpo:
+          'Compartimos la ubicación en tiempo real de tu bici con el Ministerio de Seguridad. Seguí las indicaciones de las autoridades.',
+        url: '/garaje',
+        tag: 'iot-robo',
       }
     }
   }

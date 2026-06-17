@@ -3,6 +3,7 @@ import { Nav } from '@/components/rodaid/nav'
 import { GarajeDigital } from '@/components/rodaid/garaje-digital'
 import { MisPublicaciones } from '@/components/rodaid/mis-publicaciones'
 import { GarajeAnalitica } from '@/components/rodaid/garaje-analitica'
+import { IotTiempoReal } from '@/components/rodaid/iot-tiempo-real'
 import { PerfilCard } from '@/components/rodaid/perfil-card'
 import { NotificacionesCard } from '@/components/rodaid/notificaciones-card'
 
@@ -20,6 +21,7 @@ export default function GarajePage() {
         <GarajeDigital />
         <MisPublicaciones />
         <GarajeAnalitica />
+        <IotTiempoReal />
         <PerfilCard />
         <NotificacionesCard />
       </main>

@@ -721,3 +721,122 @@ export interface EcosystemWebhookEntregaRow {
   created_at: string
   entregado_en: string | null
 }
+
+// ---------------------------------------------------------------------------
+// RODAID-IoT — Hito 17 (telemetria, tiempo real y mantenimiento predictivo).
+// Fuente: 20260617160000_create_rodaid_iot.sql
+// ---------------------------------------------------------------------------
+
+/** Estado de un dispositivo de telemetria en el registro. */
+export type IotDispositivoEstado = 'activo' | 'revocado'
+
+/**
+ * Fila cruda de `iot_dispositivos`: un dispositivo de telemetria VINCULADO a una
+ * bici (y por ella, al CIT del usuario). Del secreto del dispositivo solo se
+ * guarda el hash SHA-256. `transmision_activa` es el opt-in EXPRESO del usuario al
+ * seguimiento en tiempo real.
+ */
+export interface IotDispositivoRow {
+  id: string
+  bicicleta_id: string
+  usuario_id: string
+  serial_normalizado: string
+  device_uid: string
+  device_secret_hash: string
+  nombre: string | null
+  estado: IotDispositivoEstado
+  transmision_activa: boolean
+  modo_bajo_consumo: boolean
+  intervalo_reporte_seg: number
+  nivel_bateria: number | null
+  ultima_trama_en: string | null
+  created_at: string
+  updated_at: string
+}
+
+/**
+ * Fila cruda de `telemetria_activa`: estado ACTUAL de la bici conectada (una fila
+ * por dispositivo). La posicion PRECISA vive cifrada E2E en `posicion_cifrada`
+ * (nunca en claro); el geo recortado a barrio es lo unico no cifrado.
+ */
+export interface TelemetriaActivaRow {
+  dispositivo_id: string
+  bicicleta_id: string
+  usuario_id: string
+  serial: string
+  posicion_cifrada: string | null
+  geo_celda: string | null
+  geo_lat: string | null
+  geo_lon: string | null
+  geo_zona: string | null
+  geo_ciudad: string | null
+  nivel_bateria: number | null
+  velocidad_kmh: string | null
+  acelerometro_data: Record<string, unknown>
+  ts: string
+  actualizado_en: string
+}
+
+/**
+ * Fila cruda de `telemetria_historica`: traza historica para el recorrido y el
+ * mantenimiento predictivo. A los 30 dias se anonimiza (se borra
+ * `posicion_cifrada` y queda solo el geo recortado), como el mapa de calor.
+ */
+export interface TelemetriaHistoricaRow {
+  id: string
+  dispositivo_id: string
+  bicicleta_id: string
+  usuario_id: string
+  posicion_cifrada: string | null
+  geo_celda: string | null
+  geo_lat: string | null
+  geo_lon: string | null
+  geo_zona: string | null
+  geo_ciudad: string | null
+  nivel_bateria: number | null
+  velocidad_kmh: string | null
+  acelerometro_data: Record<string, unknown>
+  anonimizada: boolean
+  ts: string
+  created_at: string
+}
+
+/** Fila cruda de `iot_geovallas`: "zona segura" circular configurada por el dueño. */
+export interface IotGeovallaRow {
+  id: string
+  bicicleta_id: string
+  usuario_id: string
+  nombre: string
+  center_lat: string
+  center_lng: string
+  radio_m: number
+  activa: boolean
+  autorizada_salida: boolean
+  created_at: string
+  updated_at: string
+}
+
+/** Tipo de una alerta de telemetria. */
+export type IotAlertaTipo =
+  | 'geovalla_salida'
+  | 'mantenimiento_cadena'
+  | 'mantenimiento_cubiertas'
+  | 'mantenimiento_servicio'
+  | 'robo_en_curso'
+  | 'bateria_baja'
+
+/** Fila cruda de `iot_alertas`: alertas disparadas por la telemetria (con dedupe). */
+export interface IotAlertaRow {
+  id: string
+  dispositivo_id: string | null
+  bicicleta_id: string
+  usuario_id: string
+  tipo: IotAlertaTipo
+  severidad: string
+  titulo: string
+  mensaje: string
+  dedupe_key: string | null
+  metadata: Record<string, unknown>
+  reconocida: boolean
+  created_at: string
+}
