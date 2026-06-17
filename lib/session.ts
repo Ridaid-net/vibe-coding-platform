@@ -28,6 +28,41 @@ export interface RodaidSession {
 
 const STORAGE_KEY = 'rodaid.session.v2'
 
+/**
+ * Evento de cambio de sesión (mismo tab). El `storage` event del navegador solo
+ * se dispara entre pestañas; este evento permite que `useAuth` reaccione en la
+ * misma pestaña tras login/logout/refresh.
+ */
+export const SESSION_EVENT = 'rodaid:session-change'
+
+/**
+ * Nombre de la cookie que refleja el AccessToken. La usa la Edge Function
+ * `auth-admin` para validar la sesión en las NAVEGACIONES de página (donde no
+ * viaja el header Authorization, que solo adjunta `authedFetch` en las XHR).
+ *
+ * Seguridad: el token también vive en localStorage; espejarlo a una cookie no
+ * añade exposición (mismo modelo de confianza del cliente) y el control de
+ * acceso real lo hace el borde validando la FIRMA del JWT. La cookie no es
+ * httpOnly porque debe escribirse desde el cliente; lleva SameSite=Lax.
+ */
+const NF_JWT_COOKIE = 'nf_jwt'
+
+function setJwtCookie(token: string) {
+  if (typeof document === 'undefined') return
+  const secure = window.location.protocol === 'https:' ? '; Secure' : ''
+  document.cookie = `${NF_JWT_COOKIE}=${encodeURIComponent(token)}; Path=/; SameSite=Lax${secure}`
+}
+
+function clearJwtCookie() {
+  if (typeof document === 'undefined') return
+  document.cookie = `${NF_JWT_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`
+}
+
+function notifySessionChange() {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new Event(SESSION_EVENT))
+}
+
 interface StoredSession {
   accessToken: string
   refreshToken: string | null
@@ -60,6 +95,8 @@ function read(): StoredSession | null {
 function write(session: StoredSession) {
   if (typeof window === 'undefined') return
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(session))
+  setJwtCookie(session.accessToken)
+  notifySessionChange()
 }
 
 function toSession(stored: StoredSession): RodaidSession {
@@ -81,6 +118,8 @@ export function getSession(): RodaidSession | null {
 export function clearSession() {
   if (typeof window === 'undefined') return
   window.localStorage.removeItem(STORAGE_KEY)
+  clearJwtCookie()
+  notifySessionChange()
 }
 
 /** Arranca una sesion demo real (preview) si no hay ninguna. */
