@@ -475,3 +475,63 @@ export interface AlertaSeguridadRow {
   created_at: string
   updated_at: string
 }
+
+// ---------------------------------------------------------------------------
+// Integracion Institucional — Ministerio de Seguridad (Hito 12)
+// Fuente: 20260617120000_create_seguridad_institucional.sql
+// ---------------------------------------------------------------------------
+
+/** Tipo de alerta devuelto por el cross-reference institucional. */
+export type MinisterioTipoAlerta = 'robo' | 'discrepancia' | 'normal'
+
+/**
+ * Fila cruda de `ministerio_auditoria`: bitacora INMUTABLE (append-only) de la
+ * integracion. El DNI nunca se guarda en claro: solo `dni_cifrado` (AES-256-GCM)
+ * y `dni_hash` (no reversible). La tabla no admite UPDATE ni DELETE.
+ */
+export interface MinisterioAuditoriaRow {
+  id: string
+  evento: string
+  cliente_cn: string | null
+  cliente_serie: string | null
+  cliente_fingerprint: string | null
+  serial_consultado: string | null
+  dni_cifrado: string | null
+  dni_hash: string | null
+  alerta_activa: boolean | null
+  tipo_alerta: MinisterioTipoAlerta | null
+  expediente: string | null
+  metadata: Record<string, unknown>
+  created_at: string
+}
+
+/**
+ * Fila cruda de `seguridad_alertas_cache`: cache read-through del veredicto de
+ * alerta por numero de serie (SLA < 2 s del cross-reference).
+ */
+export interface SeguridadAlertaCacheRow {
+  serial_normalizado: string
+  bicicleta_id: string | null
+  cit_id: string | null
+  alerta_activa: boolean
+  tipo_alerta: MinisterioTipoAlerta
+  expediente: string | null
+  refrescado_en: string
+}
+
+/** Fila cruda de `recuperos_ministerio`: avisos de recupero del webhook inverso. */
+export interface RecuperoMinisterioRow {
+  id: string
+  evento_uid: string
+  serial_normalizado: string
+  bicicleta_id: string | null
+  cit_id: string | null
+  expediente: string | null
+  payload_cifrado: string | null
+  estado: 'PROCESADO' | 'SIN_COINCIDENCIA'
+  desbloqueada: boolean
+  notificado: boolean
+  cliente_cn: string | null
+  cliente_fingerprint: string | null
+  created_at: string
+}

@@ -37,6 +37,7 @@ export { getVapidPublicKey } from '@/src/services/webpush'
 export type NotificacionEventoTipo =
   | 'cit.aprobado'
   | 'cit.bloqueado'
+  | 'cit.recuperada'
   | 'marketplace.oferta'
   | 'escrow.fondos_retenidos'
   | 'inspeccion.acta_firmada'
@@ -93,6 +94,17 @@ function construirMensaje(evento: NotificacionEvento): MensajeNotificacion {
         cuerpo: motivo
           ? `La verificación de tu CIT no fue aprobada: ${motivo}. Comunicate con soporte de RODAID.`
           : 'La verificación de tu CIT no fue aprobada. Comunicate con soporte de RODAID.',
+        url: '/garaje',
+        tag: 'cit',
+      }
+    }
+    case 'cit.recuperada': {
+      const codigo = texto(data, 'codigoCit')
+      return {
+        titulo: '¡Buenas noticias! Tu bicicleta fue recuperada',
+        cuerpo: codigo
+          ? `El Ministerio de Seguridad informó la recuperación de tu bici. Su Cédula ${codigo} se desbloqueó y volvió a estado activo.`
+          : 'El Ministerio de Seguridad informó la recuperación de tu bici. Su Cédula se desbloqueó y volvió a estado activo.',
         url: '/garaje',
         tag: 'cit',
       }
