@@ -615,3 +615,109 @@ export interface PagoLogRow {
   metadata: Record<string, unknown>
   created_at: string
 }
+
+// ---------------------------------------------------------------------------
+// RODAID Open-Connect — Hito 16 (apertura al ecosistema externo).
+// Fuente: 20260617150000_create_open_connect.sql
+// ---------------------------------------------------------------------------
+
+/** Entorno de una app de terceros. */
+export type DeveloperAppEntorno = 'sandbox' | 'produccion'
+/** Estado de una app de terceros. */
+export type DeveloperAppEstado = 'activa' | 'suspendida'
+
+/**
+ * Fila cruda de `developer_apps`: una app de terceros (cliente OAuth2 + API Key).
+ * Del client_secret y de la API Key SOLO se guarda el hash SHA-256.
+ */
+export interface DeveloperAppRow {
+  id: string
+  owner_usuario_id: string
+  nombre: string
+  descripcion: string | null
+  sitio_url: string | null
+  client_id: string
+  client_secret_hash: string
+  api_key_prefix: string
+  api_key_hash: string
+  redirect_uris: string[]
+  scopes: string[]
+  entorno: DeveloperAppEntorno
+  estado: DeveloperAppEstado
+  rate_limit_rpm: number
+  created_at: string
+  updated_at: string
+}
+
+/** Fila cruda de `oauth_codes`: códigos de autorización de un solo uso (PKCE). */
+export interface OauthCodeRow {
+  id: string
+  code_hash: string
+  app_id: string
+  usuario_id: string
+  bicicleta_id: string | null
+  scopes: string[]
+  redirect_uri: string
+  code_challenge: string | null
+  code_challenge_method: string | null
+  expira_en: string
+  usado_en: string | null
+  created_at: string
+}
+
+/** Fila cruda de `oauth_tokens`: access tokens opacos (se guarda solo el hash). */
+export interface OauthTokenRow {
+  id: string
+  token_hash: string
+  app_id: string
+  usuario_id: string
+  bicicleta_id: string | null
+  scopes: string[]
+  expira_en: string
+  revocado_en: string | null
+  ultimo_uso_en: string | null
+  created_at: string
+}
+
+/** Fila cruda de `developer_api_logs`: bitácora INMUTABLE de uso por app. */
+export interface DeveloperApiLogRow {
+  id: string
+  app_id: string
+  endpoint: string
+  metodo: string
+  status: number
+  scope_usado: string | null
+  latencia_ms: number | null
+  ip_hash: string | null
+  created_at: string
+}
+
+/** Estado de una suscripción de webhook del ecosistema. */
+export type EcosystemWebhookEstado = 'activo' | 'pausado'
+
+/** Fila cruda de `ecosystem_webhooks`: suscripción de un tercero a eventos públicos. */
+export interface EcosystemWebhookRow {
+  id: string
+  app_id: string
+  url: string
+  eventos: string[]
+  secret: string
+  estado: EcosystemWebhookEstado
+  created_at: string
+  updated_at: string
+}
+
+/** Fila cruda de `ecosystem_webhook_entregas`: bitácora idempotente de entregas. */
+export interface EcosystemWebhookEntregaRow {
+  id: string
+  webhook_id: string
+  evento_id: string
+  evento_tipo: string
+  payload: Record<string, unknown>
+  status_code: number | null
+  exito: boolean
+  intentos: number
+  ultimo_error: string | null
+  created_at: string
+  entregado_en: string | null
+}
