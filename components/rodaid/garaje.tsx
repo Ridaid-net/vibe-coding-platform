@@ -280,7 +280,7 @@ function DescargarCertificadoButton({ bici }: { bici: BicicletaGaraje }) {
   )
 }
 
-function AgregarBicicletaForm({
+export function AgregarBicicletaForm({
   onCancel,
   onCreada,
 }: {
