@@ -1,5 +1,6 @@
 import { Bricolage_Grotesque, Hanken_Grotesk } from 'next/font/google'
 import { Toaster } from '@/components/ui/sonner'
+import { FaqWidget } from '@/components/rodaid/faq-widget'
 import type { ReactNode } from 'react'
 import type { Metadata } from 'next'
 import './globals.css'
@@ -49,6 +50,7 @@ export default function RootLayout({
     <html lang="es-AR" className={`${display.variable} ${body.variable}`}>
       <body className="font-body bg-paper text-ink antialiased">
         {children}
+        <FaqWidget />
         <Toaster />
       </body>
     </html>

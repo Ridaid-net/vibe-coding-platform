@@ -1,4 +1,5 @@
 import { RodaidLogo } from './logo'
+import { FaqFooterLink } from './faq-footer-link'
 import Link from 'next/link'
 
 const COLS = [
@@ -53,6 +54,7 @@ export function Footer() {
         <div className="mt-14 flex flex-col gap-3 border-t border-paper/10 pt-6 text-xs text-paper/45 sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} RODAID. Todos los derechos reservados.</p>
           <div className="flex flex-wrap gap-5">
+            <FaqFooterLink />
             <Link href="/aliados" className="transition-colors hover:text-lime">
               Sumate como Aliado
             </Link>
