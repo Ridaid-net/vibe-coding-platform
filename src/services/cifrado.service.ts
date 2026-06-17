@@ -37,10 +37,17 @@ const KEY_BYTES = 32
 const VERSION = 'v1'
 
 let cachedKey: Buffer | null = null
+let cachedIotKey: Buffer | null = null
 
 /** Indica si hay una clave AES real configurada (vs. derivada en preview). */
 export function cifradoConfigurado(): boolean {
   const raw = process.env.RODAID_MINISTERIO_AES_KEY
+  return typeof raw === 'string' && raw.trim().length > 0
+}
+
+/** Indica si hay una clave AES real para la telemetria IoT (vs. derivada). */
+export function iotCifradoConfigurado(): boolean {
+  const raw = process.env.RODAID_IOT_AES_KEY
   return typeof raw === 'string' && raw.trim().length > 0
 }
 
@@ -74,10 +81,29 @@ function getKey(): Buffer {
   return cachedKey
 }
 
-/** Cifra un texto en claro. Devuelve el token portable. */
-export function cifrar(plaintext: string): string {
+/**
+ * Resuelve (y cachea) la clave AES-256 de la TELEMETRIA IoT (Hito 17). Es una
+ * clave INDEPENDIENTE de la del Ministerio: la posicion precisa de la bici se
+ * cifra de extremo a extremo con su propia identidad criptografica. En LIVE se
+ * toma de `RODAID_IOT_AES_KEY`; en preview se deriva de forma estable del secreto
+ * de la app (igual que el resto de los modos del proyecto).
+ */
+function getIotKey(): Buffer {
+  if (cachedIotKey) return cachedIotKey
+  const raw = process.env.RODAID_IOT_AES_KEY
+  if (raw && raw.trim().length > 0) {
+    cachedIotKey = parseClaveConfigurada(raw)
+    return cachedIotKey
+  }
+  const secret = getAuthSecret() ?? 'rodaid-iot-fallback'
+  cachedIotKey = scryptSync(secret, 'rodaid-iot-aes-v1', KEY_BYTES)
+  return cachedIotKey
+}
+
+/** Cifra un texto en claro con una clave dada. Devuelve el token portable. */
+function cifrarCon(key: Buffer, plaintext: string): string {
   const iv = randomBytes(IV_BYTES)
-  const cipher = createCipheriv(ALGO, getKey(), iv)
+  const cipher = createCipheriv(ALGO, key, iv)
   const ct = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()])
   const tag = cipher.getAuthTag()
   return [
@@ -89,6 +115,25 @@ export function cifrar(plaintext: string): string {
   ].join('.')
 }
 
+/** Descifra un token producido por `cifrarCon`. Lanza si fue manipulado. */
+function descifrarCon(key: Buffer, token: string): string {
+  const parts = token.split('.')
+  if (parts.length !== 5 || parts[0] !== VERSION || parts[1] !== 'gcm') {
+    throw new Error('Token de cifrado con formato invalido.')
+  }
+  const iv = Buffer.from(parts[2], 'base64url')
+  const tag = Buffer.from(parts[3], 'base64url')
+  const ct = Buffer.from(parts[4], 'base64url')
+  const decipher = createDecipheriv(ALGO, key, iv)
+  decipher.setAuthTag(tag)
+  return Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8')
+}
+
+/** Cifra un texto en claro. Devuelve el token portable. */
+export function cifrar(plaintext: string): string {
+  return cifrarCon(getKey(), plaintext)
+}
+
 /** Cifra un valor opcional (null -> null). */
 export function cifrarOpcional(plaintext: string | null | undefined): string | null {
   if (plaintext === null || plaintext === undefined || plaintext === '') return null
@@ -97,16 +142,25 @@ export function cifrarOpcional(plaintext: string | null | undefined): string | n
 
 /** Descifra un token producido por `cifrar`. Lanza si fue manipulado o es invalido. */
 export function descifrar(token: string): string {
-  const parts = token.split('.')
-  if (parts.length !== 5 || parts[0] !== VERSION || parts[1] !== 'gcm') {
-    throw new Error('Token de cifrado con formato invalido.')
-  }
-  const iv = Buffer.from(parts[2], 'base64url')
-  const tag = Buffer.from(parts[3], 'base64url')
-  const ct = Buffer.from(parts[4], 'base64url')
-  const decipher = createDecipheriv(ALGO, getKey(), iv)
-  decipher.setAuthTag(tag)
-  return Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8')
+  return descifrarCon(getKey(), token)
+}
+
+// ── Telemetria IoT (Hito 17): cifrado E2E de la posicion precisa ──────────────
+
+/** Cifra un texto con la clave de telemetria IoT (posicion precisa, E2E). */
+export function cifrarIot(plaintext: string): string {
+  return cifrarCon(getIotKey(), plaintext)
+}
+
+/** Cifra un valor opcional con la clave IoT (null -> null). */
+export function cifrarIotOpcional(plaintext: string | null | undefined): string | null {
+  if (plaintext === null || plaintext === undefined || plaintext === '') return null
+  return cifrarIot(plaintext)
+}
+
+/** Descifra un token de telemetria IoT. Lanza si fue manipulado o es invalido. */
+export function descifrarIot(token: string): string {
+  return descifrarCon(getIotKey(), token)
 }
 
 /**

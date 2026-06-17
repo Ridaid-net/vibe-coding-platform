@@ -123,7 +123,7 @@ export function clipCoordenada(
 }
 
 /** Etiqueta de zona estable a partir de la celda (cuando no hay subdivision real). */
-function zonaDeCelda(celda: string): string {
+export function zonaDeCelda(celda: string): string {
   const h = createHash('sha256').update(celda).digest()
   return ZONAS_MENDOZA[h[0] % ZONAS_MENDOZA.length]!
 }
