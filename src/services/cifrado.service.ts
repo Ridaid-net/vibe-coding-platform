@@ -38,6 +38,7 @@ const VERSION = 'v1'
 
 let cachedKey: Buffer | null = null
 let cachedIotKey: Buffer | null = null
+let cachedDenunciaKey: Buffer | null = null
 
 /** Indica si hay una clave AES real configurada (vs. derivada en preview). */
 export function cifradoConfigurado(): boolean {
@@ -48,6 +49,12 @@ export function cifradoConfigurado(): boolean {
 /** Indica si hay una clave AES real para la telemetria IoT (vs. derivada). */
 export function iotCifradoConfigurado(): boolean {
   const raw = process.env.RODAID_IOT_AES_KEY
+  return typeof raw === 'string' && raw.trim().length > 0
+}
+
+/** Indica si hay una clave AES real para los PDF de denuncias (vs. derivada). */
+export function denunciaCifradoConfigurado(): boolean {
+  const raw = process.env.RODAID_DENUNCIA_AES_KEY
   return typeof raw === 'string' && raw.trim().length > 0
 }
 
@@ -98,6 +105,25 @@ function getIotKey(): Buffer {
   const secret = getAuthSecret() ?? 'rodaid-iot-fallback'
   cachedIotKey = scryptSync(secret, 'rodaid-iot-aes-v1', KEY_BYTES)
   return cachedIotKey
+}
+
+/**
+ * Resuelve (y cachea) la clave AES-256 del BUCKET CIFRADO de denuncias del MPF
+ * (Hito 18). Es una clave INDEPENDIENTE: el PDF oficial de la denuncia se guarda
+ * cifrado en reposo con su propia identidad criptografica. En LIVE se toma de
+ * `RODAID_DENUNCIA_AES_KEY`; en preview se deriva de forma estable del secreto de
+ * la app (igual que el resto de los modos del proyecto).
+ */
+function getDenunciaKey(): Buffer {
+  if (cachedDenunciaKey) return cachedDenunciaKey
+  const raw = process.env.RODAID_DENUNCIA_AES_KEY
+  if (raw && raw.trim().length > 0) {
+    cachedDenunciaKey = parseClaveConfigurada(raw)
+    return cachedDenunciaKey
+  }
+  const secret = getAuthSecret() ?? 'rodaid-denuncia-fallback'
+  cachedDenunciaKey = scryptSync(secret, 'rodaid-denuncia-aes-v1', KEY_BYTES)
+  return cachedDenunciaKey
 }
 
 /** Cifra un texto en claro con una clave dada. Devuelve el token portable. */
@@ -161,6 +187,47 @@ export function cifrarIotOpcional(plaintext: string | null | undefined): string 
 /** Descifra un token de telemetria IoT. Lanza si fue manipulado o es invalido. */
 export function descifrarIot(token: string): string {
   return descifrarCon(getIotKey(), token)
+}
+
+// ── Bucket cifrado de denuncias del MPF (Hito 18): cifrado binario en reposo ──
+
+/**
+ * Formato del contenedor binario cifrado de un PDF en el bucket:
+ *   [1 byte version=1][12 bytes IV][16 bytes tag GCM][ciphertext...]
+ * AES-256-GCM aporta confidencialidad + integridad: si el blob fue manipulado,
+ * el descifrado falla. Cada operacion usa un IV aleatorio de 96 bits.
+ */
+const BIN_VERSION = 1
+const TAG_BYTES = 16
+
+/**
+ * Cifra un buffer (p. ej. el PDF de la denuncia) para guardarlo en el bucket
+ * CIFRADO. Devuelve el contenedor binario portable (version + IV + tag + ct).
+ */
+export function cifrarBytesDenuncia(plain: Buffer | Uint8Array): Buffer {
+  const key = getDenunciaKey()
+  const iv = randomBytes(IV_BYTES)
+  const cipher = createCipheriv(ALGO, key, iv)
+  const ct = Buffer.concat([cipher.update(Buffer.from(plain)), cipher.final()])
+  const tag = cipher.getAuthTag()
+  return Buffer.concat([Buffer.from([BIN_VERSION]), iv, tag, ct])
+}
+
+/**
+ * Descifra un contenedor binario producido por `cifrarBytesDenuncia`. Lanza si
+ * el formato es invalido o el contenido fue manipulado.
+ */
+export function descifrarBytesDenuncia(blob: Buffer | Uint8Array): Buffer {
+  const buf = Buffer.from(blob)
+  if (buf.length < 1 + IV_BYTES + TAG_BYTES || buf[0] !== BIN_VERSION) {
+    throw new Error('Contenedor cifrado de denuncia con formato invalido.')
+  }
+  const iv = buf.subarray(1, 1 + IV_BYTES)
+  const tag = buf.subarray(1 + IV_BYTES, 1 + IV_BYTES + TAG_BYTES)
+  const ct = buf.subarray(1 + IV_BYTES + TAG_BYTES)
+  const decipher = createDecipheriv(ALGO, getDenunciaKey(), iv)
+  decipher.setAuthTag(tag)
+  return Buffer.concat([decipher.update(ct), decipher.final()])
 }
 
 /**

@@ -840,3 +840,50 @@ export interface IotAlertaRow {
   reconocida: boolean
   created_at: string
 }
+
+// ---------------------------------------------------------------------------
+// Hito 18: Denuncia Ciudadana con Validacion de Documento Oficial (MPF)
+// Fuente de verdad: netlify/database/migrations/20260617170000_create_denuncias_mpf.sql
+// ---------------------------------------------------------------------------
+
+/** Estado del proceso de denuncia ciudadana respaldada por el PDF del MPF. */
+export type DenunciaMpfEstado =
+  | 'DENUNCIA_JUDICIAL_ACTIVA'
+  | 'EN_REVISION'
+  | 'ANULADA'
+
+/** Fila cruda de `denuncias_mpf`. */
+export interface DenunciaMpfRow {
+  id: string
+  bicicleta_id: string
+  cit_id: string | null
+  usuario_id: string
+  serial_normalizado: string
+  estado: DenunciaMpfEstado
+  numero_expediente: string | null
+  fecha_documento: string | null
+  estructura_valida: boolean
+  titular_coincide: boolean
+  validacion: Record<string, unknown>
+  pdf_blob_key: string
+  pdf_sha256: string
+  pdf_bytes: number
+  bfa_estado: string | null
+  bfa_tx_hash: string | null
+  metadata: Record<string, unknown>
+  creado_en: string
+  actualizado_en: string
+}
+
+/** Fila cruda de `denuncias_mpf_auditoria` (bitacora inmutable con el hash PDF). */
+export interface DenunciaMpfAuditoriaRow {
+  id: string
+  denuncia_id: string | null
+  bicicleta_id: string | null
+  serial_normalizado: string | null
+  usuario_id: string | null
+  evento: string
+  pdf_sha256: string | null
+  detalle: Record<string, unknown>
+  created_at: string
+}

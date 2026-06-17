@@ -557,3 +557,72 @@ export async function procesarRecupero(
 
 // Re-export utilitario para pruebas/diagnostico del cifrado de payloads.
 export { descifrar as descifrarPayload }
+
+// ── Aviso institucional de DENUNCIA JUDICIAL (Hito 18) ─────────────────────────
+
+export interface DenunciaJudicialAviso {
+  serial: string
+  expediente: string | null
+  fechaDocumento: string | null
+  /** Link SEGURO al PDF de la denuncia alojado en el bucket cifrado. */
+  documentoUrl: string
+  /** Huella SHA-256 del PDF (integridad: el receptor puede verificarla). */
+  documentoHash: string
+  /** Identificador interno de la denuncia (trazabilidad). */
+  denunciaId: string
+}
+
+export interface DenunciaJudicialResultado {
+  enviado: boolean
+  modo: 'LIVE' | 'SIMULADO'
+}
+
+/**
+ * Notifica al Ministerio de Seguridad (canal del Hito 12) que una bici tiene una
+ * DENUNCIA JUDICIAL ACTIVA, incluyendo un LINK SEGURO al PDF de la denuncia del
+ * MPF alojado en nuestro bucket cifrado, para que la autoridad acceda a la
+ * documentacion en tiempo real.
+ *
+ * En LIVE usa el endpoint configurado del Ministerio (`RODAID_MINISTERIO_DENUNCIA_URL`,
+ * o el de robo en curso como respaldo); en preview/sin endpoint, el aviso queda
+ * en el log (modo SIMULADO), igual que el resto de los modos del proyecto. El
+ * link al documento es de un solo recurso, firmado y de vida acotada (lo emite el
+ * servicio de denuncias); el PDF en si nunca viaja en el payload.
+ */
+export async function notificarDenunciaJudicial(
+  aviso: DenunciaJudicialAviso
+): Promise<DenunciaJudicialResultado> {
+  const base =
+    process.env.RODAID_MINISTERIO_DENUNCIA_URL ??
+    process.env.RODAID_MINISTERIO_ROBO_URL
+  const payload = {
+    tipo: 'DENUNCIA_JUDICIAL_ACTIVA',
+    serial: aviso.serial,
+    expediente: aviso.expediente,
+    fechaDocumento: aviso.fechaDocumento,
+    documentoUrl: aviso.documentoUrl,
+    documentoHash: aviso.documentoHash,
+    denunciaId: aviso.denunciaId,
+    reportadoEn: new Date().toISOString(),
+  }
+  if (!base) {
+    console.info(
+      `[ministerio] DENUNCIA JUDICIAL (simulado) — serial ${aviso.serial}, exp ${
+        aviso.expediente ?? 's/exp'
+      } — documento: ${aviso.documentoUrl}`
+    )
+    return { enviado: false, modo: 'SIMULADO' }
+  }
+  const apiKey =
+    process.env.RODAID_MINISTERIO_DENUNCIA_API_KEY ??
+    process.env.RODAID_MINISTERIO_ROBO_API_KEY
+  await fetch(base, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+    },
+    body: JSON.stringify(payload),
+  })
+  return { enviado: true, modo: 'LIVE' }
+}
