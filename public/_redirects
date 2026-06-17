@@ -1,0 +1,26 @@
+# RODAID — control de acceso al panel de administración (Hito 19).
+#
+# Política declarada: /admin/* requiere rol=admin.
+#   - Usuario admin            → se sirve la página (200).
+#   - Usuario sin autenticar   → redirección 301 al login.
+#   - Usuario sin privilegios  → 403 Forbidden.
+#
+# DÓNDE SE APLICA REALMENTE: la Edge Function `auth-admin` (ver netlify.toml).
+# Corre al inicio de la cadena de procesamiento —antes que estas reglas— valida
+# la FIRMA del JWT en el borde y, para quien no está autorizado, DEVUELVE una
+# respuesta (301 al login si no hay sesión, 403 si la sesión no tiene
+# privilegios), lo que DETIENE la cadena: no se puede evadir desde el cliente.
+#
+# Por qué NO se expresa aquí el 301/403 como una regla incondicional: para un
+# administrador autorizado la función continúa la cadena con `context.next()`,
+# que vuelve a pasar por el motor de redirecciones. Como Netlify no lee nuestro
+# claim de rol propio (`rol`) sin configuración de Identity, una regla de
+# bloqueo incondicional `/admin/* -> /ingresar` se dispararía también para los
+# administradores legítimos y los expulsaría al login. Por eso el bloqueo vive
+# en el borde (que sí valida la firma) y aquí solo declaramos el acceso permitido
+# con la sintaxis nativa de roles de Netlify, como capa de defensa en profundidad
+# que además queda lista si en el futuro se habilita el rol vía Netlify Identity.
+
+# Acceso permitido: los administradores acceden al panel.
+/admin/*   /admin/:splat   200!   Role=admin
+/admin     /admin          200!   Role=admin

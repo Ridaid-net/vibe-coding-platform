@@ -1,0 +1,17 @@
+# RODAID — configuración de Netlify.
+#
+# Hito 19: vincula la Edge Function `auth-admin` (control de acceso basado en
+# roles) a TODAS las superficies de administración. Al declararla aquí, la
+# función se ejecuta primero (config-based), antes que cualquier regla de
+# _redirects o que la función de origen, garantizando la defensa en profundidad.
+[[edge_functions]]
+function = "auth-admin"
+path = "/admin"
+
+[[edge_functions]]
+function = "auth-admin"
+path = "/admin/*"
+
+[[edge_functions]]
+function = "auth-admin"
+path = "/api/v1/admin/*"

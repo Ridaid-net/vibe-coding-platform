@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { RodaidLogo } from './logo'
+import { useAuth } from './auth-context'
 import { useEffect, useState } from 'react'
 
 const LINKS = [
@@ -13,6 +14,8 @@ const LINKS = [
 
 export function Nav() {
   const [scrolled, setScrolled] = useState(false)
+  const { user, loading } = useAuth()
+  const isAdmin = user?.role === 'admin'
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12)
@@ -77,12 +80,29 @@ export function Nav() {
           >
             Desarrolladores
           </Link>
-          <Link
-            href="/admin"
-            className="hidden rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:text-ink lg:inline-flex"
-          >
-            Administración
-          </Link>
+          {/*
+           * Controles de administración: solo visibles para usuarios con rol
+           * `admin`. Mientras se hidrata la sesión se reserva el espacio para
+           * evitar el salto visual. Esto es UX, no seguridad: el acceso real lo
+           * imponen la Edge Function `auth-admin` y los guards del backend.
+           */}
+          <div className="admin-controls flex items-center">
+            {loading ? (
+              <span
+                aria-hidden="true"
+                className="hidden h-9 w-[7.5rem] animate-pulse rounded-full bg-ink/5 lg:inline-flex"
+              />
+            ) : (
+              isAdmin && (
+                <Link
+                  href="/admin"
+                  className="hidden rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:text-ink lg:inline-flex"
+                >
+                  Administración
+                </Link>
+              )
+            )}
+          </div>
           <Link
             href="/ingresar"
             className="hidden rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:text-ink sm:inline-flex"
