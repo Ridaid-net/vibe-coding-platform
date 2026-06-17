@@ -26,6 +26,7 @@ import {
   sendPushNotification,
   type PushSubscriptionData,
 } from '@/src/services/webpush'
+import { despacharEventoEcosistema } from '@/src/services/webhooks-ecosistema.service'
 
 // Re-export para que el frontend/endpoints obtengan la clave publica VAPID.
 export { getVapidPublicKey } from '@/src/services/webpush'
@@ -333,6 +334,13 @@ export async function emitirEvento(
 ): Promise<AcuseEvento> {
   const mensaje = construirMensaje(evento)
   try {
+    // Hito 16 — Open-Connect: fan-out al ecosistema de terceros (logística,
+    // seguros). NO BLOQUEANTE: se dispara sin await para no afectar el SLA del
+    // proceso de negocio; solo se entregan eventos PUBLICOS sin datos personales.
+    void despacharEventoEcosistema({ tipo: evento.tipo, data: evento.data }).catch(
+      () => undefined
+    )
+
     // El log de consola deja rastro siempre, haya o no suscripciones (util en
     // preview y para debugging del pipeline).
     console.info(
