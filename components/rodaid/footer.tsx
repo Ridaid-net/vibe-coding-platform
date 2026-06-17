@@ -1,5 +1,6 @@
 import { RodaidLogo } from './logo'
 import { FaqFooterLink } from './faq-footer-link'
+import { ConsultoriaLegalEnlace } from './consultoria-legal-opener'
 import Link from 'next/link'
 
 const COLS = [
@@ -55,18 +56,19 @@ export function Footer() {
           <p>© {new Date().getFullYear()} RODAID. Todos los derechos reservados.</p>
           <div className="flex flex-wrap gap-5">
             <FaqFooterLink />
+            <ConsultoriaLegalEnlace />
             <Link href="/aliados" className="transition-colors hover:text-lime">
               Sumate como Aliado
             </Link>
             <Link href="/admin/inspecciones" className="transition-colors hover:text-lime">
               Panel de Inspecciones
             </Link>
-            <a href="#top" className="transition-colors hover:text-paper">
+            <Link href="/terminos" className="transition-colors hover:text-paper">
               Términos
-            </a>
-            <a href="#top" className="transition-colors hover:text-paper">
+            </Link>
+            <Link href="/terminos#seguridad-datos" className="transition-colors hover:text-paper">
               Privacidad
-            </a>
+            </Link>
             <a href="#top" className="transition-colors hover:text-paper">
               Defensa al consumidor
             </a>
