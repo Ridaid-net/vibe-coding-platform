@@ -10,6 +10,7 @@ import {
   type NotificacionValidacion,
 } from '@/src/services/notification.service'
 import { anclarCIT, type AnclajeResultado } from '@/src/services/blockchain.service'
+import { registrarRetribucionAliado } from '@/src/services/compensaciones.service'
 
 /**
  * RODAID — Hito 5: Pipeline de Validacion de 72hs.
@@ -480,6 +481,27 @@ export async function procesarJob(
           detalle: 'SHA-256 del payload del CIT calculado y guardado (Hito 4).',
           metadata: { hashSha256: hash },
         })
+
+        // Hito 13 (RODAID PAY): el CIT se emitio y valido con exito. Si la bici
+        // esta vinculada a un Taller Aliado, se registra (de forma atomica con la
+        // aprobacion) la retribucion proporcional que le corresponde al taller.
+        const retribucion = await registrarRetribucionAliado(client, {
+          citId: datos.cit_id,
+          bicicletaId: datos.bicicleta_id,
+        })
+        if (retribucion.registrada) {
+          await logPaso(client, {
+            colaId: jobId,
+            citId: datos.cit_id,
+            paso: 'RETRIBUCION_ALIADO_REGISTRADA',
+            detalle: `Retribucion al Taller Aliado registrada: $${retribucion.monto}.`,
+            metadata: {
+              aliadoId: retribucion.aliadoId,
+              monto: retribucion.monto,
+              liquidacionId: retribucion.liquidacionId,
+            },
+          })
+        }
 
         return {
           jobId,

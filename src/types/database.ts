@@ -535,3 +535,83 @@ export interface RecuperoMinisterioRow {
   cliente_fingerprint: string | null
   created_at: string
 }
+
+// ---------------------------------------------------------------------------
+// RODAID PAY — Hito 13 (motor de pagos y compensaciones).
+// Fuente: 20260617130000_rodaid_pay_compensaciones.sql
+// ---------------------------------------------------------------------------
+
+/** Tipo de una liquidacion / compensacion (enum `liquidacion_tipo`). */
+export type LiquidacionTipo = 'VENDEDOR' | 'ALIADO_RETRIBUCION'
+
+/** Estado de una liquidacion (enum `liquidacion_estado`). */
+export type LiquidacionEstado = 'PENDIENTE' | 'PAGADA' | 'FALLIDA' | 'CANCELADA'
+
+/**
+ * Fila cruda de `pagos_liquidaciones`: libro de compensaciones (deudas a pagar).
+ * Cubre el pago al vendedor al liberarse el escrow (precio - comision) y la
+ * retribucion proporcional al Taller Aliado por un CIT validado.
+ */
+export interface PagosLiquidacionRow {
+  id: string
+  tipo: LiquidacionTipo
+  estado: LiquidacionEstado
+  beneficiario_id: string
+  beneficiario_tipo: string
+  origen_tipo: string
+  origen_id: string
+  transaccion_id: string | null
+  cit_id: string | null
+  monto: string
+  base_calculo: string | null
+  tasa_aplicada: string | null
+  intentos: number
+  transferencia_ref: string | null
+  ultimo_error: string | null
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+  pagado_en: string | null
+}
+
+/** Estado del pago de la Tasa CIT oficial (enum `tasa_cit_estado`). */
+export type TasaCitEstado = 'PENDIENTE' | 'PAGADA' | 'RECHAZADA' | 'EXPIRADA'
+
+/**
+ * Fila cruda de `tasas_cit`: pago de la tasa de verificacion del CIT por el canal
+ * oficial del Gobierno (Mendoza por Mi, pasarela estatal).
+ */
+export interface TasaCitRow {
+  id: string
+  cit_id: string | null
+  bicicleta_id: string | null
+  solicitante_id: string | null
+  monto: string
+  canal: string
+  estado: TasaCitEstado
+  referencia_externa: string | null
+  comprobante: string | null
+  external_uid: string | null
+  checkout_url: string | null
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+  pagado_en: string | null
+}
+
+/**
+ * Fila cruda de `pagos_log`: bitacora financiera INMUTABLE (append-only). La
+ * tabla no admite UPDATE ni DELETE (trigger + REVOKE).
+ */
+export interface PagoLogRow {
+  id: string
+  evento: string
+  origen_tipo: string | null
+  origen_id: string | null
+  monto: string | null
+  beneficiario_id: string | null
+  actor_id: string | null
+  actor_rol: string | null
+  metadata: Record<string, unknown>
+  created_at: string
+}
