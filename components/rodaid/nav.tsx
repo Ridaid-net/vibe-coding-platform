@@ -78,6 +78,12 @@ export function Nav() {
             Desarrolladores
           </Link>
           <Link
+            href="/admin"
+            className="hidden rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:text-ink lg:inline-flex"
+          >
+            Administración
+          </Link>
+          <Link
             href="/ingresar"
             className="hidden rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:text-ink sm:inline-flex"
           >
