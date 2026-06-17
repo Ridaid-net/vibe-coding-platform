@@ -1,6 +1,7 @@
 import { Bricolage_Grotesque, Hanken_Grotesk } from 'next/font/google'
 import { Toaster } from '@/components/ui/sonner'
 import { FaqWidget } from '@/components/rodaid/faq-widget'
+import { ConsultoriaLegalWidget } from '@/components/rodaid/consultoria-legal-widget'
 import { AuthProvider } from '@/components/rodaid/auth-context'
 import type { ReactNode } from 'react'
 import type { Metadata } from 'next'
@@ -53,6 +54,7 @@ export default function RootLayout({
         <AuthProvider>
           {children}
           <FaqWidget />
+          <ConsultoriaLegalWidget />
         </AuthProvider>
         <Toaster />
       </body>

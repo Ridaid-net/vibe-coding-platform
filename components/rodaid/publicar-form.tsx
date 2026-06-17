@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowLeft,
   Bike,
+  FileSignature,
   ImagePlus,
   Loader2,
   ShieldCheck,
@@ -18,6 +19,8 @@ import {
   type PublicarFormErrors,
 } from '@/lib/publicar-schema'
 import { etiquetaBici, type BicicletaGaraje } from '@/lib/garaje'
+import { DECLARACION_JURADA_LICITUD } from '@/lib/legal-corpus'
+import { abrirConsultoriaLegal } from './consultoria-legal-widget'
 import { RodaidPayBadge } from './rodaid-pay-badge'
 
 interface Draft {
@@ -57,6 +60,7 @@ export function PublicarForm({
   const [precioUSD, setPrecioUSD] = useState('')
   const [foto, setFoto] = useState<File | null>(null)
   const [fotoPreview, setFotoPreview] = useState<string | null>(null)
+  const [aceptaDDJJ, setAceptaDDJJ] = useState(false)
 
   const [errores, setErrores] = useState<PublicarFormErrors>({})
   const [enviando, setEnviando] = useState(false)
@@ -139,6 +143,13 @@ export function PublicarForm({
     if (Object.keys(erroresValidacion).length > 0) {
       toast.error('Revisá los datos del formulario', {
         description: 'Hay campos que necesitan tu atención.',
+      })
+      return
+    }
+
+    if (!aceptaDDJJ) {
+      toast.error('Falta la Declaración Jurada de Licitud', {
+        description: 'Para publicar, tenés que suscribir la Declaración Jurada de Licitud.',
       })
       return
     }
@@ -367,9 +378,53 @@ export function PublicarForm({
           </p>
         </div>
 
+        {/* Declaración Jurada de Licitud (Protocolo de Emisión del CIT, punto CIT-4) */}
+        <div className="rounded-2xl border border-ink/15 bg-white p-4">
+          <div className="flex items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-2 text-sm font-semibold text-ink">
+              <FileSignature className="size-4 text-lime-deep" />
+              Declaración Jurada de Licitud
+            </span>
+            <button
+              type="button"
+              onClick={() =>
+                abrirConsultoriaLegal(
+                  '¿Qué es la Declaración Jurada de Licitud y qué implica suscribirla?'
+                )
+              }
+              className="text-xs font-medium text-lime-deep underline-offset-2 hover:underline"
+            >
+              ¿Qué implica?
+            </button>
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-slate-warm">
+            {DECLARACION_JURADA_LICITUD}
+          </p>
+          <label className="mt-3 flex cursor-pointer items-start gap-2.5">
+            <input
+              type="checkbox"
+              checked={aceptaDDJJ}
+              onChange={(e) => setAceptaDDJJ(e.target.checked)}
+              className="mt-0.5 size-4 shrink-0 rounded border-ink/30 text-ink accent-lime-deep"
+            />
+            <span className="text-xs font-medium text-ink">
+              Suscribo bajo juramento la Declaración Jurada de Licitud y acepto los{' '}
+              <a
+                href="/terminos"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-lime-deep underline-offset-2 hover:underline"
+              >
+                Términos y el Protocolo de Emisión del CIT
+              </a>
+              .
+            </span>
+          </label>
+        </div>
+
         <button
           type="submit"
-          disabled={enviando}
+          disabled={enviando || !aceptaDDJJ}
           className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-ink px-6 py-4 text-sm font-semibold text-paper transition-colors hover:bg-ink-soft disabled:cursor-not-allowed disabled:opacity-60"
         >
           {enviando ? (
