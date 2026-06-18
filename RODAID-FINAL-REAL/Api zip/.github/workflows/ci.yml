@@ -1,0 +1,147 @@
+# ── RODAID · CI Pipeline ──────────────────────────────────
+# Dispara en: PR a main/develop + push a develop
+# Verifica: tipos, lint, build, integración básica
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [develop]
+
+jobs:
+  # ── 1. Type check + compilación ───────────────────────
+  typecheck:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+      - run: npx tsc --noEmit
+        name: Type check
+
+      - run: npm run build
+        name: Compile
+
+  # ── 2. Tests de integración con PostgreSQL real ────────
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: typecheck
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER:     rodaid_user
+          POSTGRES_PASSWORD: rodaid_test_2026
+          POSTGRES_DB:       rodaid_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV:            test
+      PORT:                3001
+      DATABASE_URL:        postgresql://rodaid_user:rodaid_test_2026@localhost:5432/rodaid_test
+      REDIS_URL:           redis://localhost:6379
+      JWT_SECRET:          ci_test_secret_32_chars_minimum_ok
+      JWT_ACCESS_EXPIRES:  15m
+      JWT_REFRESH_EXPIRES: 7d
+      ALLOWED_ORIGINS:     http://localhost:3000
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Aplicar schema PostgreSQL
+        run: psql $DATABASE_URL -f prisma/001_init.sql
+
+      - name: Cargar datos de seed
+        run: psql $DATABASE_URL -f prisma/002_seed.sql
+
+      - name: Health check del servidor
+        run: |
+          node dist/server.js &
+          sleep 5
+          curl -f http://localhost:3001/api/v1/health
+
+      - name: Test Auth endpoints
+        run: |
+          # Register
+          REG=$(curl -sf -X POST http://localhost:3001/api/v1/auth/register \
+            -H "Content-Type: application/json" \
+            -d '{"email":"ci@rodaid.com.ar","password":"ci_password_2026","nombre":"CI","apellido":"Test"}')
+          echo "Register: $(echo $REG | python3 -c 'import sys,json; print(json.load(sys.stdin)["ok"])')"
+
+          # Login
+          LOG=$(curl -sf -X POST http://localhost:3001/api/v1/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"email":"federico@rodaid.com.ar","password":"ciclista_demo_2026"}')
+          TOKEN=$(echo $LOG | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["accessToken"])')
+          echo "Login OK: token=${TOKEN:0:20}..."
+
+          # Me
+          ME=$(curl -sf http://localhost:3001/api/v1/auth/me -H "Authorization: Bearer $TOKEN")
+          echo "Me: $(echo $ME | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["nombre"])')"
+
+      - name: Test Marketplace
+        run: |
+          LOG=$(curl -sf -X POST http://localhost:3001/api/v1/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"email":"federico@rodaid.com.ar","password":"ciclista_demo_2026"}')
+          TOKEN=$(echo $LOG | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["accessToken"])')
+
+          MKT=$(curl -sf http://localhost:3001/api/v1/marketplace)
+          COUNT=$(echo $MKT | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["pagination"]["total"])')
+          echo "Marketplace: $COUNT publicaciones"
+          [ "$COUNT" -ge "2" ] || (echo "ERROR: se esperaban ≥2 publicaciones" && exit 1)
+
+      - name: Test Verificador público
+        run: |
+          VER=$(curl -sf http://localhost:3001/api/v1/cit/verificar/SN-R84MK-TMIA-MZA)
+          FOUND=$(echo $VER | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["encontrado"])')
+          echo "Verificar: encontrado=$FOUND"
+          [ "$FOUND" = "True" ] || (echo "ERROR: no encontró el serial" && exit 1)
+
+  # ── 3. Docker build (verifica que la imagen compila) ──
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: typecheck
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build imagen
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: rodaid-api:ci
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max

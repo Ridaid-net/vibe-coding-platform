@@ -1,0 +1,97 @@
+# ── RODAID · Deploy → AWS ECS Fargate ────────────────────
+# Pipeline completo: ECR push → ECS task update → health check
+# Requiere: IAM role con permisos ECR + ECS
+
+name: Deploy → AWS ECS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-aws
+  cancel-in-progress: false
+
+env:
+  AWS_REGION:      sa-east-1          # São Paulo — más cercano a Mendoza
+  ECR_REPOSITORY:  rodaid-api
+  ECS_CLUSTER:     rodaid-prod
+  ECS_SERVICE:     rodaid-api-service
+  CONTAINER_NAME:  rodaid-api
+
+jobs:
+  deploy:
+    name: Deploy to AWS ECS
+    runs-on: ubuntu-latest
+    environment: production
+    if: vars.DEPLOY_TARGET == 'aws'
+
+    permissions:
+      id-token: write   # OIDC — sin claves estáticas en secrets
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+
+      - run: npm ci && npx tsc --noEmit
+        name: Type check
+
+      # ── Auth con AWS via OIDC (sin access keys) ────────
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume:   ${{ secrets.AWS_ROLE_ARN }}
+          aws-region:       ${{ env.AWS_REGION }}
+          role-session-name: GitHubActions-${{ github.run_id }}
+
+      # ── Build y push a ECR ────────────────────────────
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag y push imagen a ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG:    ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          # Tambien pushear :latest
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+                     $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      # ── Actualizar ECS Task Definition ────────────────
+      - name: Descargar task definition actual
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition rodaid-api \
+            --query taskDefinition \
+            > task-definition.json
+
+      - name: Actualizar imagen en task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name:  ${{ env.CONTAINER_NAME }}
+          image:           ${{ steps.build-image.outputs.image }}
+
+      - name: Deploy a ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition:      ${{ steps.task-def.outputs.task-definition }}
+          service:              ${{ env.ECS_SERVICE }}
+          cluster:              ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+      # ── Smoke test ────────────────────────────────────
+      - name: Smoke test
+        env:
+          API_URL: ${{ secrets.AWS_ALB_URL }}
+        run: curl -f "$API_URL/api/v1/health" && echo "✅ ECS deploy OK"

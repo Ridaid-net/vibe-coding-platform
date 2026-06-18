@@ -1,0 +1,65 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: rodaid_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     rodaid_user
+      POSTGRES_PASSWORD: rodaid_dev_2026
+      POSTGRES_DB:       rodaid_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - rodaid_pgdata:/var/lib/postgresql/data
+      - ./prisma/001_init.sql:/docker-entrypoint-initdb.d/01_schema.sql
+      - ./prisma/002_seed.sql:/docker-entrypoint-initdb.d/02_seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rodaid_user -d rodaid_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: rodaid_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rodaid_api
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV:            development
+      PORT:                3001
+      API_VERSION:         v1
+      DATABASE_URL:        postgresql://rodaid_user:rodaid_dev_2026@postgres:5432/rodaid_db
+      REDIS_URL:           redis://redis:6379
+      JWT_SECRET:          CAMBIAR_EN_PRODUCCION_minimo_32_caracteres_alfanumericos
+      JWT_ACCESS_EXPIRES:  15m
+      JWT_REFRESH_EXPIRES: 7d
+      ALLOWED_ORIGINS:     http://localhost:5173,http://localhost:3000
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3001/api/v1/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  rodaid_pgdata:

@@ -1,0 +1,49 @@
+PROMPT DE ASIGNACIÓN DE TAREA - MÓDULO 4: CIT CERTIFICACIÓN
+SISTEMA: RODAID SAS
+ENTORNO DE DESPLIEGUE: Netlify Functions (Serverless / Node.js)
+OBJETIVO: Implementar la lógica del endpoint POST /api/cit/iniciar y la función criptográfica de inmutabilidad.
+
+---
+[INSTRUCCIONES DE DESARROLLO]
+
+1. CREAR FUNCIÓN DE NORMALIZACIÓN Y HASH (SHA-256)
+   - Archivo destino: /functions/utils/cryptoCIT.js (o equivalente en tu estructura).
+   - Crear una función 'generarHashCIT(payload)' utilizando el módulo nativo 'crypto' de Node.js.
+   - REQUISITO CRÍTICO: El payload debe ser determinista. Antes de aplicar el hash, debés ordenar todas las llaves del objeto JSON alfabéticamente de forma recursiva (tanto objetos como arrays de objetos).
+   - El string resultante de JSON.stringify() debe convertirse a un hash SHA-256 en formato hexadecimal.
+
+2. IMPLEMENTAR ENDPOINT SERVERLESS: POST /api/cit/iniciar
+   - Archivo destino: /functions/api-cit-iniciar.js
+   - El endpoint debe recibir por REQ.BODY los siguientes datos:
+     * aliadoId (String/ID)
+     * ciclistaId (String/ID)
+     * bicicletaSerial (String) -> Limpiar espacios y guiones, forzar Mayúsculas.
+     * inspeccion20Puntos (Array de Objetos: { item, estado, observacion })
+     * coordenadasGPS (Objeto: { lat, lng, precision })
+     * fotosHashes (Objeto: { cuadroUrl, transmisionUrl, hashFotos })
+   
+3. LÓGICA DE CONTROL DE ANOMALÍAS (FASE TEMPRANA)
+   - Validar que 'aliadoId' y 'bicicletaSerial' no vengan vacíos (Error 400).
+   - Incluir un flag booleano 'alerta_gps' ejecutando una función dummy 'verificarGeofencing(aliadoId, coordenadasGPS)' que por ahora retorne true (dejar el TODO para conectar el radio del taller).
+
+4. PERSISTENCIA EN COLA (PIPELINE 72 HORAS)
+   - Preparar la estructura de inserción para la base de datos (Supabase/PostgreSQL).
+   - El estado inicial del registro debe ser obligatoriamente: 'PENDIENTE_VALIDACION'.
+   - Calcular e insertar la fecha exacta de expiración del cruce: Timestamp Actual + 72 Horas.
+   - Guardar tanto el payload limpio como el hash generado en el paso 1.
+
+5. RESPUESTA DEL ENDPOINT (RESPONSE)
+   - Si el proceso es exitoso, retornar Status 201.
+   - El JSON de respuesta debe incluir:
+     {
+       "success": true,
+       "mensaje": "Inspección CIT recibida. Pipeline de 72 hs iniciado.",
+       "hash": "[HASH_GENERADO]",
+       "estado": "PENDIENTE_VALIDACION"
+     }
+
+---
+[RESTRICCIONES DE CALIDAD]
+- NO utilices librerías externas de criptografía (usa 'crypto' nativo).
+- Manejar errores con bloques try/catch robustos que devuelvan Status 500 y describan el fallo sin colgar la función serverless.
+- El código debe ser modular, exportando las funciones limpiamente para permitir testing unitario posterior.

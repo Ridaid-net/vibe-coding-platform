@@ -1,0 +1,43 @@
+# ── RODAID · Deploy → Render ──────────────────────────────
+# Alternativa a Railway — usar solo uno de los dos
+
+name: Deploy → Render
+
+on:
+  workflow_dispatch:    # solo manual o desde deploy-railway.yml
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-render
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Render
+    runs-on: ubuntu-latest
+    environment: production
+    if: vars.DEPLOY_TARGET == 'render'   # activar con variable de repo
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+
+      - run: npm ci && npx tsc --noEmit
+        name: Type check
+
+      # Render deploy via Deploy Hook (webhook URL en secrets)
+      - name: Trigger Render deploy
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          RESPONSE=$(curl -sf -X POST "$RENDER_DEPLOY_HOOK")
+          echo "Render deploy triggered: $RESPONSE"
+
+      - name: Esperar y smoke test
+        env:
+          API_URL: ${{ secrets.RENDER_API_URL }}
+        run: |
+          sleep 60
+          curl -f "$API_URL/api/v1/health" && echo "✅ Render deploy OK"

@@ -1,0 +1,52 @@
+{
+  "_comment": "RODAID · Dashboard de monitoring — importar en Grafana o Datadog",
+  "title": "RODAID API — Production Dashboard",
+  "panels": [
+    {
+      "title": "API Uptime %",
+      "type": "stat",
+      "query": "avg_over_time(up{job='rodaid-api'}[24h]) * 100",
+      "thresholds": { "warning": 99.5, "critical": 99.0 }
+    },
+    {
+      "title": "Request Rate (req/s)",
+      "type": "graph",
+      "query": "rate(http_requests_total{service='rodaid-api'}[5m])"
+    },
+    {
+      "title": "P95 Response Time (ms)",
+      "type": "graph",
+      "query": "histogram_quantile(0.95, rate(http_request_duration_ms_bucket[5m]))",
+      "thresholds": { "warning": 500, "critical": 2000 }
+    },
+    {
+      "title": "Error Rate (5xx)",
+      "type": "stat",
+      "query": "rate(http_requests_total{status=~'5..'}[5m]) / rate(http_requests_total[5m]) * 100",
+      "thresholds": { "warning": 1, "critical": 5 }
+    },
+    {
+      "title": "PostgreSQL Pool — Waiting",
+      "type": "graph",
+      "query": "pg_pool_waiting{service='rodaid-api'}",
+      "thresholds": { "warning": 3, "critical": 10 }
+    },
+    {
+      "title": "Bull Queue — Failed Jobs",
+      "type": "stat",
+      "query": "bull_queue_failed_total{service='rodaid-api'}",
+      "thresholds": { "warning": 5, "critical": 20 }
+    },
+    {
+      "title": "CITs emitidos hoy",
+      "type": "stat",
+      "query": "SELECT COUNT(*) FROM cits WHERE fecha_emision > NOW() - INTERVAL '24h' AND estado = 'ACTIVO'"
+    },
+    {
+      "title": "Heap Memory (MB)",
+      "type": "graph",
+      "query": "process_heap_bytes{service='rodaid-api'} / 1024 / 1024",
+      "thresholds": { "warning": 400, "critical": 700 }
+    }
+  ]
+}

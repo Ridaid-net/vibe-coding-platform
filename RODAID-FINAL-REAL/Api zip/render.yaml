@@ -1,0 +1,63 @@
+# ── RODAID · Render Blueprint ─────────────────────────────
+# Despliega: API + PostgreSQL + Redis en un solo click
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: rodaid-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter          # $7/mes — escalar a Standard en producción
+    region: ohio           # us-east-1 — cambiar a São Paulo cuando disponible
+    numInstances: 1
+
+    healthCheckPath: /api/v1/health
+
+    envVars:
+      - key:   NODE_ENV
+        value: production
+      - key:   PORT
+        value: 3001
+      - key:   API_VERSION
+        value: v1
+
+      # PostgreSQL — Render managed database (referencia interna)
+      - key:         DATABASE_URL
+        fromDatabase:
+          name:      rodaid-postgres
+          property:  connectionString
+
+      # Redis — Render managed Redis (referencia interna)
+      - key:         REDIS_URL
+        fromService:
+          name:      rodaid-redis
+          type:      redis
+          property:  connectionString
+
+      # Secrets — configurar manualmente en Render dashboard
+      - key:   JWT_SECRET
+        sync:  false    # no sincronizar desde código — valor secreto
+      - key:   ALLOWED_ORIGINS
+        value: https://rodaid.com.ar,https://www.rodaid.com.ar
+      - key:   BFA_RPC_URL
+        sync:  false
+      - key:   BFA_WALLET_PRIVATE_KEY
+        sync:  false
+      - key:   BFA_CONTRACT_ADDRESS
+        sync:  false
+      - key:   MXM_CLIENT_ID
+        sync:  false
+      - key:   MXM_CLIENT_SECRET
+        sync:  false
+
+    autoDeploy: true
+
+databases:
+  - name: rodaid-postgres
+    plan: starter          # $7/mes PostgreSQL 15
+    databaseName: rodaid_db
+    user: rodaid_user
+
+  - name: rodaid-redis
+    plan: starter          # $7/mes Redis 7
+    ipAllowList: []        # solo acceso interno
