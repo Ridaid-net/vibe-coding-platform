@@ -1,11 +1,4 @@
-{
-  "name": "nombre-de-tu-proyecto",
-  "version": "1.0.0",
-  "scripts": {
-    "build": "tsc",
+"scripts": {
+    "build": "tsc --outDir dist && ls -R",
     "start": "node dist/server.js"
   },
-  "dependencies": {
-    "typescript": "^5.0.0"
-  }
-}
