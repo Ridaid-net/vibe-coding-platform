@@ -1,8 +1,10 @@
 {
-  "name": "rodaid-final",
+  "name": "rodaid-api-final",
   "version": "1.0.0",
+  "description": "API del proyecto Rodaid",
+  "main": "index.js",
   "scripts": {
-    "build": "npx tsc --project ./tsconfig.json"
+    "build": "npx tsc --project ./tsconfig.json --listEmittedFiles --diagnostics"
   },
   "dependencies": {
     "typescript": "^5.0.0"
