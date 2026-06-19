@@ -1,4 +1,17 @@
-"scripts": {
-  "build": "tsc --outDir dist; ls -R; echo 'FIN DEL LISTADO'; exit 0",
-  "start": "node dist/server.js"
+{
+  "name": "rodaid-final",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "typescript": "^5.0.0"
+  }
+}
+{
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": ["src/**/*"]
 }
