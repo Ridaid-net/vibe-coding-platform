@@ -1,4 +1,4 @@
 "scripts": {
-    "build": "tsc --outDir dist && ls -R",
-    "start": "node dist/server.js"
-  },
+  "build": "tsc --outDir dist --verbose || (echo 'COMPILACION FALLIDA' && exit 1)",
+  "start": "node dist/server.js"
+}
