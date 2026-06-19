@@ -1,29 +1,32 @@
-import Queue from 'bull';
+import Redis from 'ioredis';
 
-// Obtenemos la URL de forma segura
-const redisUrl = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
+let redisInstance: any = null;
 
-// Inicializamos las colas
-export const colaValidar = new Queue('validar', redisUrl);
-export const colaFinalizar = new Queue('finalizar', redisUrl);
+export const getRedisClient = () => {
+  // Si ya tenemos la instancia, la devolvemos
+  if (redisInstance) return redisInstance;
 
-// Función para verificar la conexión antes de permitir que la app funcione
-export const checkRedisConnection = async (): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    // Usamos el cliente interno de una de las colas para verificar el estado
-    const client = colaValidar.client;
-
-    client.on('connect', () => {
-      console.log('✅ Conectado a Redis exitosamente');
-      resolve();
-    });
-
-    client.on('error', (err) => {
-      console.error('❌ Error de conexión a Redis:', err);
-      reject(err);
-    });
-
-    // Si ya está conectado, resolvemos inmediatamente
-    if (client.status === 'ready') resolve();
-  });
+  // Si no, la creamos SOLO cuando se llama a esta función
+  if (process.env.REDIS_URL) {
+    try {
+      redisInstance = new Redis(process.env.REDIS_URL, {
+        lazyConnect: true, // Esto es vital: NO conecta hasta que sea necesario
+        connectTimeout: 10000
+      });
+      console.log("✅ Instancia de Redis creada (Lazy).");
+    } catch (error) {
+      console.error("⚠ Error al instanciar Redis.");
+    }
+  }
+  
+  // Si falla o no hay URL, devolvemos un mock básico para no romper la app
+  if (!redisInstance) {
+    redisInstance = {
+      get: async () => null,
+      set: async () => 'OK',
+      // ... otros métodos necesarios
+    };
+  }
+  
+  return redisInstance;
 };
