@@ -1,4 +1,9 @@
 "scripts": {
   "build": "tsc",
   "start": "node dist/server.js"
+},
+"dependencies": {
+  "ioredis": "^5.x.x",
+  "rate-limiter-flexible": "^5.x.x"
+  // ... tus otras dependencias
 }
