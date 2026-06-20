@@ -1,0 +1,54 @@
+levantar la API en producción (usualmente en el archivo de inicio index.ts o server.ts), bloqueando el arranque (crash-early)
+
+34/34 tests — src/config/env.validator.ts integrado y operativo.
+
+Lo que se integró de la propuesta de Gemini y lo que se extendió para RODAID:
+
+Feature                            Gemini (base)                          RODAID (extendido)
+Vars crítica                       scriticalVars[] array plano            3 categorías: VARS_CRITICAS / VARS_PRODUCCION / VARS_AVANZADAS
+DB check                           count(*) > 0                           count ≥ 68 tablas + verify 5 tablas críticas por nombre
+Redis                              ping()                                                                                   PING → PONG round-trip
+BFA JSON-RPC                        eth_blockNum ber → error fatal           WARN en dev/CRITICAL en prod según BFA_CONTRACT_ADDRESS
+Crash-early                        process.exit(1) incondicionalmente       Solo en NODE_ENV=production — dev sigue con warnings
+Output                             console.error plano                      Pino logger estructurado con colores por severidad
+Resultado                         { success, errors[] }                                                          { success, criticos[], warnings[], checks[], duracionMs }
+
+Salida real del validador en este entorno (producción simulada, 157ms):
+
+✅ DATABASE_URL presente         ← DB conecta
+✅ REDIS_URL presente            ← Redis conecta
+✅ JWT_SECRET ≥32 chars          ← 46 chars OK
+✅ DB:connection — 71 tablas     ← PostgreSQL OK
+✅ DB:tablas-críticas            ← usuarios, bicicletas, cits, marketplace_publicaciones, transacciones
+✅ Redis:ping — PING → PONG
+❌ MXM_CLIENT_ID                 ← CRITICAL (producción)
+❌ BFA_RPC_URL                   ← CRITICAL (producción)
+❌ ANTHROPIC_API_KEY             ← CRITICAL (producción)
+⚠  S3_BUCKET_FOTOS               ← WARN (opcional)
+⚠  CDN_URL                       ← WARN (opcional)
+→ 15 CRÍTICOS · process.exit(1)
+
+La secuencia en server.ts queda así:
+
+typescript
+async function main() {
+  setupProcessLoggers()
+
+  // 0. Crash-early — bloquea si producción incompleta
+  await runEnvValidation()          // ← nuevo paso
+
+  // 1. PostgreSQL
+  await pool.query('SELECT 1')
+
+  // 2. Redis + rate limiters
+  await initRateLimiters()
+
+  // 3. Bull queue
+  await initQueue()
+
+  // 4. HTTP server
+  app.listen(env.PORT, ...)
+}
+
+El servidor nunca llega a app.listen() si algún check CRITICAL falla en producción — exactamente el comportamiento crash-early que describe la propuesta de Gemini, integrado con el stack real de RODAID.
+
