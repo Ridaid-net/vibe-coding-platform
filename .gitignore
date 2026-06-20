@@ -1,0 +1,13 @@
+# Archivos basura y carpetas de respaldo
+/Api zip/
+/*.docx
+/*.pdf
+/*.jpg
+/*.jpeg
+/*.zip
+/rodaid-api - 2026-*/
+
+# Configuración y dependencias
+node_modules/
+dist/
+.env
