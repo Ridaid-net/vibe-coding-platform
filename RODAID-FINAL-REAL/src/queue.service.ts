@@ -1,31 +1,29 @@
 import Redis from 'ioredis';
 
-let redisInstance: any = null;
+let redisInstance: Redis | null = null;
 
 export const getRedisClient = () => {
-  // Si ya tenemos la instancia, la devolvemos
   if (redisInstance) return redisInstance;
 
-  // Si no, la creamos SOLO cuando se llama a esta función
   if (process.env.REDIS_URL) {
-    try {
-      redisInstance = new Redis(process.env.REDIS_URL, {
-        lazyConnect: true, // Esto es vital: NO conecta hasta que sea necesario
-        connectTimeout: 10000
-      });
-      console.log("✅ Instancia de Redis creada (Lazy).");
-    } catch (error) {
-      console.error("⚠ Error al instanciar Redis.");
-    }
-  }
-  
-  // Si falla o no hay URL, devolvemos un mock básico para no romper la app
-  if (!redisInstance) {
+    redisInstance = new Redis(process.env.REDIS_URL, {
+      lazyConnect: true,
+      connectTimeout: 10000,
+      // Habilitar reconexión automática
+      retryStrategy(times) {
+        return Math.min(times * 50, 2000);
+      }
+    });
+
+    // Manejo de eventos para debug
+    redisInstance.on('error', (err) => console.error('Redis Client Error:', err));
+    redisInstance.on('connect', () => console.log('✅ Redis conectado.'));
+  } else {
+    // Mock robusto
     redisInstance = {
       get: async () => null,
       set: async () => 'OK',
-      // ... otros métodos necesarios
-    };
+    } as any;
   }
   
   return redisInstance;

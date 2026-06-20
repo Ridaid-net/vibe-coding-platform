@@ -1,14 +1,4 @@
-{
-  "name": "rodaid-api-final",
-  "version": "1.0.0",
-  "scripts": {
-    "build": "tsc --outDir dist"
-  },
-  "devDependencies": {
-    "@types/node": "^26.0.0",
-    "typescript": "^5.0.0"
-  },
-  "dependencies": {
-    "ioredis": "^5.11.1"
-  }
+"scripts": {
+  "start": "node index.js",
+  "build": "..."
 }
