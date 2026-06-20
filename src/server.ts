@@ -1,15 +1,22 @@
 export const redis = new Redis(redisUrl, {
-  // Cambiamos a null para permitir reintentos ilimitados por petición
-  maxRetriesPerRequest: null, 
+  // FUERZA LA DESACTIVACIÓN DEL LÍMITE
+  maxRetriesPerRequest: null,
   
-  // Permitimos que los comandos se encolen mientras Redis termina de iniciar
-  enableOfflineQueue: true, 
-  
-  // Estrategia de reintento progresivo
+  // Aumentamos los tiempos para dar margen a Railway
   retryStrategy: (times) => {
-    return Math.min(times * 1000, 5000); 
+    const delay = Math.min(times * 1000, 3000);
+    return delay;
   },
   
-  // Timeout de conexión inicial
-  connectTimeout: 20000, 
+  // Desactivamos la desconexión rápida
+  connectTimeout: 60000,
+  
+  // Esto evita que ioredis intente reconectar agresivamente y crashee
+  enableAutoPipelining: true,
+  autoResubscribe: false,
+});
+
+// AÑADE ESTO: Manejo global de errores para que NO cierren el proceso
+redis.on('error', (err) => {
+  console.error('Redis (Capturado):', err.message);
 });
