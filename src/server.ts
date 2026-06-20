@@ -1,12 +1,40 @@
 import Redis from 'ioredis';
+import dotenv from 'dotenv';
 
-const redisUrl = process.env.REDIS_URL || 'redis://default:rodaid2026@rodaid-redis:6379';
+// Cargar variables de entorno
+dotenv.config();
 
-// Creamos la instancia única con configuración robusta
+/**
+ * CONFIGURACIÓN DE REDIS
+ * Si estamos en Docker, process.env.REDIS_URL inyectará 'redis://redis:6379'
+ * Si estamos en desarrollo local, usará 'redis://localhost:6379'
+ */
+const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+
 export const redis = new Redis(redisUrl, {
   maxRetriesPerRequest: 0,
   enableOfflineQueue: false,
-  retryStrategy: (times) => Math.min(times * 100, 2000)
+  // Estrategia de reintento para evitar bloqueos si Redis tarda en iniciar
+  retryStrategy: (times) => {
+    const delay = Math.min(times * 100, 2000);
+    return delay;
+  },
 });
 
-redis.on('error', (err) => console.error('Redis error (ignorado):', err.message));
+// Eventos de conexión para monitoreo
+redis.on('connect', () => {
+  console.log(`✓ Redis conectado exitosamente a: ${redisUrl}`);
+});
+
+redis.on('ready', () => {
+  console.log('✓ Redis está listo para recibir comandos');
+});
+
+redis.on('error', (err) => {
+  console.error('--- DETALLE ERROR REDIS ---');
+  console.error('Mensaje:', err.message);
+  console.error('---------------------------');
+});
+
+// Nota: No es necesario llamar a redis.connect() explícitamente 
+// ya que ioredis lo hace de forma perezosa al primer comando.

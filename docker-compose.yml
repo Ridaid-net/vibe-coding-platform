@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: rodaid_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rodaid_user
+      POSTGRES_PASSWORD: rodaid_dev_2026
+      POSTGRES_DB: rodaid_db
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: rodaid_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  api:
+    build: .
+    container_name: rodaid_api
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://rodaid_user:rodaid_dev_2026@postgres:5432/rodaid_db
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
