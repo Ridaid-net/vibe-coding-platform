@@ -1,6 +1,5 @@
-redisInstance = new Redis(process.env.REDIS_URL || 'redis://default:rodaid2026@rodaid-redis:6379', {
-  maxRetriesPerRequest: 10,
-  retryStrategy(times) {
-    return Math.min(times * 500, 2000);
-  }
-});
+// En src/queue.service.ts
+import { redis } from './server'; // Importa la instancia única
+
+// Usa 'redis' directamente en lugar de 'new Redis(...)'
+// Ejemplo: redis.get(...) o redis.set(...)
