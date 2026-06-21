@@ -1,13 +1,18 @@
-import Redis from 'ioredis';
+import Bull from 'bull';
 
-// Usamos la variable de entorno o la conexión local por defecto
-const redisUrl = process.env.REDIS_URL || 'redis://default:rodaid2026@rodaid-redis:6379';
+// Solo intentamos inicializar Bull si tenemos una URL de Redis válida
+const redisUrl = process.env.REDIS_URL || null;
+let queue: any = null;
 
-export const redis = new Redis(redisUrl, {
-  maxRetriesPerRequest: 0,
-  enableOfflineQueue: false,
-  retryStrategy: (times) => Math.min(times * 100, 2000)
-});
+if (redisUrl) {
+  try {
+    queue = new Bull('mi-cola', redisUrl);
+    console.log('✓ Bull Queue conectada a Redis');
+  } catch (err) {
+    console.error('⚠ Fallo al conectar Bull a Redis:', err);
+  }
+} else {
+  console.log('ℹ Redis no configurado. Iniciando sin sistema de colas.');
+}
 
-redis.on('error', (err) => console.error('Redis error (ignorado):', err.message));
-redis.on('connect', () => console.log('Redis conectado exitosamente'));
+export { queue };
