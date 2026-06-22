@@ -23,7 +23,7 @@ export type NotificacionJob = { usuarioId: string; tipo: string; titulo: string;
 export type MantenimientoJob= { tarea: 'expirar_cits' | 'limpiar_tokens' | 'purgar_logs' }
 
 // ── Configuración BullMQ compartida ──────────────────────
-const CONNECTION = { connection: getRedis() }
+const CONNECTION = { connection: { url: env.REDIS_URL, maxRetriesPerRequest: null } }
 const DEFAULT_JOB_OPTIONS = {
   removeOnComplete: { age: 7 * 86400, count: 1000 },  // conservar 7 días o 1000 jobs
   removeOnFail:     { age: 30 * 86400 },               // fallos conservados 30 días
