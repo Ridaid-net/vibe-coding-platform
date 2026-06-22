@@ -1,0 +1,40 @@
+#! postgres-deployment.yaml
+# Generated code, do not edit
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: postgres
+    namespace: rodaid-final-real
+    labels:
+        com.docker.compose.project: rodaid-final-real
+        com.docker.compose.service: postgres
+spec:
+    replicas: 1
+    selector:
+        matchLabels:
+            com.docker.compose.project: rodaid-final-real
+            com.docker.compose.service: postgres
+    strategy:
+        type: Recreate
+    template:
+        metadata:
+            labels:
+                com.docker.compose.project: rodaid-final-real
+                com.docker.compose.service: postgres
+                com.docker.compose.network.default: "true"
+        spec:
+            restartPolicy: unless-stopped
+            containers:
+                - name: rodaid-postgres
+                  image: postgres:16-alpine
+                  imagePullPolicy: IfNotPresent
+                  env:
+                    - name: POSTGRES_DB
+                      value: "rodaid_db"
+                    - name: POSTGRES_PASSWORD
+                      value: "rodaid_dev_2026"
+                    - name: POSTGRES_USER
+                      value: "rodaid_user"
+                  ports:
+                    - name: postgres-5432
+                      containerPort: 5432

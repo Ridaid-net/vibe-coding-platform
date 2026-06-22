@@ -1,0 +1,8 @@
+#! 0-rodaid-final-real-namespace.yaml
+# Generated code, do not edit
+apiVersion: v1
+kind: Namespace
+metadata:
+    name: rodaid-final-real
+    labels:
+        com.docker.compose.project: rodaid-final-real
