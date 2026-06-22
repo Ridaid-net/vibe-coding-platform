@@ -88,7 +88,7 @@ async function getOAuthToken(): Promise<string | null> {
   try {
     // Importar firebase-admin para simplificar OAuth2
     // Alternativa manual: JWT firmado con RS256 usando la private key
-    const admin = await import('firebase-admin')
+    const admin = await import('firebase-admin') as any
 
     if (!admin.apps.length) {
       admin.initializeApp({
@@ -100,7 +100,7 @@ async function getOAuthToken(): Promise<string | null> {
       })
     }
 
-    const token = await (admin as any).app().options.credential!.getAccessToken()
+    const token = await admin.app().options.credential!.getAccessToken()
     _accessToken = token.access_token
     _tokenExpira  = Date.now() + (token.expires_in ?? 3600) * 1000
     return _accessToken
