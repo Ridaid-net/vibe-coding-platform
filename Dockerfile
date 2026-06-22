@@ -44,8 +44,6 @@ COPY --from=deps    /app/node_modules ./node_modules
 COPY --from=builder /app/dist         ./dist
 COPY package.json ./
 
-# Archivos no críticos opcionales (migrations disponibles en imagen)
-COPY prisma/ ./prisma/
 
 USER rodaid
 
@@ -53,7 +51,7 @@ EXPOSE 3001
 
 # Healthcheck para Docker y orquestadores
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
-  CMD curl -f http://localhost:3001/api/v1/health || exit 1
+  CMD curl -f http://localhost:${PORT:-3001}/api/v1/health || exit 1
 
 # dumb-init: manejo correcto de señales SIGTERM/SIGINT
 ENTRYPOINT ["dumb-init", "--"]
