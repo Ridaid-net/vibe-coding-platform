@@ -8,29 +8,29 @@
 //     → workerValidar(citId)
 //         1. SET pipeline_estado = 'VALIDANDO'
 //         2. Cross-reference Min.Seg (con retry hasta 3 veces)
-//         3. Si RECHAZADO -> pipeline_estado = 'RECHAZADO' + notif
-//         4. Si APROBADO  -> encolarFinalizar(citId)
+//         3. Si RECHAZADO → pipeline_estado = 'RECHAZADO' + notif
+//         4. Si APROBADO  → encolarFinalizar(citId)
 //
 //   [Segundos después] workerFinalizar(citId)
 //         1. SET pipeline_estado = 'ACTIVANDO'
-//         2. bfaService.mint() -> tokenId
+//         2. bfaService.mint() → tokenId
 //         3. SET estado='ACTIVO', pipeline_estado='ACTIVO'
 //         4. Notificaciones al propietario
 //
 // Dead-letter:
-//   Jobs que fallan 3+ veces -> pipeline_estado = 'ERROR_PIPELINE'
+//   Jobs que fallan 3+ veces → pipeline_estado = 'ERROR_PIPELINE'
 //   Admin puede reencolar manualmente via POST /admin/queue/retry/:jobId
 //
-// Cancelacion:
-//   Si se denuncia la bici durante las 72 hs -> cancelarValidacion(citId)
+// Cancelación:
+//   Si se denuncia la bici durante las 72 hs → cancelarValidacion(citId)
 //   El job queda como 'completed' con resultado CANCELADO
 //
 // Resiliencia:
-//   Si Redis no esta disponible al iniciar, initQueue() NO lanza -
-//   loguea el fallo y deja las colas en null. Los metodos publicos
+//   Si Redis no está disponible al iniciar, initQueue() NO lanza —
+//   loguea el fallo y deja las colas en null. Los métodos públicos
 //   (encolarValidacion, encolarFinalizar, etc.) devuelven un resultado
-//   "degradado" en vez de tirar una excepcion no controlada, para que
-//   el servidor HTTP pueda seguir arriba aunque el pipeline este caido.
+//   "degradado" en vez de tirar una excepción no controlada, para que
+//   el servidor HTTP pueda seguir arriba aunque el pipeline esté caído.
 
 import Bull, { Job, Queue, JobOptions } from 'bull'
 import { env }                           from '../config/env'
@@ -41,12 +41,27 @@ import { query, queryOne }               from '../config/database'
 // REDIS + DEFAULTS
 // ══════════════════════════════════════════════════════════
 
+function buildRedisOpts(urlStr: string) {
+  try {
+    const u = new URL(urlStr)
+    return {
+      host:     u.hostname,
+      port:     parseInt(u.port || '6379'),
+      password: u.password || undefined,
+      maxRetriesPerRequest: 3,
+      enableReadyCheck:     false,
+      lazyConnect:          true,
+    }
+  } catch {
+    return { host: '127.0.0.1', port: 6379 }
+  }
+}
 
 const REDIS_OPTS = {
-  redis: env.REDIS_URL || 'redis://127.0.0.1:6379',
+  redis: buildRedisOpts(env.REDIS_URL || 'redis://127.0.0.1:6379'),
   defaultJobOptions: {
     attempts:         3,
-    backoff:          { type: 'exponential', delay: 5000 },
+    backoff:          { type: 'exponential', delay: 5_000 },
     removeOnComplete: { count: 500 },
     removeOnFail:     { count: 200 },
   } as JobOptions,
@@ -59,7 +74,7 @@ const REDIS_OPTS = {
 export interface ValidarCITPayload {
   citId:            string
   intentoActual?:   number
-  origenDelay?:     number
+  origenDelay?:     number   // ms de delay programados originalmente
 }
 
 export interface FinalizarCITPayload {
@@ -81,7 +96,7 @@ let qFinalizar: Queue<FinalizarCITPayload> | null = null
 let qNotif:     Queue<NotifPayload>        | null = null
 let qExpire:    Queue<Record<string, never>>| null = null
 let initialized = false
-let queueDisponible = false
+let queueDisponible = false   // false si Redis no está disponible al iniciar
 
 // ══════════════════════════════════════════════════════════
 // HELPERS — Pipeline state tracking
@@ -104,6 +119,7 @@ async function setPipelineEstado(
      WHERE id = $1`,
     [citId, estado, JSON.stringify([logEntry])]
   )
+  // Set timestamps separately to avoid type conflicts
   if (estado === 'PENDIENTE') {
     await query(`UPDATE cits SET pipeline_inicio=COALESCE(pipeline_inicio,NOW()) WHERE id=$1`, [citId]).catch(()=>{})
   }
@@ -130,16 +146,17 @@ async function updateValidacionQueue(
 }
 
 // ══════════════════════════════════════════════════════════
-// WORKER: VALIDAR CIT (72 hs despues)
+// WORKER: VALIDAR CIT (72 hs después)
 // ══════════════════════════════════════════════════════════
 
 async function processValidar(job: Job<ValidarCITPayload>): Promise<unknown> {
   const { citId } = job.data
   const attempt   = job.attemptsMade + 1
 
-  log.queue.info({ citId, jobId: job.id, attempt }, 'Pipeline: etapa VALIDANDO')
+  log.queue.info({ citId, jobId: job.id, attempt }, '▶ Pipeline: etapa VALIDANDO')
   await job.progress(10)
 
+  // Verificar que el CIT todavía está en estado esperado
   const cit = await queryOne<{
     estado: string; propietario_id: string; pipeline_estado: string
   }>(
@@ -149,38 +166,42 @@ async function processValidar(job: Job<ValidarCITPayload>): Promise<unknown> {
   )
 
   if (!cit) {
-    log.queue.warn({ citId }, 'CIT no encontrado - job cancelado')
+    log.queue.warn({ citId }, 'CIT no encontrado — job cancelado')
     return { resultado: 'CANCELADO', motivo: 'CIT no existe' }
   }
 
   if (cit.pipeline_estado === 'CANCELADO') {
-    log.queue.info({ citId }, 'Pipeline cancelado por denuncia - job omitido')
+    log.queue.info({ citId }, 'Pipeline cancelado por denuncia — job omitido')
     return { resultado: 'CANCELADO', motivo: 'Pipeline cancelado' }
   }
 
   if (cit.estado !== 'PENDIENTE') {
-    log.queue.info({ citId, estado: cit.estado }, 'CIT ya no esta PENDIENTE - job omitido')
+    log.queue.info({ citId, estado: cit.estado }, 'CIT ya no está PENDIENTE — job omitido')
     return { resultado: 'OMITIDO', estadoActual: cit.estado }
   }
 
+  // Marcar como VALIDANDO
   await setPipelineEstado(citId, 'VALIDANDO', { jobId: String(job.id), intento: attempt })
   await updateValidacionQueue(citId, 'PROCESANDO', String(job.id))
   await job.progress(20)
 
+  // Ejecutar validación Ministerio de Seguridad
   try {
     const { validarCIT } = await import('./cit.service')
     const resultado = await validarCIT(citId)
     await job.progress(70)
 
-    log.queue.info({ citId, alertaActiva: resultado.alertaActiva, estado: resultado.estado }, 'Validacion Min.Seg completada')
+    log.queue.info({ citId, alertaActiva: resultado.alertaActiva, estado: resultado.estado }, '◀ Validación Min.Seg completada')
 
     if (resultado.alertaActiva) {
+      // RECHAZADO — bicicleta con alerta de robo
       await setPipelineEstado(citId, 'RECHAZADO', {
         motivo: 'Alerta Ministerio de Seguridad',
         tipoAlerta: 'DENUNCIA_ROBO_ACTIVA',
       })
       await updateValidacionQueue(citId, 'RECHAZADO')
 
+      // Notificar al propietario con mensaje completo (canal email + push)
       const { notificarCITRechazado } = await import('./notif.service')
       const citData = await (await import('../config/database')).queryOne<{
         numero_cit: string; numero_serie: string; min_seg_expediente: string | null
@@ -195,13 +216,15 @@ async function processValidar(job: Job<ValidarCITPayload>): Promise<unknown> {
         serial:            citData?.numero_serie ?? 'N/D',
         motivo:            'Alerta del Ministerio de Seguridad Mendoza',
         minSegExpediente:  citData?.min_seg_expediente ?? undefined,
-      }).catch(err => log.queue.warn({ citId, err: err.message }, 'Notif rechazo fallo'))
+      }).catch(err => log.queue.warn({ citId, err: err.message }, 'Notif rechazo falló'))
       await job.progress(100)
       return { resultado: 'RECHAZADO', alertaActiva: true }
     }
 
+    // APROBADO — encolar acuñación del NFT
     await updateValidacionQueue(citId, 'APROBADO')
 
+    // Obtener wallet del propietario (si tiene)
     const propietario = await queryOne<{ wallet_address: string | null }>(
       `SELECT u.wallet_address
        FROM cits c JOIN usuarios u ON u.id = c.propietario_id
@@ -212,14 +235,14 @@ async function processValidar(job: Job<ValidarCITPayload>): Promise<unknown> {
     await encolarFinalizar(citId, propietario?.wallet_address ?? undefined)
     await job.progress(100)
 
-    log.queue.info({ citId }, 'Pipeline: validacion OK - acunacion encolada')
+    log.queue.info({ citId }, '✓ Pipeline: validación OK · acuñación encolada')
     return { resultado: 'APROBADO', aprobadoParaFinalizar: true }
 
   } catch (err) {
     const errMsg = (err as Error).message
-    log.queue.error({ citId, attempt, errMsg }, 'Validacion fallo - reintentando')
+    log.queue.error({ citId, attempt, errMsg }, '✗ Validación falló — reintentando')
     await updateValidacionQueue(citId, 'ERROR', undefined, errMsg)
-    throw err
+    throw err   // Bull reintentará según backoff
   }
 }
 
@@ -231,20 +254,22 @@ async function processFinalizar(job: Job<FinalizarCITPayload>): Promise<unknown>
   const { citId, propietarioWallet } = job.data
   const attempt = job.attemptsMade + 1
 
-  log.queue.info({ citId, jobId: job.id, attempt }, 'Pipeline: etapa ACTIVANDO - acunando NFT en BFA')
+  log.queue.info({ citId, jobId: job.id, attempt }, '▶ Pipeline: etapa ACTIVANDO · acuñando NFT en BFA')
   await job.progress(10)
 
+  // Verificar estado antes de continuar
   const cit = await queryOne<{ estado: string; pipeline_estado: string; nft_token_id: number | null }>(
     `SELECT estado, pipeline_estado, nft_token_id FROM cits WHERE id = $1`, [citId]
   )
 
   if (!cit || cit.pipeline_estado === 'CANCELADO') {
-    log.queue.info({ citId, motivo: cit?.pipeline_estado }, 'Mint omitido - pipeline cancelado')
+    log.queue.info({ citId, motivo: cit?.pipeline_estado }, 'Mint omitido — pipeline cancelado')
     return { resultado: 'OMITIDO', motivo: cit?.pipeline_estado ?? 'no encontrado' }
   }
 
+  // Idempotencia: si ya acuñó (podría haberse reintentado el job)
   if (cit.estado === 'ACTIVO' && cit.nft_token_id) {
-    log.queue.info({ citId, tokenId: cit.nft_token_id }, 'NFT ya acunado - job idempotente')
+    log.queue.info({ citId, tokenId: cit.nft_token_id }, 'NFT ya acuñado — job idempotente')
     await setPipelineEstado(citId, 'ACTIVO', { nota: 'ya_activo' })
     return { resultado: 'YA_ACTIVO', tokenId: cit.nft_token_id }
   }
@@ -253,6 +278,7 @@ async function processFinalizar(job: Job<FinalizarCITPayload>): Promise<unknown>
   await job.progress(20)
 
   try {
+    // Usar el servicio dedicado de mint con tracking + indexación + notificación
     const { acuñarCITEnBFA } = await import('./bfa.mint.service')
     const mintResult = await acuñarCITEnBFA(citId, propietarioWallet)
     await job.progress(90)
@@ -267,6 +293,7 @@ async function processFinalizar(job: Job<FinalizarCITPayload>): Promise<unknown>
     })
     await job.progress(100)
 
+    // Notificar propietario con mensaje rico (ya sin la notif básica del mint service)
     ;(async () => {
       const { notificarCITAprobado } = await import('./notif.service')
       const { queryOne: qone } = await import('../config/database')
@@ -285,7 +312,7 @@ async function processFinalizar(job: Job<FinalizarCITPayload>): Promise<unknown>
           venceEn:        citData.fecha_vencimiento?.toISOString() ?? new Date(Date.now()+365*24*3600*1000).toISOString(),
           bfaExplorerUrl,
           esCustodial:    mintResult.esCustodial,
-        }).catch(err => log.queue.warn({ citId, err: err.message }, 'Notif aprobado fallo'))
+        }).catch(err => log.queue.warn({ citId, err: err.message }, 'Notif aprobado falló'))
       }
     })()
 
@@ -296,7 +323,7 @@ async function processFinalizar(job: Job<FinalizarCITPayload>): Promise<unknown>
       blockNumber: mintResult.blockNumber,
       gasUsed:     mintResult.gasUsed,
       indexado:    mintResult.indexado,
-    }, 'Pipeline completado - CIT ACTIVO - NFT acunado en BFA')
+    }, '✅ Pipeline completado · CIT ACTIVO · NFT acuñado en BFA')
 
     return {
       resultado:   'ACTIVO',
@@ -311,30 +338,43 @@ async function processFinalizar(job: Job<FinalizarCITPayload>): Promise<unknown>
     const errMsg = (err as Error).message
     const reintentable = (err as { reintentable?: boolean }).reintentable ?? true
 
-    log.queue.error({ citId, attempt, errMsg, reintentable }, 'Acunacion BFA fallo')
+    log.queue.error({ citId, attempt, errMsg, reintentable }, '✗ Acuñación BFA falló')
 
     if (!reintentable && attempt >= (job.opts.attempts ?? 5)) {
+      // Error no reintentable (problema de contrato) → marcar definitivamente
       await setPipelineEstado(citId, 'ERROR_PIPELINE', { error: errMsg, reintentable: false })
     }
 
-    throw err
+    throw err   // Bull reintentará si quedan intentos
   }
 }
 
 // ══════════════════════════════════════════════════════════
-// INICIALIZACION DE COLAS Y WORKERS
+// INICIALIZACIÓN DE COLAS Y WORKERS
 // ══════════════════════════════════════════════════════════
+//
+// Cambios respecto a la versión anterior:
+//  · Cada Bull(...) se crea dentro de su propio try/catch — si una cola
+//    falla al conectar, las demás se siguen intentando en vez de que
+//    todo el bloque aborte en la primera que falla.
+//  · Se espera el evento 'ready' (con timeout) de al menos una conexión
+//    antes de marcar initialized = true, para detectar fallos de Redis
+//    de forma determinística en vez de asumir que conectó.
+//  · Si NINGUNA cola pudo conectar, initQueue() loguea el problema y
+//    retorna normalmente (no lanza) — queueDisponible queda en false
+//    y los métodos públicos de abajo devuelven resultados degradados.
 
 function crearColaSegura<T>(nombre: string): Queue<T> | null {
   try {
     const q = new Bull<T>(nombre, REDIS_OPTS)
     return q
   } catch (err) {
-    log.queue.error({ nombre, err: (err as Error).message }, `No se pudo crear la cola "${nombre}"`)
+    log.queue.error({ nombre, err: (err as Error).message }, `✗ No se pudo crear la cola "${nombre}"`)
     return null
   }
 }
 
+/** Espera a que una cola esté lista, o falle, con timeout — sin lanzar. */
 function esperarListaOFalla(q: Queue<any> | null, timeoutMs = 5000): Promise<boolean> {
   if (!q) return Promise.resolve(false)
   return new Promise((resolve) => {
@@ -358,40 +398,46 @@ export async function initQueue(): Promise<void> {
   qNotif     = crearColaSegura<NotifPayload>        ('rodaid:notif')
   qExpire    = crearColaSegura<Record<string, never>>('rodaid:cit:expirar')
 
+  // Listeners de error en cada cola creada — SIEMPRE antes de cualquier
+  // operación async, para no perder el primer error si llega temprano.
   for (const [nombre, q] of [
     ['validar', qValidar], ['finalizar', qFinalizar], ['notif', qNotif], ['expirar', qExpire],
   ] as const) {
     if (!q) continue
-    q.on('error',   err => log.queue.error({ queue: nombre, err: err.message }, 'Queue error'))
-    q.on('stalled', job => log.queue.warn({ queue: nombre, jobId: job?.id }, 'Job estancado'))
+    q.on('error',   (err: Error) => log.queue.error({ queue: nombre, err: err.message }, 'Queue error'))
+    q.on('stalled', (job: Job) => log.queue.warn({ queue: nombre, jobId: job?.id }, 'Job estancado'))
   }
 
+  // Verificamos que al menos la cola principal (validar) esté disponible.
+  // Si Redis no responde, esto resuelve false sin lanzar excepción.
   const validarListo = await esperarListaOFalla(qValidar)
 
   if (!validarListo) {
     log.queue.error(
       { redis: REDIS_OPTS.redis.replace(/:[^:@]*@/, ':***@') },
-      'Redis no disponible para colas - pipeline CIT deshabilitado (modo degradado)'
+      '✗ Redis no disponible para colas — pipeline CIT deshabilitado (modo degradado)'
     )
     queueDisponible = false
-    initialized = true
+    initialized = true   // marcamos inicializado para no reintentar en cada request
     return
   }
 
   queueDisponible = true
 
+  // Workers — solo si las colas correspondientes existen
   try {
     qValidar?.process(2, processValidar)
     qFinalizar?.process(1, processFinalizar)
 
     qNotif?.process(5, async (job: Job<NotifPayload>) => {
       const { usuarioId, tipo, titulo } = job.data
-      log.queue.debug({ usuarioId, tipo, titulo: titulo.slice(0, 40) }, 'Notif enviada')
+      log.queue.debug({ usuarioId, tipo, titulo: titulo.slice(0, 40) }, '▶ Notif enviada')
+      // FCM/email en producción con credenciales
       return { ok: true }
     })
 
     qExpire?.process(1, async (job: Job) => {
-      log.queue.info({ jobId: job.id }, 'Expirar CITs vencidos')
+      log.queue.info({ jobId: job.id }, '▶ Expirar CITs vencidos')
       const result = await query<{ count: string }>(
         `WITH expired AS (
            UPDATE cits SET estado='EXPIRADO', actualizado_en=NOW()
@@ -400,51 +446,57 @@ export async function initQueue(): Promise<void> {
          ) SELECT COUNT(*)::text AS count FROM expired`
       )
       const n = parseInt(result[0]?.count ?? '0')
-      log.queue.info({ expiredCount: n }, `${n} CIT(s) expirado(s)`)
+      log.queue.info({ expiredCount: n }, `◀ ${n} CIT(s) expirado(s)`)
       return { expiredCount: n }
     })
 
+    // Cron diario 03:00 Mendoza
     if (qExpire) {
       await qExpire.removeRepeatable({ cron: '0 3 * * *', tz: 'America/Argentina/Mendoza' }).catch(() => {})
       await qExpire.add({}, {
         repeat: { cron: '0 3 * * *', tz: 'America/Argentina/Mendoza' },
         jobId:  'cit-expiry-daily',
-      }).catch(err => log.queue.warn({ err: err.message }, 'No se pudo programar el cron de expiracion'))
+      }).catch(err => log.queue.warn({ err: err.message }, 'No se pudo programar el cron de expiración'))
     }
 
-    qValidar?.on('failed', async (job, err) => {
+    // Dead-letter: jobs que fallaron todos los intentos → marcar ERROR_PIPELINE
+    qValidar?.on('failed', async (job: Job<ValidarCITPayload> | undefined, err: Error) => {
       log.queue.error({ jobId: job?.id, err: err.message, attempts: job?.attemptsMade }, 'Job validar FALLIDO definitivo')
-      if (job?.attemptsMade >= (job?.opts?.attempts ?? 3) - 1 && job?.data?.citId) {
+      if (job?.attemptsMade !== undefined && job.attemptsMade >= (job.opts?.attempts ?? 3) - 1 && job?.data?.citId) {
         await setPipelineEstado(job.data.citId, 'ERROR_PIPELINE', { error: err.message })
           .catch(() => {})
       }
     })
 
-    qFinalizar?.on('failed', async (job, err) => {
+    qFinalizar?.on('failed', async (job: Job<FinalizarCITPayload> | undefined, err: Error) => {
       log.queue.error({ jobId: job?.id, err: err.message }, 'Job finalizar FALLIDO definitivo')
-      if (job?.attemptsMade >= (job?.opts?.attempts ?? 3) - 1 && job?.data?.citId) {
+      if (job?.attemptsMade !== undefined && job.attemptsMade >= (job.opts?.attempts ?? 3) - 1 && job?.data?.citId) {
         await setPipelineEstado(job.data.citId, 'ERROR_PIPELINE', { error: err.message })
           .catch(() => {})
       }
     })
 
     initialized = true
-    log.queue.info({ redis: REDIS_OPTS.redis.replace(/:[^:@]*@/, ':***@') }, 'Pipeline de validacion CIT iniciado')
+    log.queue.info({ redis: REDIS_OPTS.redis.replace(/:[^:@]*@/, ':***@') }, '✓ Pipeline de validación CIT iniciado')
 
   } catch (err) {
-    log.queue.error({ err: (err as Error).message }, 'Error montando workers de cola - pipeline degradado')
+    // Si algo falla montando workers/cron, no tiramos el proceso —
+    // dejamos las colas creadas pero sin pipeline activo.
+    log.queue.error({ err: (err as Error).message }, '✗ Error montando workers de cola — pipeline degradado')
     queueDisponible = false
     initialized = true
   }
 }
 
 // ══════════════════════════════════════════════════════════
-// API PUBLICA — ENCOLAR TRABAJOS
+// API PÚBLICA — ENCOLAR TRABAJOS
 // ══════════════════════════════════════════════════════════
 
+/** Encolar validación con delay hasta 72 hs */
 export async function encolarValidacion(citId: string, venceEn: Date): Promise<string | undefined> {
   if (!queueDisponible || !qValidar) {
-    log.queue.warn({ citId }, 'encolarValidacion omitido - queue no disponible (modo degradado)')
+    log.queue.warn({ citId }, '⚠ encolarValidacion omitido — queue no disponible (modo degradado)')
+    // Igual marcamos el estado en DB para no perder el registro del intento
     await setPipelineEstado(citId, 'PENDIENTE', { motivo: 'queue_no_disponible' }).catch(() => {})
     return undefined
   }
@@ -455,13 +507,14 @@ export async function encolarValidacion(citId: string, venceEn: Date): Promise<s
     { citId, origenDelay: delayMs },
     {
       delay:    delayMs,
-      jobId:    `validar:${citId}`,
+      jobId:    `validar:${citId}`,   // idempotente
       priority: 5,
       attempts: 3,
-      backoff:  { type: 'exponential', delay: 60000 },
+      backoff:  { type: 'exponential', delay: 60_000 },
     }
   )
 
+  // Marcar en pipeline + validacion_queue
   await setPipelineEstado(citId, 'PENDIENTE', { delayMs, venceEn: venceEn.toISOString() })
   await query(
     `UPDATE validacion_queue SET job_id=$2, etapa='ENCOLADO' WHERE cit_id=$1`,
@@ -470,16 +523,17 @@ export async function encolarValidacion(citId: string, venceEn: Date): Promise<s
 
   log.queue.info({
     citId, jobId: job.id,
-    delay72hs: (delayMs / 3600000).toFixed(1) + ' hs',
+    delay72hs: (delayMs / 3_600_000).toFixed(1) + ' hs',
     venceEn: venceEn.toISOString(),
-  }, 'CIT encolado para validacion 72 hs')
+  }, '✓ CIT encolado para validación 72 hs')
 
   return String(job.id)
 }
 
+/** Encolar acuñación post-validación */
 export async function encolarFinalizar(citId: string, propietarioWallet?: string): Promise<string | undefined> {
   if (!queueDisponible || !qFinalizar) {
-    log.queue.warn({ citId }, 'encolarFinalizar omitido - queue no disponible (modo degradado)')
+    log.queue.warn({ citId }, '⚠ encolarFinalizar omitido — queue no disponible (modo degradado)')
     return undefined
   }
 
@@ -489,14 +543,15 @@ export async function encolarFinalizar(citId: string, propietarioWallet?: string
       jobId:    `finalizar:${citId}`,
       priority: 10,
       attempts: 5,
-      backoff:  { type: 'exponential', delay: 30000 },
+      backoff:  { type: 'exponential', delay: 30_000 },
     }
   )
 
-  log.queue.info({ citId, jobId: job.id }, 'Acunacion NFT encolada')
+  log.queue.info({ citId, jobId: job.id }, '✓ Acuñación NFT encolada')
   return String(job.id)
 }
 
+/** Cancelar el job de validación (cuando se denuncia la bicicleta) */
 export async function cancelarValidacion(citId: string): Promise<{ cancelado: boolean; jobId?: string }> {
   if (!queueDisponible || !qValidar) return { cancelado: false }
 
@@ -512,10 +567,11 @@ export async function cancelarValidacion(citId: string): Promise<{ cancelado: bo
         `UPDATE validacion_queue SET etapa='CANCELADO', procesada_en=NOW() WHERE cit_id=$1`,
         [citId]
       ).catch(() => {})
-      log.queue.info({ citId, jobId: job.id, state }, 'Job de validacion cancelado por denuncia')
+      log.queue.info({ citId, jobId: job.id, state }, '✓ Job de validación cancelado por denuncia')
       return { cancelado: true, jobId: String(job.id) }
     }
 
+    // Job ya en proceso — marcar para ignorar cuando despierte
     await setPipelineEstado(citId, 'CANCELADO', { motivo: 'Denuncia durante procesamiento', state })
     return { cancelado: true, jobId: String(job.id) }
 
@@ -525,10 +581,11 @@ export async function cancelarValidacion(citId: string): Promise<{ cancelado: bo
   }
 }
 
+/** Notificación (fire-and-forget) */
 export async function encolarNotificacion(payload: NotifPayload): Promise<void> {
   if (!queueDisponible || !qNotif) { log.queue.warn('Queue notif no disponible'); return }
-  await qNotif.add(payload, { attempts: 3, backoff: { type: 'fixed', delay: 10000 } }).catch(
-    err => log.queue.warn({ err: err.message }, 'encolarNotificacion fallo')
+  await qNotif.add(payload, { attempts: 3, backoff: { type: 'fixed', delay: 10_000 } }).catch(
+    err => log.queue.warn({ err: err.message }, 'encolarNotificacion falló')
   )
 }
 
@@ -538,7 +595,7 @@ export async function encolarNotificacion(payload: NotifPayload): Promise<void> 
 
 export async function getQueueStats() {
   if (!queueDisponible || !qValidar || !qFinalizar) {
-    return { error: 'Queues no inicializadas (modo degradado - Redis no disponible)' }
+    return { error: 'Queues no inicializadas (modo degradado — Redis no disponible)' }
   }
 
   const [vCounts, fCounts] = await Promise.all([
@@ -546,6 +603,7 @@ export async function getQueueStats() {
     qFinalizar.getJobCounts(),
   ])
 
+  // Pipeline stats desde DB
   const pipelineStats = await query<{ pipeline_estado: string; count: string }>(
     `SELECT pipeline_estado, COUNT(*)::text AS count
      FROM cits WHERE pipeline_estado IS NOT NULL
@@ -604,6 +662,7 @@ export async function limpiarCola(nombre: 'validar' | 'finalizar' | 'notif'): Pr
   return { ok: true }
 }
 
+/** Indica si el sistema de colas está operativo (Redis conectado). */
 export function queueEstaDisponible(): boolean {
   return queueDisponible
 }
