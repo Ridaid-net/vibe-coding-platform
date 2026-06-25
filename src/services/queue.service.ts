@@ -414,7 +414,7 @@ export async function initQueue(): Promise<void> {
 
   if (!validarListo) {
     log.queue.error(
-      { redis: REDIS_OPTS.redis.replace(/:[^:@]*@/, ':***@') },
+      { redis: `${REDIS_OPTS.redis.host}:${REDIS_OPTS.redis.port}` },
       '✗ Redis no disponible para colas — pipeline CIT deshabilitado (modo degradado)'
     )
     queueDisponible = false
@@ -477,7 +477,7 @@ export async function initQueue(): Promise<void> {
     })
 
     initialized = true
-    log.queue.info({ redis: REDIS_OPTS.redis.replace(/:[^:@]*@/, ':***@') }, '✓ Pipeline de validación CIT iniciado')
+    log.queue.info({ redis: `${REDIS_OPTS.redis.host}:${REDIS_OPTS.redis.port}` }, '✓ Pipeline de validación CIT iniciado')
 
   } catch (err) {
     // Si algo falla montando workers/cron, no tiramos el proceso —
