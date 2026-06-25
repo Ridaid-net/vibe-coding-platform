@@ -41,22 +41,9 @@ import { query, queryOne }               from '../config/database'
 // REDIS + DEFAULTS
 // ══════════════════════════════════════════════════════════
 
-function parseRedisUrl(url = 'redis://127.0.0.1:6379') {
-  // Soporta tanto redis://:password@host:port (sin usuario)
-  // como redis://usuario:password@host:port (con usuario, ej. "default")
-  const match = url.match(/redis:\/\/(?:([^:@]*):([^@]*)@)?([^:/]+):(\d+)/)
-  return {
-    host:     match?.[3] ?? '127.0.0.1',
-    port:     parseInt(match?.[4] ?? '6379'),
-    password: match?.[2] || undefined,
-    maxRetriesPerRequest: 3,
-    enableReadyCheck:     false,
-    lazyConnect:          true,
-  }
-}
 
 const REDIS_OPTS = {
-  redis: parseRedisUrl(env.REDIS_URL),
+  redis: env.REDIS_URL || 'redis://127.0.0.1:6379',
   defaultJobOptions: {
     attempts:         3,
     backoff:          { type: 'exponential', delay: 5000 },
@@ -357,7 +344,7 @@ function esperarListaOFalla(q: Queue<any> | null, timeoutMs = 5000): Promise<boo
       resuelto = true
       resolve(ok)
     }
-    q.isReady().then(() => finalizar(true)).catch(() => finalizar(false))
+    q.once('ready', () => finalizar(true))
     q.once('error', () => finalizar(false))
     setTimeout(() => finalizar(false), timeoutMs)
   })
@@ -383,7 +370,7 @@ export async function initQueue(): Promise<void> {
 
   if (!validarListo) {
     log.queue.error(
-      { redis: `${REDIS_OPTS.redis.host}:${REDIS_OPTS.redis.port}` },
+      { redis: REDIS_OPTS.redis.replace(/:[^:@]*@/, ':***@') },
       'Redis no disponible para colas - pipeline CIT deshabilitado (modo degradado)'
     )
     queueDisponible = false
@@ -442,7 +429,7 @@ export async function initQueue(): Promise<void> {
     })
 
     initialized = true
-    log.queue.info({ redis: `${REDIS_OPTS.redis.host}:${REDIS_OPTS.redis.port}` }, 'Pipeline de validacion CIT iniciado')
+    log.queue.info({ redis: REDIS_OPTS.redis.replace(/:[^:@]*@/, ':***@') }, 'Pipeline de validacion CIT iniciado')
 
   } catch (err) {
     log.queue.error({ err: (err as Error).message }, 'Error montando workers de cola - pipeline degradado')
