@@ -42,11 +42,13 @@ import { query, queryOne }               from '../config/database'
 // ══════════════════════════════════════════════════════════
 
 function parseRedisUrl(url = 'redis://127.0.0.1:6379') {
-  const match = url.match(/redis:\/\/(?::(.+)@)?([^:]+):(\d+)/)
+  // Soporta tanto redis://:password@host:port (sin usuario)
+  // como redis://usuario:password@host:port (con usuario, ej. "default")
+  const match = url.match(/redis:\/\/(?:([^:@]*):([^@]*)@)?([^:/]+):(\d+)/)
   return {
-    host:     match?.[2] ?? '127.0.0.1',
-    port:     parseInt(match?.[3] ?? '6379'),
-    password: match?.[1] ?? undefined,
+    host:     match?.[3] ?? '127.0.0.1',
+    port:     parseInt(match?.[4] ?? '6379'),
+    password: match?.[2] || undefined,
     maxRetriesPerRequest: 3,
     enableReadyCheck:     false,
     lazyConnect:          true,
