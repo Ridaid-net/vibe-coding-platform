@@ -66,7 +66,6 @@ let sharedRedisClient: IORedis | null = null
 let sharedRedisConnecting: Promise<IORedis | null> | null = null
 
 async function getSharedRedisClient(): Promise<IORedis | null> {
-  log.queue.warn({ status: sharedRedisClient?.status, hasLock: !!sharedRedisConnecting }, 'DEBUG getSharedRedisClient llamado')
   if (sharedRedisClient?.status === 'ready') return sharedRedisClient
   if (sharedRedisConnecting) return sharedRedisConnecting
 
@@ -409,15 +408,10 @@ async function crearColaSegura<T>(nombre: string): Promise<Queue<T> | null> {
     const client = await getSharedRedisClient()
     if (!client) return null
     const q = new Bull<T>(nombre, {
-      createClient: (type) => {
-        log.queue.warn({ nombre, type }, 'DEBUG createClient llamado')
+      createClient: () => {
         // El cliente original tiene lazyConnect:true, y duplicate() hereda
-        // esa opción — sin connect() explícito, el duplicado nunca conecta.
-        const dup = client.duplicate({ lazyConnect: false })
-        dup.on('ready',   () => log.queue.warn({ nombre, type }, 'DEBUG duplicado ready'))
-        dup.on('error',   (e: Error) => log.queue.warn({ nombre, type, err: e.message }, 'DEBUG duplicado error'))
-        dup.on('connect', () => log.queue.warn({ nombre, type }, 'DEBUG duplicado connect'))
-        return dup
+        // esa opción — sin forzar lazyConnect:false, el duplicado nunca conecta.
+        return client.duplicate({ lazyConnect: false })
       },
     })
     return q
