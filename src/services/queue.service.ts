@@ -465,9 +465,14 @@ export async function initQueue(): Promise<void> {
     q.on('stalled', (job: Job) => log.queue.warn({ queue: nombre, jobId: job?.id }, 'Job estancado'))
   }
 
-  // Verificamos que al menos la cola principal (validar) esté disponible.
-  // Si Redis no responde, esto resuelve false sin lanzar excepción.
-  const validarListo = await esperarListaOFalla(qValidar)
+  // En vez de esperar el evento 'ready' de la cola de bull (que en este
+  // entorno nunca se dispara, aparentemente porque bull no completa su
+  // negociación interna de subscriber/bclient), confiamos directamente
+  // en el estado del cliente Redis compartido, que sí sabemos que conecta
+  // de forma confiable. Si el cliente está listo, asumimos que las colas
+  // (que usan ese mismo cliente vía createClient) van a poder operar.
+  const sharedClient = await getSharedRedisClient()
+  const validarListo  = sharedClient?.status === 'ready' && !!qValidar
 
   if (!validarListo) {
     log.queue.error(
