@@ -33,6 +33,7 @@
 //   el servidor HTTP pueda seguir arriba aunque el pipeline esté caído.
 
 import Bull, { Job, Queue, JobOptions } from 'bull'
+import IORedis                          from 'ioredis'
 import { env }                           from '../config/env'
 import { log }                           from '../middleware/logger'
 import { query, queryOne }               from '../config/database'
@@ -54,6 +55,32 @@ function buildRedisOpts(urlStr: string) {
     }
   } catch {
     return { host: '127.0.0.1', port: 6379 }
+  }
+}
+
+// Cliente ioredis compartido — creado y conectado de la misma forma
+// que el RateLimiter, que sabemos que conecta bien al proxy publico.
+// Se le pasa a cada instancia de Bull en vez de dejar que bull cree
+// sus propias conexiones internas desde un objeto de opciones.
+let sharedRedisClient: IORedis | null = null
+
+async function getSharedRedisClient(): Promise<IORedis | null> {
+  if (sharedRedisClient?.status === 'ready') return sharedRedisClient
+  try {
+    const url = env.REDIS_URL || 'redis://127.0.0.1:6379'
+    sharedRedisClient = new IORedis(url, {
+      maxRetriesPerRequest: null,
+      enableReadyCheck:     true,
+    })
+    sharedRedisClient.on('error', (err: Error) =>
+      log.queue.warn({ err: err.message }, 'Cliente Redis compartido (bull) error')
+    )
+    await sharedRedisClient.connect()
+    log.queue.info('✓ Cliente Redis compartido conectado (bull)')
+    return sharedRedisClient
+  } catch (err) {
+    log.queue.error({ err: (err as Error).message }, '✗ Cliente Redis compartido no pudo conectar')
+    return null
   }
 }
 
@@ -364,9 +391,11 @@ async function processFinalizar(job: Job<FinalizarCITPayload>): Promise<unknown>
 //    retorna normalmente (no lanza) — queueDisponible queda en false
 //    y los métodos públicos de abajo devuelven resultados degradados.
 
-function crearColaSegura<T>(nombre: string): Queue<T> | null {
+async function crearColaSegura<T>(nombre: string): Promise<Queue<T> | null> {
   try {
-    const q = new Bull<T>(nombre, REDIS_OPTS)
+    const client = await getSharedRedisClient()
+    if (!client) return null
+    const q = new Bull<T>(nombre, { createClient: () => client.duplicate() })
     return q
   } catch (err) {
     log.queue.error({ nombre, err: (err as Error).message }, `✗ No se pudo crear la cola "${nombre}"`)
@@ -375,7 +404,7 @@ function crearColaSegura<T>(nombre: string): Queue<T> | null {
 }
 
 /** Espera a que una cola esté lista, o falle, con timeout — sin lanzar. */
-function esperarListaOFalla(q: Queue<any> | null, timeoutMs = 15000): Promise<boolean> {
+function esperarListaOFalla(q: Queue<any> | null, timeoutMs = 5000): Promise<boolean> {
   if (!q) return Promise.resolve(false)
   return new Promise((resolve) => {
     let resuelto = false
@@ -393,10 +422,10 @@ function esperarListaOFalla(q: Queue<any> | null, timeoutMs = 15000): Promise<bo
 export async function initQueue(): Promise<void> {
   if (initialized) return
 
-  qValidar   = crearColaSegura<ValidarCITPayload>  ('rodaid:cit:validar')
-  qFinalizar = crearColaSegura<FinalizarCITPayload>('rodaid:cit:finalizar')
-  qNotif     = crearColaSegura<NotifPayload>        ('rodaid:notif')
-  qExpire    = crearColaSegura<Record<string, never>>('rodaid:cit:expirar')
+  qValidar   = await crearColaSegura<ValidarCITPayload>  ('rodaid:cit:validar')
+  qFinalizar = await crearColaSegura<FinalizarCITPayload>('rodaid:cit:finalizar')
+  qNotif     = await crearColaSegura<NotifPayload>        ('rodaid:notif')
+  qExpire    = await crearColaSegura<Record<string, never>>('rodaid:cit:expirar')
 
   // Listeners de error en cada cola creada — SIEMPRE antes de cualquier
   // operación async, para no perder el primer error si llega temprano.
