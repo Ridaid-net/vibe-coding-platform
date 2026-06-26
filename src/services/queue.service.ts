@@ -49,7 +49,7 @@ function buildRedisOpts(urlStr: string) {
       port:     parseInt(u.port || '6379'),
       password: u.password || undefined,
       maxRetriesPerRequest: 3,
-      enableReadyCheck:     false,
+      enableReadyCheck:     true,
       lazyConnect:          true,
     }
   } catch {
