@@ -74,8 +74,9 @@ async function getSharedRedisClient(): Promise<IORedis | null> {
     try {
       const url = env.REDIS_URL || 'redis://127.0.0.1:6379'
       sharedRedisClient = new IORedis(url, {
-        maxRetriesPerRequest: null,
         enableReadyCheck:     true,
+        maxRetriesPerRequest: 3,
+        lazyConnect:          true,
       })
       sharedRedisClient.on('error', (err: Error) =>
         log.queue.warn({ err: err.message }, 'Cliente Redis compartido (bull) error')
@@ -85,6 +86,8 @@ async function getSharedRedisClient(): Promise<IORedis | null> {
       return sharedRedisClient
     } catch (err) {
       log.queue.error({ err: (err as Error).message }, '✗ Cliente Redis compartido no pudo conectar')
+      sharedRedisClient?.disconnect()
+      sharedRedisClient = null
       return null
     }
   })()
