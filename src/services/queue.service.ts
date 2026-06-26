@@ -63,25 +63,34 @@ function buildRedisOpts(urlStr: string) {
 // Se le pasa a cada instancia de Bull en vez de dejar que bull cree
 // sus propias conexiones internas desde un objeto de opciones.
 let sharedRedisClient: IORedis | null = null
+let sharedRedisConnecting: Promise<IORedis | null> | null = null
 
 async function getSharedRedisClient(): Promise<IORedis | null> {
   if (sharedRedisClient?.status === 'ready') return sharedRedisClient
-  try {
-    const url = env.REDIS_URL || 'redis://127.0.0.1:6379'
-    sharedRedisClient = new IORedis(url, {
-      maxRetriesPerRequest: null,
-      enableReadyCheck:     true,
-    })
-    sharedRedisClient.on('error', (err: Error) =>
-      log.queue.warn({ err: err.message }, 'Cliente Redis compartido (bull) error')
-    )
-    await sharedRedisClient.connect()
-    log.queue.info('✓ Cliente Redis compartido conectado (bull)')
-    return sharedRedisClient
-  } catch (err) {
-    log.queue.error({ err: (err as Error).message }, '✗ Cliente Redis compartido no pudo conectar')
-    return null
-  }
+  if (sharedRedisConnecting) return sharedRedisConnecting
+
+  sharedRedisConnecting = (async () => {
+    try {
+      const url = env.REDIS_URL || 'redis://127.0.0.1:6379'
+      sharedRedisClient = new IORedis(url, {
+        maxRetriesPerRequest: null,
+        enableReadyCheck:     true,
+      })
+      sharedRedisClient.on('error', (err: Error) =>
+        log.queue.warn({ err: err.message }, 'Cliente Redis compartido (bull) error')
+      )
+      await sharedRedisClient.connect()
+      log.queue.info('✓ Cliente Redis compartido conectado (bull)')
+      return sharedRedisClient
+    } catch (err) {
+      log.queue.error({ err: (err as Error).message }, '✗ Cliente Redis compartido no pudo conectar')
+      return null
+    }
+  })()
+
+  const result = await sharedRedisConnecting
+  sharedRedisConnecting = null
+  return result
 }
 
 const REDIS_OPTS = {
