@@ -66,6 +66,7 @@ let sharedRedisClient: IORedis | null = null
 let sharedRedisConnecting: Promise<IORedis | null> | null = null
 
 async function getSharedRedisClient(): Promise<IORedis | null> {
+  log.queue.warn({ status: sharedRedisClient?.status, hasLock: !!sharedRedisConnecting }, 'DEBUG getSharedRedisClient llamado')
   if (sharedRedisClient?.status === 'ready') return sharedRedisClient
   if (sharedRedisConnecting) return sharedRedisConnecting
 
