@@ -375,7 +375,7 @@ function crearColaSegura<T>(nombre: string): Queue<T> | null {
 }
 
 /** Espera a que una cola esté lista, o falle, con timeout — sin lanzar. */
-function esperarListaOFalla(q: Queue<any> | null, timeoutMs = 5000): Promise<boolean> {
+function esperarListaOFalla(q: Queue<any> | null, timeoutMs = 15000): Promise<boolean> {
   if (!q) return Promise.resolve(false)
   return new Promise((resolve) => {
     let resuelto = false
