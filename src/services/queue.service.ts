@@ -411,7 +411,9 @@ async function crearColaSegura<T>(nombre: string): Promise<Queue<T> | null> {
     const q = new Bull<T>(nombre, {
       createClient: (type) => {
         log.queue.warn({ nombre, type }, 'DEBUG createClient llamado')
-        const dup = client.duplicate()
+        // El cliente original tiene lazyConnect:true, y duplicate() hereda
+        // esa opción — sin connect() explícito, el duplicado nunca conecta.
+        const dup = client.duplicate({ lazyConnect: false })
         dup.on('ready',   () => log.queue.warn({ nombre, type }, 'DEBUG duplicado ready'))
         dup.on('error',   (e: Error) => log.queue.warn({ nombre, type, err: e.message }, 'DEBUG duplicado error'))
         dup.on('connect', () => log.queue.warn({ nombre, type }, 'DEBUG duplicado connect'))
