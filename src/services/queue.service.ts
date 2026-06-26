@@ -408,7 +408,16 @@ async function crearColaSegura<T>(nombre: string): Promise<Queue<T> | null> {
   try {
     const client = await getSharedRedisClient()
     if (!client) return null
-    const q = new Bull<T>(nombre, { createClient: () => client.duplicate() })
+    const q = new Bull<T>(nombre, {
+      createClient: (type) => {
+        log.queue.warn({ nombre, type }, 'DEBUG createClient llamado')
+        const dup = client.duplicate()
+        dup.on('ready',   () => log.queue.warn({ nombre, type }, 'DEBUG duplicado ready'))
+        dup.on('error',   (e: Error) => log.queue.warn({ nombre, type, err: e.message }, 'DEBUG duplicado error'))
+        dup.on('connect', () => log.queue.warn({ nombre, type }, 'DEBUG duplicado connect'))
+        return dup
+      },
+    })
     return q
   } catch (err) {
     log.queue.error({ nombre, err: (err as Error).message }, `✗ No se pudo crear la cola "${nombre}"`)
@@ -417,17 +426,21 @@ async function crearColaSegura<T>(nombre: string): Promise<Queue<T> | null> {
 }
 
 /** Espera a que una cola esté lista, o falle, con timeout — sin lanzar. */
-function esperarListaOFalla(q: Queue<any> | null, timeoutMs = 5000): Promise<boolean> {
+function esperarListaOFalla(q: Queue<any> | null, timeoutMs = 15000): Promise<boolean> {
   if (!q) return Promise.resolve(false)
   return new Promise((resolve) => {
     let resuelto = false
     const finalizar = (ok: boolean) => {
       if (resuelto) return
       resuelto = true
+      log.queue.warn({ ok }, 'DEBUG esperarListaOFalla resuelto')
       resolve(ok)
     }
     q.once('ready', () => finalizar(true))
-    q.once('error', () => finalizar(false))
+    q.once('error', (err: Error) => {
+      log.queue.warn({ err: err.message }, 'DEBUG evento error de la cola')
+      finalizar(false)
+    })
     setTimeout(() => finalizar(false), timeoutMs)
   })
 }
