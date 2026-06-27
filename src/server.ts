@@ -5,6 +5,21 @@ import { logger, setupProcessLoggers } from './middleware/logger'
 import { initQueue } from './services/queue.service'
 import { initRateLimiters, closeRateLimiters } from './middleware/rateLimiter'
 
+process.on('unhandledRejection', (reason: any) => {
+  console.error('unhandledRejection (raw):', reason)
+  console.error('unhandledRejection stack:', reason?.stack)
+  try {
+    logger.error({ err: reason?.message ?? String(reason), stack: reason?.stack }, 'unhandledRejection capturada - proceso continua')
+  } catch {}
+})
+process.on('uncaughtException', (err: any) => {
+  console.error('uncaughtException (raw):', err)
+  console.error('uncaughtException stack:', err?.stack)
+  try {
+    logger.error({ err: err?.message ?? String(err), stack: err?.stack }, 'uncaughtException capturada - proceso continua')
+  } catch {}
+})
+
 async function main() {
   setupProcessLoggers()
 
@@ -15,13 +30,6 @@ async function main() {
   console.log('REDISUSER:', JSON.stringify(process.env.REDISUSER))
   console.log('Todas las keys que contienen REDIS:', Object.keys(process.env).filter(k => k.toUpperCase().includes('REDIS')))
   console.log('=== FIN DEBUG ===')
-
-  process.on('unhandledRejection', (reason) => {
-    logger.error({ reason }, 'unhandledRejection capturada - proceso continua')
-  })
-  process.on('uncaughtException', (err) => {
-    logger.error({ err }, 'uncaughtException capturada - proceso continua')
-  })
 
   try {
     await pool.query('SELECT 1')
@@ -34,13 +42,13 @@ async function main() {
   try {
     await initRateLimiters()
   } catch (err) {
-    logger.error({ err }, 'initRateLimiters fallo - continuando sin Redis')
+    logger.error({ err }, 'initRateLimiters fallo - continuando sin Redis (modo memoria)')
   }
 
   try {
     await initQueue()
   } catch (err) {
-    logger.error({ err }, 'initQueue fallo - continuando sin colas')
+    logger.error({ err }, 'initQueue fallo - continuando sin sistema de colas')
   }
 
   const server = app.listen(env.PORT, () => {
