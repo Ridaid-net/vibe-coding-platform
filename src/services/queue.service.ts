@@ -408,10 +408,22 @@ async function crearColaSegura<T>(nombre: string): Promise<Queue<T> | null> {
     const client = await getSharedRedisClient()
     if (!client) return null
     const q = new Bull<T>(nombre, {
-      createClient: () => {
+      createClient: (type) => {
         // El cliente original tiene lazyConnect:true, y duplicate() hereda
         // esa opción — sin forzar lazyConnect:false, el duplicado nunca conecta.
-        return client.duplicate({ lazyConnect: false })
+        //
+        // IMPORTANTE: bull NO permite enableReadyCheck ni maxRetriesPerRequest
+        // en los clientes usados como 'bclient' o 'subscriber' (lanza una
+        // excepción asíncrona si se usan). Solo el cliente normal ('client')
+        // puede tener esas opciones. Ver: github.com/OptimalBits/bull/issues/1873
+        if (type === 'client') {
+          return client.duplicate({ lazyConnect: false })
+        }
+        return client.duplicate({
+          lazyConnect:          false,
+          enableReadyCheck:     false,
+          maxRetriesPerRequest: null,
+        })
       },
     })
     return q
