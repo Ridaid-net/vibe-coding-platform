@@ -23,7 +23,6 @@ async function getRedisClient(): Promise<Redis | null> {
   if (redisClient?.status === 'ready') return redisClient
 
   try {
-    logger.warn({ envRedisUrl: env.REDIS_URL, tipo: typeof env.REDIS_URL }, "DEBUG TEMPORAL rateLimiter")
     const url = env.REDIS_URL || 'redis://127.0.0.1:6379'
     redisClient = new Redis(url, {
       enableReadyCheck:     true,

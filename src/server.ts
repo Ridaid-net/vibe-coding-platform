@@ -23,13 +23,6 @@ process.on('uncaughtException', (err: any) => {
 async function main() {
   setupProcessLoggers()
 
-  console.log('=== DEBUG ENV REDIS ===')
-  console.log('REDIS_URL:', JSON.stringify(process.env.REDIS_URL))
-  console.log('REDISHOST:', JSON.stringify(process.env.REDISHOST))
-  console.log('REDISPORT:', JSON.stringify(process.env.REDISPORT))
-  console.log('REDISUSER:', JSON.stringify(process.env.REDISUSER))
-  console.log('Todas las keys que contienen REDIS:', Object.keys(process.env).filter(k => k.toUpperCase().includes('REDIS')))
-  console.log('=== FIN DEBUG ===')
 
   try {
     await pool.query('SELECT 1')

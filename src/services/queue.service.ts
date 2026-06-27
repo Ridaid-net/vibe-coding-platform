@@ -441,12 +441,10 @@ function esperarListaOFalla(q: Queue<any> | null, timeoutMs = 15000): Promise<bo
     const finalizar = (ok: boolean) => {
       if (resuelto) return
       resuelto = true
-      log.queue.warn({ ok }, 'DEBUG esperarListaOFalla resuelto')
       resolve(ok)
     }
     q.once('ready', () => finalizar(true))
     q.once('error', (err: Error) => {
-      log.queue.warn({ err: err.message }, 'DEBUG evento error de la cola')
       finalizar(false)
     })
     setTimeout(() => finalizar(false), timeoutMs)
