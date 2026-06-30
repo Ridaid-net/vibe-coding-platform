@@ -1,7 +1,36 @@
--- RODAID — Modulo 4 (parte 2/3): tablas del CIT (bicicletas, cits, cit_eventos).
+-- RODAID — Modulo 4 (parte 2/3): reemplazar tablas CIT con estructura completa.
+--
+-- La migracion 20260616120000_create_bicicletas_cits creo versiones primitivas
+-- de bicicletas/cits/cit_estado. Esta migracion las reemplaza con la estructura
+-- completa del modulo CIT fundacional. No hay datos reales que preservar.
 
--- Tabla bicicletas
-CREATE TABLE IF NOT EXISTS bicicletas (
+-- Eliminar objetos de la version primitiva (CASCADE elimina dependencias)
+DROP TABLE IF EXISTS cits CASCADE;
+DROP TABLE IF EXISTS bicicletas CASCADE;
+DROP TYPE IF EXISTS cit_estado CASCADE;
+DROP TYPE IF EXISTS cit_bfa_estado CASCADE;
+
+-- Recrear enum cit_estado completo con 7 estados en MAYUSCULAS
+CREATE TYPE cit_estado AS ENUM (
+  'PENDIENTE_VALIDACION',
+  'PROCESANDO_CRUCE',
+  'ANOMALIA_DETECTADA',
+  'ACTIVO',
+  'VENCIDO',
+  'RECHAZADO',
+  'REVOCADO'
+);
+
+-- Recrear enum cit_bfa_estado
+CREATE TYPE cit_bfa_estado AS ENUM (
+  'NO_INICIADA',
+  'PENDIENTE',
+  'ACUNADO',
+  'ERROR'
+);
+
+-- Tabla bicicletas (estructura completa)
+CREATE TABLE bicicletas (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   propietario_id UUID NOT NULL,
   marca VARCHAR(80),
@@ -17,11 +46,10 @@ CREATE TABLE IF NOT EXISTS bicicletas (
   CONSTRAINT bicicletas_numero_serie_unico UNIQUE (numero_serie)
 );
 
-CREATE INDEX IF NOT EXISTS idx_bicicletas_propietario
-  ON bicicletas (propietario_id);
+CREATE INDEX idx_bicicletas_propietario ON bicicletas (propietario_id);
 
--- Tabla cits
-CREATE TABLE IF NOT EXISTS cits (
+-- Tabla cits (estructura completa)
+CREATE TABLE cits (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   bicicleta_id UUID NOT NULL REFERENCES bicicletas (id),
   ciclista_id UUID NOT NULL,
@@ -60,51 +88,13 @@ CREATE TABLE IF NOT EXISTS cits (
   )
 );
 
--- Agregar columnas faltantes si la tabla cits ya existia con estructura parcial
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='cits' AND column_name='ciclista_id') THEN
-    ALTER TABLE cits ADD COLUMN ciclista_id UUID NOT NULL DEFAULT gen_random_uuid();
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='cits' AND column_name='aliado_id') THEN
-    ALTER TABLE cits ADD COLUMN aliado_id UUID NOT NULL DEFAULT gen_random_uuid();
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='cits' AND column_name='bicicleta_serial') THEN
-    ALTER TABLE cits ADD COLUMN bicicleta_serial VARCHAR(120) NOT NULL DEFAULT '';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='cits' AND column_name='huella_sha256') THEN
-    ALTER TABLE cits ADD COLUMN huella_sha256 CHAR(64) NOT NULL DEFAULT '';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='cits' AND column_name='firma_hmac') THEN
-    ALTER TABLE cits ADD COLUMN firma_hmac VARCHAR(128) NOT NULL DEFAULT '';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='cits' AND column_name='algoritmo') THEN
-    ALTER TABLE cits ADD COLUMN algoritmo VARCHAR(60) NOT NULL DEFAULT '';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='cits' AND column_name='snapshot_canonico') THEN
-    ALTER TABLE cits ADD COLUMN snapshot_canonico TEXT NOT NULL DEFAULT '';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='cits' AND column_name='expira_en') THEN
-    ALTER TABLE cits ADD COLUMN expira_en TIMESTAMPTZ NOT NULL DEFAULT NOW();
-  END IF;
-END
-$$;
-
--- Indices
-CREATE INDEX IF NOT EXISTS idx_cits_ciclista
-  ON cits (ciclista_id, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_cits_aliado
-  ON cits (aliado_id, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_cits_estado
-  ON cits (estado);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_cits_huella
-  ON cits (huella_sha256);
+CREATE INDEX idx_cits_ciclista ON cits (ciclista_id, created_at DESC);
+CREATE INDEX idx_cits_aliado ON cits (aliado_id, created_at DESC);
+CREATE INDEX idx_cits_estado ON cits (estado);
+CREATE UNIQUE INDEX idx_cits_huella ON cits (huella_sha256);
 
 -- Tabla cit_eventos
-CREATE TABLE IF NOT EXISTS cit_eventos (
+CREATE TABLE cit_eventos (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   cit_id UUID NOT NULL REFERENCES cits (id),
   tipo VARCHAR(60) NOT NULL,
@@ -116,5 +106,4 @@ CREATE TABLE IF NOT EXISTS cit_eventos (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_cit_eventos_cit
-  ON cit_eventos (cit_id, created_at ASC);
+CREATE INDEX idx_cit_eventos_cit ON cit_eventos (cit_id, created_at ASC);
