@@ -15,3 +15,6 @@ path = "/admin/*"
 [[edge_functions]]
 function = "auth-admin"
 path = "/api/v1/admin/*"
+
+[build]
+  command = "pnpm run build"
