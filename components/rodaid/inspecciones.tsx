@@ -366,21 +366,50 @@ function Datos({ b }: { b: NonNullable<BusquedaInspeccion['bicicleta']> }) {
   )
 }
 
+// ── Criticidad de auditoría (Hito 22) ───────────────────────────────────────────
+type Criticidad = 'ALTA' | 'MEDIA' | 'BAJA'
+
+function calcularCriticidad(resultado: BusquedaInspeccion): Criticidad {
+  const estado = resultado.cit?.estado ?? ''
+  if (['ANOMALIA_DETECTADA', 'RECHAZADO', 'bloqueado'].includes(estado)) return 'ALTA'
+  if (['PROCESANDO_CRUCE', 'VENCIDO'].includes(estado)) return 'MEDIA'
+  return 'BAJA'
+}
+
+const CRITICIDAD_CONFIG: Record<Criticidad, { label: string; cls: string; icon: string }> = {
+  ALTA:  { label: 'Prioridad ALTA',  cls: 'bg-red-50 text-red-700 border-red-200',       icon: '⚠️' },
+  MEDIA: { label: 'Prioridad MEDIA', cls: 'bg-amber-50 text-amber-700 border-amber-200', icon: '🔶' },
+  BAJA:  { label: 'Prioridad BAJA',  cls: 'bg-lime/20 text-ink border-lime/30',          icon: '✅' },
+}
+
+function CriticidadBadge({ resultado }: { resultado: BusquedaInspeccion }) {
+  const c = calcularCriticidad(resultado)
+  const cfg = CRITICIDAD_CONFIG[c]
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cfg.cls}`}>
+      {cfg.icon} {cfg.label}
+    </span>
+  )
+}
+
 function PipelineInfo({ resultado }: { resultado: BusquedaInspeccion }) {
   const cit = resultado.cit!
   const job = resultado.pipeline
   return (
-    <div className="rounded-2xl border border-ink/10 bg-paper-dim/30 px-4 py-3 text-sm">
-      <p className="flex items-center gap-2 font-semibold text-ink">
-        <Zap className="size-4 text-lime-deep" />
-        Pipeline de validación
-      </p>
-      <p className="mt-1 text-slate-warm">
+    <div className="rounded-2xl border border-ink/10 bg-paper-dim/30 px-4 py-3 text-sm space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="flex items-center gap-2 font-semibold text-ink">
+          <Zap className="size-4 text-lime-deep" />
+          Pipeline de validación
+        </p>
+        <CriticidadBadge resultado={resultado} />
+      </div>
+      <p className="text-slate-warm">
         Estado del CIT: <strong className="text-ink">{cit.estado}</strong>
         {job?.estado ? ` · cola: ${job.estado}` : ''}
       </p>
       {cit.yaInspeccionada && (
-        <p className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-lime-deep">
+        <p className="flex items-center gap-1.5 text-xs font-semibold text-lime-deep">
           <CheckCircle2 className="size-3.5" /> Ya tiene un acta de inspección física.
         </p>
       )}
