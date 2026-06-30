@@ -40,6 +40,8 @@ export async function GET(req: Request) {
       url.searchParams.get('marca') ?? url.searchParams.get('marcas')
     )
     const tipo = url.searchParams.get('tipo')?.trim() || null
+    const rodado = parseNumberParam(url.searchParams.get('rodado'))
+    const talleCuadro = url.searchParams.get('talle_cuadro')?.trim() || url.searchParams.get('talleCuadro')?.trim() || null
     const precioMin = parseNumberParam(url.searchParams.get('precio_min') ?? url.searchParams.get('precioMin'))
     const precioMax = parseNumberParam(url.searchParams.get('precio_max') ?? url.searchParams.get('precioMax'))
     const anioMin = parseIntegerParam(url.searchParams.get('anio_min'))
@@ -59,6 +61,8 @@ export async function GET(req: Request) {
       estado,
       marcas,
       tipo,
+      rodado,
+      talleCuadro,
       precioMin,
       precioMax,
       anioMin,
@@ -81,7 +85,9 @@ export async function GET(req: Request) {
           b.modelo,
           b.anio,
           b.tipo,
-          b.numero_serie
+          b.numero_serie,
+          b.rodado,
+          b.talle_cuadro
         FROM marketplace_publicaciones mp
         INNER JOIN bicicletas b ON b.id = mp.bicicleta_id
         ${whereSql}
@@ -92,7 +98,7 @@ export async function GET(req: Request) {
       listValues
     )
 
-    const [countResult, marcasResult, tiposResult, rangosResult, activasResult] =
+    const [countResult, marcasResult, tiposResult, rodadosResult, tallesResult, rangosResult, activasResult] =
       await Promise.all([
         pool.query<{ total: string }>(
           `
@@ -122,6 +128,31 @@ export async function GET(req: Request) {
             WHERE mp.estado = $1
             GROUP BY b.tipo
             ORDER BY COUNT(*) DESC, b.tipo ASC
+          `,
+          [estado]
+        ),
+        pool.query<{ valor: string; conteo: string }>(
+          `
+            SELECT b.rodado::text AS valor, COUNT(*)::text AS conteo
+            FROM marketplace_publicaciones mp
+            INNER JOIN bicicletas b ON b.id = mp.bicicleta_id
+            WHERE mp.estado = $1 AND b.rodado IS NOT NULL
+            GROUP BY b.rodado
+            ORDER BY b.rodado ASC
+          `,
+          [estado]
+        ),
+        pool.query<{ valor: string; conteo: string }>(
+          `
+            SELECT b.talle_cuadro AS valor, COUNT(*)::text AS conteo
+            FROM marketplace_publicaciones mp
+            INNER JOIN bicicletas b ON b.id = mp.bicicleta_id
+            WHERE mp.estado = $1 AND b.talle_cuadro IS NOT NULL
+            GROUP BY b.talle_cuadro
+            ORDER BY
+              CASE b.talle_cuadro
+                WHEN 'S' THEN 1 WHEN 'M' THEN 2 WHEN 'L' THEN 3 WHEN 'XL' THEN 4 ELSE 5
+              END
           `,
           [estado]
         ),
@@ -179,6 +210,14 @@ export async function GET(req: Request) {
             valor: row.valor,
             conteo: Number(row.conteo),
           })),
+          rodados: (rodadosResult.rows as FacetaRow[]).map((row) => ({
+            valor: Number(row.valor),
+            conteo: Number(row.conteo),
+          })),
+          talles: (tallesResult.rows as FacetaRow[]).map((row) => ({
+            valor: row.valor,
+            conteo: Number(row.conteo),
+          })),
           rangosPrecio: (rangosResult.rows as RangoPrecioRow[]).map((row) => ({
             etiqueta: row.etiqueta,
             min: Number(row.min),
@@ -193,6 +232,8 @@ export async function GET(req: Request) {
             estado,
             marca: marcas.length ? marcas : null,
             tipo,
+            rodado,
+            talleCuadro,
             anioMin,
             anioMax,
             precioMin,
@@ -222,6 +263,8 @@ function buildWhere(filters: {
   estado: string
   marcas: string[]
   tipo: string | null
+  rodado: number | null
+  talleCuadro: string | null
   precioMin: number | null
   precioMax: number | null
   anioMin: number | null
@@ -242,6 +285,14 @@ function buildWhere(filters: {
   if (filters.tipo) {
     values.push(filters.tipo)
     clauses.push(`b.tipo = $${values.length}`)
+  }
+  if (filters.rodado !== null) {
+    values.push(filters.rodado)
+    clauses.push(`b.rodado = $${values.length}`)
+  }
+  if (filters.talleCuadro) {
+    values.push(filters.talleCuadro)
+    clauses.push(`b.talle_cuadro = $${values.length}`)
   }
   if (filters.precioMin !== null) {
     values.push(filters.precioMin)

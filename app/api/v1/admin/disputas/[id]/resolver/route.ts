@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { ApiError, jsonError, optionalText, requireAdmin } from '@/lib/marketplace'
+import { ApiError, jsonError, optionalText, requireStaff } from '@/lib/marketplace'
 import { resolverDisputa } from '@/src/services/escrow.service'
 
 export const runtime = 'nodejs'
@@ -13,6 +13,8 @@ interface Body {
 /**
  * POST /api/v1/admin/disputas/:id/resolver — resolucion administrativa.
  * A favor del VENDEDOR libera los fondos; a favor del COMPRADOR reembolsa.
+ *
+ * Restringido a staff (rol admin/inspector via JWT) o al token de sistema.
  */
 export async function POST(
   req: Request,
@@ -20,7 +22,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    const admin = requireAdmin(req)
+    const admin = await requireStaff(req, 'admin', 'inspector')
     const body = (await req.json().catch(() => ({}))) as Body
 
     const aFavorRaw = optionalText(body.aFavor ?? body.a_favor)?.toUpperCase()

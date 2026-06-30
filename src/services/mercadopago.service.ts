@@ -29,9 +29,13 @@ export function getModo(): MercadoPagoModo {
 }
 
 export function getBaseUrl(): string {
-  return (
-    process.env.RODAID_BASE_URL?.replace(/\/+$/, '') ?? 'https://rodaid.com.ar'
-  )
+  // Preferimos la URL explicita de RODAID; si no, la que inyecta Netlify en el
+  // deploy (URL / DEPLOY_PRIME_URL) para que los retornos y el checkout caigan
+  // sobre el host correcto del preview o de produccion.
+  const explicit = process.env.RODAID_BASE_URL?.trim()
+  const netlify = process.env.URL?.trim() || process.env.DEPLOY_PRIME_URL?.trim()
+  const base = explicit || netlify || 'https://rodaid.com.ar'
+  return base.replace(/\/+$/, '')
 }
 
 export interface CrearPreferenciaInput {
@@ -67,11 +71,13 @@ export async function crearPreferencia(
   const desde = new Date().toISOString()
 
   if (modo === 'STUB') {
-    // Sin token: link simulado, sin llamadas a la API de MercadoPago.
+    // Sin token: checkout simulado local, sin llamadas a la API de MercadoPago.
+    // El init_point es relativo para quedarse siempre sobre el host que sirve
+    // la pagina (preview o produccion).
     const preferenceId = `stub-pref-${input.transaccionId}`
     return {
       preferenceId,
-      initPoint: `${baseUrl}/escrow/stub/checkout?pref=${preferenceId}&tx=${input.transaccionId}`,
+      initPoint: `/escrow/stub/checkout?pref=${preferenceId}&tx=${input.transaccionId}`,
       sandboxPoint: null,
       gateway: 'STUB',
       expiraEn,
@@ -93,9 +99,9 @@ export async function crearPreferencia(
       name: input.compradorNombre ?? undefined,
     },
     back_urls: {
-      success: `${baseUrl}/escrow/retorno/success`,
-      failure: `${baseUrl}/escrow/retorno/failure`,
-      pending: `${baseUrl}/escrow/retorno/pending`,
+      success: `${baseUrl}/checkout/resultado`,
+      failure: `${baseUrl}/checkout/resultado`,
+      pending: `${baseUrl}/checkout/resultado`,
     },
     auto_return: 'approved',
     notification_url: `${baseUrl}/api/v1/escrow/webhook/mp`,
@@ -129,7 +135,7 @@ export async function crearPreferencia(
     initPoint:
       data.init_point ??
       data.sandbox_init_point ??
-      `${baseUrl}/escrow/retorno/pending`,
+      `${baseUrl}/checkout/resultado`,
     sandboxPoint: data.sandbox_init_point ?? null,
     gateway: modo,
     expiraEn,
