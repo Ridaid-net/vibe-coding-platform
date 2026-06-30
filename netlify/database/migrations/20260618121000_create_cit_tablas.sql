@@ -95,3 +95,4 @@ CREATE TABLE IF NOT EXISTS cit_eventos (
 
 CREATE INDEX IF NOT EXISTS idx_cit_eventos_cit
   ON cit_eventos (cit_id, created_at ASC);
+
