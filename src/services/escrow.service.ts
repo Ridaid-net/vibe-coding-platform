@@ -7,6 +7,11 @@ import {
   getModo,
   type MercadoPagoModo,
 } from '@/src/services/mercadopago.service'
+import { emitirEvento } from '@/src/services/notification.service'
+import {
+  cancelarLiquidacionesDeTransaccion,
+  registrarLiquidacionVendedor,
+} from '@/src/services/compensaciones.service'
 import {
   notificarCompraCompletada,
   notificarVentaConfirmada,
@@ -288,6 +293,16 @@ async function liberarFondos(
     actorRol: actor.rol,
   })
 
+  // Hito 13 (RODAID PAY): registra la deuda a pagar al vendedor (precio -
+  // comision) de forma ATOMICA con la liberacion. La transferencia real se
+  // ejecuta despues, de modo asincrono; si falla, el escrow vuelve a DISPUTADA.
+  await registrarLiquidacionVendedor(client, {
+    transaccionId: tx.id,
+    vendedorId: tx.vendedor_id,
+    montoVendedor: Number(tx.monto_vendedor),
+    comision: Number(tx.comision_rodaid),
+  })
+
   return updated.rows[0]
 }
 
@@ -463,6 +478,13 @@ export async function iniciarCompra(input: IniciarCompraInput) {
       return txRes.rows[0]
     })
 
+    // Hito 10: avisar al vendedor que recibio una oferta (best-effort).
+    await emitirEvento({
+      tipo: 'marketplace.oferta',
+      usuarioId: pub.vendedor_id,
+      data: { publicacionId: input.publicacionId, publicacionTitulo: pub.titulo },
+    })
+
     return {
       transaccion: mapTransaccion(transaccion),
       pago: {
@@ -509,7 +531,7 @@ export async function webhookPago(
     return { accion: 'IGNORADO', transaccionId: null }
   }
 
-  return withTx(async (client) => {
+  const resultado = (await withTx(async (client) => {
     const tx = await lockTransaccion(client, transaccionId)
 
     if (pago.status === 'approved') {
@@ -588,7 +610,7 @@ export async function webhookPago(
         metadata: { paymentId: input.paymentId, monto: pago.monto },
       })
 
-      return { accion: 'APROBADO', transaccionId }
+      return { accion: 'APROBADO', transaccionId, vendedorId: tx.vendedor_id }
     }
 
     if (pago.status === 'rejected' || pago.status === 'cancelled') {
@@ -611,7 +633,22 @@ export async function webhookPago(
     }
 
     return { accion: 'IGNORADO', transaccionId }
-  })
+  })) as {
+    accion: AccionWebhook
+    transaccionId: string | null
+    vendedorId?: string
+  }
+
+  // Hito 10: fondos retenidos -> avisar al vendedor (best-effort, fuera de la tx).
+  if (resultado.accion === 'APROBADO' && resultado.vendedorId) {
+    await emitirEvento({
+      tipo: 'escrow.fondos_retenidos',
+      usuarioId: resultado.vendedorId,
+      data: { transaccionId: resultado.transaccionId },
+    })
+  }
+
+  return { accion: resultado.accion, transaccionId: resultado.transaccionId }
 }
 
 // ── 3. confirmarEnvio (vendedor) ────────────────────────────────────────────
@@ -842,6 +879,14 @@ export async function resolverDisputa(input: {
     // A favor del comprador: reembolso + cancelacion + re-activacion.
     const reembolso = await reembolsarPagoRetenido(client, tx.id, input.nota ?? 'Disputa a favor del comprador')
 
+    // Si habia una deuda con el vendedor (p. ej. una liberacion previa cuya
+    // transferencia fallo y mando el escrow a disputa), se anula al reembolsar.
+    await cancelarLiquidacionesDeTransaccion(
+      client,
+      tx.id,
+      'Disputa resuelta a favor del comprador (reembolso).'
+    )
+
     const updated = await client.query<TransaccionRow>(
       `
         UPDATE escrow_transacciones
@@ -872,6 +917,90 @@ export async function resolverDisputa(input: {
     await notificarOperacionCompletada(resultado.transaccion)
   }
   return { transaccion: resultado.transaccion, reembolso: resultado.reembolso }
+}
+
+// ── 7b. resolverPagoForzado (admin: forzar liberacion / reembolso) ───────────
+
+export type AccionForzada = 'LIBERAR' | 'REEMBOLSAR'
+
+/**
+ * Resolucion forzada por un admin sobre una transaccion con fondos en custodia,
+ * para cuando el sistema detecta un comportamiento irregular (Hito 13). A
+ * diferencia de `resolverDisputa`, no exige que la transaccion ya este DISPUTADA:
+ * actua sobre cualquier estado con dinero retenido (FONDOS_RETENIDOS, EN_CAMINO o
+ * DISPUTADA). LIBERAR acredita al vendedor; REEMBOLSAR devuelve al comprador.
+ */
+export async function resolverPagoForzado(input: {
+  transaccionId: string
+  adminId: string
+  accion: AccionForzada
+  motivo?: string | null
+}) {
+  return withTx(async (client) => {
+    const tx = await lockTransaccion(client, input.transaccionId)
+
+    const estadosForzables: EscrowEstado[] = [
+      'FONDOS_RETENIDOS',
+      'EN_CAMINO',
+      'DISPUTADA',
+    ]
+    if (!estadosForzables.includes(tx.estado)) {
+      throw new ApiError(
+        409,
+        'ESTADO_INVALIDO',
+        'Solo se puede forzar una resolucion con los fondos en custodia.'
+      )
+    }
+
+    if (input.accion === 'LIBERAR') {
+      const updated = await liberarFondos(client, tx, { id: input.adminId, rol: 'admin' })
+      await logEvento(client, {
+        transaccionId: tx.id,
+        tipo: 'RESOLUCION_FORZADA',
+        estadoAnterior: tx.estado,
+        estadoNuevo: 'COMPLETADA',
+        actorId: input.adminId,
+        actorRol: 'admin',
+        metadata: { accion: 'LIBERAR', motivo: input.motivo ?? null },
+      })
+      return { transaccion: mapTransaccion(updated), reembolso: null }
+    }
+
+    // REEMBOLSAR: devuelve al comprador, cancela deudas y re-activa la publicacion.
+    const reembolso = await reembolsarPagoRetenido(
+      client,
+      tx.id,
+      input.motivo ?? 'Reembolso forzado por revision administrativa'
+    )
+    await cancelarLiquidacionesDeTransaccion(
+      client,
+      tx.id,
+      'Reembolso forzado por revision administrativa.'
+    )
+    const updated = await client.query<TransaccionRow>(
+      `
+        UPDATE escrow_transacciones
+        SET estado = 'CANCELADA', cancelacion_motivo = $2, updated_at = NOW()
+        WHERE id = $1
+        RETURNING *
+      `,
+      [tx.id, input.motivo ?? 'Reembolso forzado por revision administrativa']
+    )
+    await client.query(
+      `UPDATE marketplace_publicaciones SET estado = 'ACTIVA' WHERE id = $1 AND estado = 'PAUSADA'`,
+      [tx.publicacion_id]
+    )
+    await logEvento(client, {
+      transaccionId: tx.id,
+      tipo: 'RESOLUCION_FORZADA',
+      estadoAnterior: tx.estado,
+      estadoNuevo: 'CANCELADA',
+      actorId: input.adminId,
+      actorRol: 'admin',
+      metadata: { accion: 'REEMBOLSAR', motivo: input.motivo ?? null, reembolsado: Boolean(reembolso) },
+    })
+    return { transaccion: mapTransaccion(updated.rows[0]), reembolso }
+  })
 }
 
 // ── 8. procesarAutoReleases ─────────────────────────────────────────────────
