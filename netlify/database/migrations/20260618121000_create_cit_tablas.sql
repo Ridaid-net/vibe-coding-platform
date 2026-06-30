@@ -69,10 +69,6 @@ CREATE TABLE IF NOT EXISTS cits (
   )
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_cits_unico_vivo_por_bicicleta
-  ON cits (bicicleta_id)
-  WHERE estado IN ('PENDIENTE_VALIDACION', 'ACTIVO');
-
 CREATE INDEX IF NOT EXISTS idx_cits_ciclista
   ON cits (ciclista_id, created_at DESC);
 
@@ -84,14 +80,6 @@ CREATE INDEX IF NOT EXISTS idx_cits_estado
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_cits_huella
   ON cits (huella_sha256);
-
-CREATE INDEX IF NOT EXISTS idx_cits_pipeline_expira
-  ON cits (expira_en)
-  WHERE estado = 'PENDIENTE_VALIDACION';
-
-CREATE INDEX IF NOT EXISTS idx_cits_bfa_pendiente
-  ON cits (bfa_estado)
-  WHERE bfa_estado = 'PENDIENTE';
 
 CREATE TABLE IF NOT EXISTS cit_eventos (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
