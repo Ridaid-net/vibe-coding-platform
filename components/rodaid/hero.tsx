@@ -101,16 +101,33 @@ export function Hero() {
             </div>
 
             <div className="mt-6 rounded-2xl bg-paper p-5 text-ink">
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-warm">
-                Trek Marlin 7 · 2023
-              </p>
-              <p className="mt-1 font-display text-3xl font-bold">$ 420.000</p>
-              <div className="mt-4 flex items-center gap-3 text-sm">
-                <Fingerprint className="size-5 text-clay" />
-                <span>
-                  CIT <strong>RD-8F2A-7C1</strong> · titularidad confirmada
-                </span>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-warm">Certificado Digital · CIT</p>
+                  <p className="mt-0.5 font-display text-sm font-bold text-ink">RODAID-CERT-018BFFF038</p>
+                </div>
+                <span className="inline-flex items-center gap-1 rounded-full bg-lime/20 px-2 py-0.5 text-[10px] font-bold text-lime-deep">VERIFICADO</span>
               </div>
+              <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 border-t border-ink/8 pt-3">
+                <div><p className="text-[9px] uppercase tracking-wide text-slate-warm">Marca</p><p className="text-xs font-semibold text-ink">Raleigh</p></div>
+                <div><p className="text-[9px] uppercase tracking-wide text-slate-warm">Modelo</p><p className="text-xs font-semibold text-ink">Mojave 5.0</p></div>
+                <div><p className="text-[9px] uppercase tracking-wide text-slate-warm">N Serie</p><p className="text-xs font-semibold text-ink">1124279207</p></div>
+                <div><p className="text-[9px] uppercase tracking-wide text-slate-warm">Tipo</p><p className="text-xs font-semibold text-ink">MTB R29</p></div>
+                <div><p className="text-[9px] uppercase tracking-wide text-slate-warm">Color</p><p className="text-xs font-semibold text-ink">Negro Mate</p></div>
+                <div><p className="text-[9px] uppercase tracking-wide text-slate-warm">Titular</p><p className="text-xs font-semibold text-ink">Federico De Gea</p></div>
+              </div>
+              <div className="mt-3 flex items-center gap-2 border-t border-ink/8 pt-3">
+                <Fingerprint className="size-4 shrink-0 text-clay" />
+                <div>
+                  <p className="text-[9px] uppercase tracking-wide text-slate-warm">Codigo CIT</p>
+                  <p className="font-mono text-xs font-bold text-ink">CIT-112427-C24313</p>
+                </div>
+              </div>
+              <div className="mt-2 rounded-lg bg-ink/4 px-3 py-2">
+                <p className="text-[9px] uppercase tracking-wide text-slate-warm">SHA-256</p>
+                <p className="mt-0.5 break-all font-mono text-[9px] text-ink/60">ba6cc4b7d82461d66b1f845c7beb40390306a5f3e40ede35bbd77e77fb684625</p>
+              </div>
+              <p className="mt-2 text-right text-[9px] text-slate-warm">Vigente hasta: <strong className="text-ink">2027-06-17</strong></p>
             </div>
 
             <ol className="mt-6 space-y-1">
