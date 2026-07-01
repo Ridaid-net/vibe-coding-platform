@@ -223,7 +223,7 @@ export async function obtenerActivosUsuario(
     tipo: row.tipo,
     anio: row.anio,
     color: row.color,
-    fotoUrl: row.foto_url,
+    fotoUrl: null,
     rodado: row.rodado === null ? null : Number(row.rodado),
     talleCuadro: row.talle_cuadro,
     creadoEn: row.created_at,
