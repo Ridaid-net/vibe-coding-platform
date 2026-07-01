@@ -1,8 +1,8 @@
 import { RodaidLogo } from './logo'
 import { FaqFooterLink } from './faq-footer-link'
 import { ConsultoriaLegalEnlace } from './consultoria-legal-opener'
-import Link from 'next/link'
 import { DefensaConsumidorModal } from './defensa-consumidor-modal'
+import Link from 'next/link'
 
 const COLS = [
   {
@@ -33,26 +33,24 @@ export function Footer() {
               protegido. Hecho en Argentina.
             </p>
           </div>
-
           {COLS.map((col) => (
             <div key={col.title}>
               <h3 className="text-sm font-semibold text-paper">{col.title}</h3>
               <ul className="mt-4 space-y-2.5">
                 {col.links.map((link) => (
                   <li key={link}>
-                    <a
+                    
                       href="#top"
                       className="text-sm text-paper/55 transition-colors hover:text-lime"
                     >
                       {link}
-        
+                    </a>
                   </li>
                 ))}
               </ul>
             </div>
           ))}
         </div>
-
         <div className="mt-14 flex flex-col gap-3 border-t border-paper/10 pt-6 text-xs text-paper/45 sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} RODAID. Todos los derechos reservados.</p>
           <div className="flex flex-wrap gap-5">
@@ -71,8 +69,6 @@ export function Footer() {
               Privacidad
             </Link>
             <DefensaConsumidorModal />
-
-
           </div>
         </div>
       </div>
