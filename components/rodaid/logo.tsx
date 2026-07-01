@@ -1,4 +1,5 @@
 import Image from 'next/image'
+import Link from 'next/link'
 
 interface Props {
   className?: string
@@ -6,15 +7,15 @@ interface Props {
 
 export function RodaidLogo({ className }: Props) {
   return (
-    <span className={`inline-flex items-center ${className ?? ''}`}>
+    <Link href="/" className={`inline-flex items-center ${className ?? ''}`}>
       <Image
         src="/logo-rodaid.jpeg"
-        alt="RODAID"
+        alt="RODAID - Ir al inicio"
         width={86}
         height={62}
         className="shrink-0"
         priority
       />
-    </span>
+    </Link>
   )
 }
