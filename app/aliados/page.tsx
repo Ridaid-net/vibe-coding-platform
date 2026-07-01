@@ -14,10 +14,10 @@ export default function AliadosPage() {
       <Nav />
       <main className="mx-auto max-w-3xl px-5 py-10 sm:px-8 sm:py-14">
         <div className="mb-8">
-          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-clay">
+          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-white">
             Red de confianza
           </span>
-          <h1 className="mt-2 font-display text-4xl font-bold tracking-tight text-ink">
+          <h1 className="mt-2 font-display text-4xl font-bold tracking-tight text-white">
             Aliados RODAID
           </h1>
         </div>
