@@ -4,7 +4,7 @@ export function Hero() {
   return (
     <section
       id="top"
-      className="relative overflow-hidden bg-ink text-paper"
+      className="relative overflow-hidden bg-ink text-paper" style={{backgroundImage: "url(/hero-bg.png)", backgroundSize: "cover", backgroundPosition: "center"}}
     >
       {/* atmosphere: warm radial + faint grid + grain */}
       <div
