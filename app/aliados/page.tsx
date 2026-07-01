@@ -10,7 +10,7 @@ export const metadata = {
 
 export default function AliadosPage() {
   return (
-    <div className="min-h-screen bg-paper">
+    <div className="relative min-h-screen bg-paper" style={{backgroundImage: "linear-gradient(to bottom, rgba(255,255,255,0.15) 0%, rgba(15,30,53,0.92) 100%), url(/aliados-bg.jpg)", backgroundSize: "cover", backgroundPosition: "center", backgroundAttachment: "fixed"}}>
       <Nav />
       <main className="mx-auto max-w-3xl px-5 py-10 sm:px-8 sm:py-14">
         <div className="mb-8">
