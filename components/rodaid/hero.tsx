@@ -25,6 +25,7 @@ export function Hero() {
         }}
       />
       <div className="rd-grain pointer-events-none absolute inset-0 opacity-[0.25] mix-blend-soft-light" />
+      <div className="pointer-events-none absolute inset-0 bg-ink/70" />
 
       <div className="relative mx-auto grid max-w-7xl gap-12 px-5 pb-20 pt-16 sm:px-8 lg:grid-cols-[1.15fr_0.85fr] lg:gap-8 lg:pb-28 lg:pt-24">
         {/* Left: editorial copy */}
