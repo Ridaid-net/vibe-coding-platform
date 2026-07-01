@@ -72,11 +72,11 @@ export async function GET(req: Request) {
           ORDER BY
             (estado = 'activo') DESC,
             fecha_vencimiento DESC,
-            creado_en DESC
+            created_at DESC
           LIMIT 1
         ) c ON TRUE
         WHERE b.propietario_id = $1
-        ORDER BY b.creado_en DESC
+        ORDER BY b.created_at DESC
       `,
       [user.id]
     )
