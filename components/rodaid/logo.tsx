@@ -10,8 +10,8 @@ export function RodaidLogo({ className }: Props) {
       <Image
         src="/logo-rodaid.jpeg"
         alt="RODAID"
-        width={48}
-        height={48}
+        width={86}
+        height={62}
         className="shrink-0"
         priority
       />
