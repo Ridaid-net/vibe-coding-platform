@@ -3,6 +3,7 @@ import { Toaster } from '@/components/ui/sonner'
 import { FaqWidget } from '@/components/rodaid/faq-widget'
 import { ConsultoriaLegalWidget } from '@/components/rodaid/consultoria-legal-widget'
 import { AuthProvider } from '@/components/rodaid/auth-context'
+import { FooterDefensaConsumidor } from '@/components/rodaid/FooterDefensaConsumidor'
 import type { ReactNode } from 'react'
 import type { Metadata } from 'next'
 import './globals.css'
@@ -55,7 +56,8 @@ export default function RootLayout({
           {children}
           <FaqWidget />
           <ConsultoriaLegalWidget />
-        </AuthProvider>
+        <FooterDefensaConsumidor />
+          </AuthProvider>
         <Toaster />
       </body>
     </html>
