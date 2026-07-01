@@ -39,6 +39,7 @@ export function LoginForm() {
   const [identificador, setIdentificador] = useState('')
   const [password, setPassword] = useState('')
   const [nombre, setNombre] = useState('')
+  const [cuil, setCuil] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [redirigiendo, setRedirigiendo] = useState(false)
 
