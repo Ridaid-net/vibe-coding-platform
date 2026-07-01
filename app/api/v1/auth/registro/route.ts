@@ -23,6 +23,7 @@ const registroSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
   nombre: z.string().trim().min(1).max(120).optional(),
+  cuil: z.string().regex(/^[0-9]{11}$/).optional(),
 })
 
 export async function POST(req: Request) {
@@ -35,12 +36,13 @@ export async function POST(req: Request) {
       email: body.email,
       password: body.password,
       nombre: typeof body.nombre === 'string' ? body.nombre : undefined,
+      cuil: typeof body.cuil === 'string' ? body.cuil.replace(/[-s]/g, '') : undefined,
     })
     if (!parsed.success) {
       const issue = parsed.error.issues[0]
       throw new ApiError(400, 'VALIDATION_ERROR', issue?.message ?? 'Datos invalidos.')
     }
-    const { email, password, nombre } = parsed.data
+    const { email, password, nombre, cuil } = parsed.data
 
     const pool = getPool()
     const passwordHash = await hashPassword(password)
@@ -50,11 +52,11 @@ export async function POST(req: Request) {
     try {
       const insert = await pool.query<UsuarioRow>(
         `
-          INSERT INTO usuarios (email, password_hash, rol, datos_perfil, proveedor)
-          VALUES ($1, $2, 'ciclista', $3::jsonb, 'local')
+          INSERT INTO usuarios (email, password_hash, rol, datos_perfil, proveedor, cuil)
+          VALUES ($1, $2, 'ciclista', $3::jsonb, 'local', $4)
           RETURNING ${USUARIO_PUBLIC_COLUMNS}, password_hash
         `,
-        [email, passwordHash, JSON.stringify(datosPerfil)]
+        [email, passwordHash, JSON.stringify(datosPerfil), cuil ?? null]
       )
       row = insert.rows[0]
     } catch (error) {
