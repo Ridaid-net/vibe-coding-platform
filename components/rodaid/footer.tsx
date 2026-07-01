@@ -2,6 +2,7 @@ import { RodaidLogo } from './logo'
 import { FaqFooterLink } from './faq-footer-link'
 import { ConsultoriaLegalEnlace } from './consultoria-legal-opener'
 import Link from 'next/link'
+import { DefensaConsumidorModal } from './defensa-consumidor-modal'
 
 const COLS = [
   {
@@ -44,7 +45,7 @@ export function Footer() {
                       className="text-sm text-paper/55 transition-colors hover:text-lime"
                     >
                       {link}
-                    </a>
+        
                   </li>
                 ))}
               </ul>
@@ -69,9 +70,9 @@ export function Footer() {
             <Link href="/terminos#seguridad-datos" className="transition-colors hover:text-paper">
               Privacidad
             </Link>
-            <a href="#top" className="transition-colors hover:text-paper">
-              Defensa al consumidor
-            </a>
+            <DefensaConsumidorModal />
+
+
           </div>
         </div>
       </div>
