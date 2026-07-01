@@ -4,6 +4,7 @@ import { ConsultoriaLegalEnlace } from './consultoria-legal-opener'
 import { DefensaConsumidorModal } from './defensa-consumidor-modal'
 import Link from 'next/link'
 import { Code2 } from 'lucide-react'
+import { DropdownPagos } from './DropdownPagos'
 
 const COLS = [
   {
