@@ -107,7 +107,7 @@ interface ActivoRow {
   foto_url: string | null
   rodado: string | null
   talle_cuadro: string | null
-  creado_en: string
+  created_at: string
   cit_id: string | null
   cit_estado: string | null
   codigo_cit: string | null
@@ -163,7 +163,7 @@ export async function obtenerActivosUsuario(
     `
       SELECT
         b.id, b.marca, b.modelo, b.numero_serie, b.tipo, b.anio, b.color,
-        b.foto_url, b.rodado, b.talle_cuadro, b.creado_en,
+        b.foto_url, b.rodado, b.talle_cuadro, b.created_at,
         c.id AS cit_id,
         c.estado AS cit_estado,
         c.codigo_cit,
@@ -192,7 +192,7 @@ export async function obtenerActivosUsuario(
             WHEN 'pendiente' THEN 2
             ELSE 3
           END,
-          creado_en DESC
+          c.acunado_en DESC
         LIMIT 1
       ) c ON TRUE
       LEFT JOIN LATERAL (
@@ -210,7 +210,7 @@ export async function obtenerActivosUsuario(
         LIMIT 1
       ) pub ON TRUE
       WHERE b.propietario_id = $1
-      ORDER BY b.creado_en DESC
+      ORDER BY b.created_at DESC
     `,
     [userId]
   )
@@ -226,7 +226,7 @@ export async function obtenerActivosUsuario(
     fotoUrl: row.foto_url,
     rodado: row.rodado === null ? null : Number(row.rodado),
     talleCuadro: row.talle_cuadro,
-    creadoEn: row.creado_en,
+    creadoEn: row.created_at,
     estado: derivarEstado(row),
     citId: row.cit_id,
     citEstado: row.cit_estado,
@@ -247,7 +247,7 @@ export async function obtenerActivosUsuario(
           estado: row.job_estado,
           ejecutarEn: row.job_ejecutar_en,
           resultado: row.job_resultado,
-          creadoEn: row.job_creado_en ?? row.creado_en,
+          creadoEn: row.job_creado_en ?? row.created_at,
         }
       : null,
     actas: [],
@@ -569,7 +569,7 @@ export async function obtenerAnaliticaPersonal(
               CASE c.estado
                 WHEN 'bloqueado' THEN 0 WHEN 'activo' THEN 1
                 WHEN 'pendiente' THEN 2 ELSE 3 END,
-              c.creado_en DESC
+              c.acunado_en DESC
           )
           SELECT
             COUNT(*) FILTER (WHERE activo_vigente) AS verificadas,
