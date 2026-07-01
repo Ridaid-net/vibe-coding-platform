@@ -201,7 +201,7 @@ export async function obtenerActivosUsuario(
         WHERE cola_validaciones.cit_id = c.id
         ORDER BY created_at DESC
         LIMIT 1
-      ) job ON TRUE
+      ) job ON c.id IS NOT NULL
       LEFT JOIN LATERAL (
         SELECT slug
         FROM marketplace_publicaciones mp
