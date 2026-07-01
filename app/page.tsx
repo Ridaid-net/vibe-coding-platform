@@ -4,6 +4,7 @@ import { Marketplace } from '@/components/rodaid/marketplace'
 import { Nav } from '@/components/rodaid/nav'
 import { RodaidPay, Seguridad } from '@/components/rodaid/how-it-works'
 import { SellCta } from '@/components/rodaid/sell-cta'
+import { DenunciaComunitaria } from '@/components/rodaid/denuncia-comunitaria'
 
 export default function Page() {
   return (
@@ -14,6 +15,7 @@ export default function Page() {
         <Marketplace />
         <RodaidPay />
         <Seguridad />
+        <DenunciaComunitaria />
         <SellCta />
       </main>
       <Footer />
