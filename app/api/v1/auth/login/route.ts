@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { verifyPassword, USUARIO_PUBLIC_COLUMNS, type UsuarioRow } from '@/lib/auth'
-import { buildAuthResponse, emailSchema } from '@/lib/auth-http'
+import { buildAuthResponse } from '@/lib/auth-http'
 import { ApiError, getPool, jsonError } from '@/lib/marketplace'
 
 export const runtime = 'nodejs'
@@ -15,10 +15,11 @@ export const runtime = 'nodejs'
  * responde un 401 generico (no revela si el email existe).
  */
 const loginSchema = z.object({
-  email: emailSchema,
-  // En login no aplicamos reglas de fortaleza: solo exigimos que venga algo.
+  email: z.string().min(1, 'El identificador es obligatorio.'),
   password: z.string({ required_error: 'La contrasena es obligatoria.' }).min(1),
 })
+function esCuil(v: string) { return /^[0-9]{11}$/.test(v.replace(/[-s]/g, '')) }
+function normalizarId(v: string) { return esCuil(v) ? v.replace(/[-s]/g, '') : v.trim().toLowerCase() }
 
 export async function POST(req: Request) {
   try {
@@ -33,14 +34,15 @@ export async function POST(req: Request) {
     if (!parsed.success) {
       throw new ApiError(400, 'VALIDATION_ERROR', 'Email y contrasena son obligatorios.')
     }
-    const { email, password } = parsed.data
+    const { email: rawId, password } = parsed.data
+    const email = normalizarId(rawId)
 
     const pool = getPool()
     const result = await pool.query<UsuarioRow>(
       `
         SELECT ${USUARIO_PUBLIC_COLUMNS}, password_hash
         FROM usuarios
-        WHERE lower(email) = lower($1) AND proveedor = 'local'
+        WHERE (lower(email) = lower($1) OR (cuil IS NOT NULL AND cuil = $1)) AND proveedor = 'local'
         LIMIT 1
       `,
       [email]
@@ -56,7 +58,7 @@ export async function POST(req: Request) {
     )
 
     if (!row || !ok) {
-      throw new ApiError(401, 'CREDENCIALES_INVALIDAS', 'Email o contrasena incorrectos.')
+      throw new ApiError(401, 'CREDENCIALES_INVALIDAS', 'CUIL, email o contrasena incorrectos.')
     }
 
     const sesion = await buildAuthResponse(row, req)
