@@ -3,6 +3,7 @@ import { FaqFooterLink } from './faq-footer-link'
 import { ConsultoriaLegalEnlace } from './consultoria-legal-opener'
 import { DefensaConsumidorModal } from './defensa-consumidor-modal'
 import Link from 'next/link'
+import { Code2 } from 'lucide-react'
 
 const COLS = [
   {
@@ -40,7 +41,6 @@ export function Footer() {
                 {col.links.map((link) => (
                   <li key={link}>
                     
-                    <a
                       href="#top"
                       className="text-sm text-paper/55 transition-colors hover:text-lime"
                     >
@@ -52,7 +52,28 @@ export function Footer() {
             </div>
           ))}
         </div>
-        <div className="mt-14 flex flex-col gap-3 border-t border-paper/10 pt-6 text-xs text-paper/45 sm:flex-row sm:items-center sm:justify-between">
+
+        {/* Sección Desarrolladores */}
+        <div className="mt-10 rounded-2xl border border-paper/10 bg-paper/5 px-6 py-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <Code2 className="size-5 text-lime-deep shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-paper">RODAID para Desarrolladores</p>
+                <p className="text-xs text-paper/55">API pública, webhooks, documentación técnica y sandbox.</p>
+              </div>
+            </div>
+            <Link
+              href="/desarrolladores"
+              className="inline-flex items-center gap-2 rounded-full border border-lime-deep/40 px-4 py-2 text-xs font-semibold text-lime-deep transition-colors hover:bg-lime-deep/10 shrink-0"
+            >
+              <Code2 className="size-3.5" />
+              Portal de Desarrolladores
+            </Link>
+          </div>
+        </div>
+
+        <div className="mt-8 flex flex-col gap-3 border-t border-paper/10 pt-6 text-xs text-paper/45 sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} RODAID. Todos los derechos reservados.</p>
           <div className="flex flex-wrap gap-5">
             <FaqFooterLink />
