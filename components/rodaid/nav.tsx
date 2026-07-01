@@ -42,6 +42,7 @@ export function Nav() {
           {LINKS_SECCION.map((link) => (<a key={link.href} href={link.href} className="text-sm font-medium text-ink/70 transition-colors hover:text-ink">{link.label}</a>))}
           <span className="h-4 w-px bg-ink/15" />
           {LINKS_APP.map((link) => (<Link key={link.href} href={link.href} className="text-sm font-medium text-ink/70 transition-colors hover:text-ink">{link.label}</Link>))}
+          {isAdmin && (<Link href="/admin" className="text-sm font-medium text-ink/70 transition-colors hover:text-ink">Administración</Link>)}
         </nav>
         <div className="flex items-center gap-2">
           <Link href="/ingresar" className="hidden rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:text-ink sm:inline-flex">Ingresar</Link>
