@@ -4,16 +4,26 @@ import Link from 'next/link'
 import { RodaidLogo } from './logo'
 import { useAuth } from './auth-context'
 import { useEffect, useState } from 'react'
+import { Menu, X } from 'lucide-react'
 
-const LINKS = [
+const LINKS_SECCION = [
   { href: '#comprar', label: 'Comprar' },
   { href: '#vender', label: 'Vender' },
   { href: '#rodaid-pay', label: 'RODAID PAY' },
   { href: '#seguridad', label: 'Seguridad' },
 ]
 
+const LINKS_APP = [
+  { href: '/verificar', label: 'Verificar' },
+  { href: '/garaje', label: 'Mi Garaje' },
+  { href: '/aliados', label: 'Aliados' },
+  { href: '/asistente', label: 'Asistente' },
+  { href: '/desarrolladores', label: 'Desarrolladores' },
+]
+
 export function Nav() {
   const [scrolled, setScrolled] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
   const { user, loading } = useAuth()
   const isAdmin = user?.role === 'admin'
 
@@ -32,14 +42,16 @@ export function Nav() {
           : 'border-b border-transparent bg-transparent'
       }`}
     >
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-8">
-        <a href="#top" className="text-ink">
+      <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 sm:px-8">
+        {/* Logo más grande — link a home */}
+        <Link href="/" className="text-ink">
           <RodaidLogo />
-        </a>
+        </Link>
 
-        <nav className="hidden items-center gap-8 md:flex">
-          {LINKS.map((link) => (
-            <a
+        {/* Links de sección — centro, solo desktop */}
+        <nav className="hidden items-center gap-6 lg:flex">
+          {LINKS_SECCION.map((link) => (
+            
               key={link.href}
               href={link.href}
               className="text-sm font-medium text-ink/70 transition-colors hover:text-ink"
@@ -47,62 +59,28 @@ export function Nav() {
               {link.label}
             </a>
           ))}
+          <span className="h-4 w-px bg-ink/15" />
+          {LINKS_APP.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="text-sm font-medium text-ink/70 transition-colors hover:text-ink"
+            >
+              {link.label}
+            </Link>
+          ))}
+          {!loading && isAdmin && (
+            <Link
+              href="/admin"
+              className="text-sm font-medium text-ink/70 transition-colors hover:text-ink"
+            >
+              Administración
+            </Link>
+          )}
         </nav>
 
+        {/* Botones principales derecha */}
         <div className="flex items-center gap-2">
-          <Link
-            href="/verificar"
-            className="hidden rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:text-ink sm:inline-flex"
-          >
-            Verificar
-          </Link>
-          <Link
-            href="/aliados"
-            className="hidden rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:text-ink lg:inline-flex"
-          >
-            Aliados
-          </Link>
-          <Link
-            href="/garaje"
-            className="hidden rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:text-ink sm:inline-flex"
-          >
-            Mi Garaje
-          </Link>
-          <Link
-            href="/asistente"
-            className="hidden rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:text-ink lg:inline-flex"
-          >
-            Asistente
-          </Link>
-          <Link
-            href="/desarrolladores"
-            className="hidden rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:text-ink lg:inline-flex"
-          >
-            Desarrolladores
-          </Link>
-          {/*
-           * Controles de administración: solo visibles para usuarios con rol
-           * `admin`. Mientras se hidrata la sesión se reserva el espacio para
-           * evitar el salto visual. Esto es UX, no seguridad: el acceso real lo
-           * imponen la Edge Function `auth-admin` y los guards del backend.
-           */}
-          <div className="admin-controls flex items-center">
-            {loading ? (
-              <span
-                aria-hidden="true"
-                className="hidden h-9 w-[7.5rem] animate-pulse rounded-full bg-ink/5 lg:inline-flex"
-              />
-            ) : (
-              isAdmin && (
-                <Link
-                  href="/admin"
-                  className="hidden rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:text-ink lg:inline-flex"
-                >
-                  Administración
-                </Link>
-              )
-            )}
-          </div>
           <Link
             href="/ingresar"
             className="hidden rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:text-ink sm:inline-flex"
@@ -115,8 +93,63 @@ export function Nav() {
           >
             Publicar mi bici
           </Link>
+          {/* Hamburger mobile */}
+          <button
+            type="button"
+            onClick={() => setMenuOpen((v) => !v)}
+            className="ml-1 rounded-full p-2 text-ink/70 transition-colors hover:text-ink lg:hidden"
+            aria-label="Menú"
+          >
+            {menuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
+          </button>
         </div>
       </div>
+
+      {/* Menú mobile */}
+      {menuOpen && (
+        <div className="border-t border-ink/10 bg-paper/95 px-5 py-4 lg:hidden">
+          <nav className="flex flex-col gap-3">
+            {LINKS_SECCION.map((link) => (
+              
+                key={link.href}
+                href={link.href}
+                onClick={() => setMenuOpen(false)}
+                className="text-sm font-medium text-ink/70 transition-colors hover:text-ink"
+              >
+                {link.label}
+              </a>
+            ))}
+            <hr className="border-ink/10" />
+            {LINKS_APP.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                onClick={() => setMenuOpen(false)}
+                className="text-sm font-medium text-ink/70 transition-colors hover:text-ink"
+              >
+                {link.label}
+              </Link>
+            ))}
+            {!loading && isAdmin && (
+              <Link
+                href="/admin"
+                onClick={() => setMenuOpen(false)}
+                className="text-sm font-medium text-ink/70 transition-colors hover:text-ink"
+              >
+                Administración
+              </Link>
+            )}
+            <hr className="border-ink/10" />
+            <Link
+              href="/ingresar"
+              onClick={() => setMenuOpen(false)}
+              className="text-sm font-medium text-ink/70 transition-colors hover:text-ink"
+            >
+              Ingresar
+            </Link>
+          </nav>
+        </div>
+      )}
     </header>
   )
 }
