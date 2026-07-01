@@ -14,6 +14,7 @@ import {
 import { Footer } from '@/components/rodaid/footer'
 import { Nav } from '@/components/rodaid/nav'
 import { ProteccionRodaidPay } from '@/components/rodaid/rodaid-pay-badge'
+import { BotonDisputa } from '@/components/rodaid/BotonDisputa'
 import { authedFetch } from '@/lib/session'
 
 type Fase = 'verificando' | 'retenido' | 'pendiente' | 'rechazado' | 'error'
@@ -126,6 +127,9 @@ function ResultadoInner() {
           />
           <div className="mt-8 w-full text-left">
             <ProteccionRodaidPay retenido />
+            <div className="mt-4">
+              <BotonDisputa transaccionId={txId ?? ''} estadoTransaccion="EN_ESPERA_DE_LIBERACION" />
+            </div>
           </div>
         </>
       )}
