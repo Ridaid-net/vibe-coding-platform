@@ -6,20 +6,15 @@ interface Props {
 
 export function RodaidLogo({ className }: Props) {
   return (
-    <span
-      className={`inline-flex items-center gap-2 font-display font-extrabold tracking-tight ${className ?? ''}`}
-    >
+    <span className={`inline-flex items-center ${className ?? ''}`}>
       <Image
         src="/logo-rodaid.jpeg"
         alt="RODAID"
-        width={32}
-        height={32}
-        className="shrink-0 rounded-sm"
+        width={48}
+        height={48}
+        className="shrink-0"
         priority
       />
-      <span className="text-[1.35rem] leading-none">
-        RODA<span className="text-lime-deep">ID</span>
-      </span>
     </span>
   )
 }
