@@ -1,6 +1,8 @@
 import { Footer } from '@/components/rodaid/footer'
 import { Nav } from '@/components/rodaid/nav'
 import { PublicarFlow } from '@/components/rodaid/publicar-flow'
+import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
 
 export const metadata = {
   title: 'Publicar mi bici — RODAID',
@@ -8,7 +10,14 @@ export const metadata = {
     'Publicá tu bicicleta verificada en RODAID y cobrá protegido con RODAID PAY.',
 }
 
-export default function PublicarPage() {
+export default async function PublicarPage() {
+  const cookieStore = await cookies()
+  const token = cookieStore.get('token') ?? cookieStore.get('auth_token') ?? cookieStore.get('session')
+
+  if (!token) {
+    redirect('/ingresar?next=/publicar')
+  }
+
   return (
     <div className="min-h-screen bg-paper">
       <Nav />
