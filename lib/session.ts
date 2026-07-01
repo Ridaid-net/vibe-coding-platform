@@ -50,7 +50,7 @@ const NF_JWT_COOKIE = 'nf_jwt'
 function setJwtCookie(token: string) {
   if (typeof document === 'undefined') return
   const secure = window.location.protocol === 'https:' ? '; Secure' : ''
-  document.cookie = `${NF_JWT_COOKIE}=${encodeURIComponent(token)}; Path=/; SameSite=Lax${secure}`
+  document.cookie = `${NF_JWT_COOKIE}=${encodeURIComponent(token)}; Path=/; Max-Age=86400; SameSite=Lax${secure}`
 }
 
 function clearJwtCookie() {
