@@ -35,118 +35,29 @@ export function Nav() {
   }, [])
 
   return (
-    <header
-      className={`sticky top-0 z-50 transition-colors duration-300 ${
-        scrolled
-          ? 'border-b border-ink/10 bg-paper/85 backdrop-blur-md'
-          : 'border-b border-transparent bg-transparent'
-      }`}
-    >
+    <header className={`sticky top-0 z-50 transition-colors duration-300 ${scrolled ? 'border-b border-ink/10 bg-paper/85 backdrop-blur-md' : 'border-b border-transparent bg-transparent'}`}>
       <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 sm:px-8">
-        {/* Logo más grande — link a home */}
-        <Link href="/" className="text-ink">
-          <RodaidLogo />
-        </Link>
-
-        {/* Links de sección — centro, solo desktop */}
+        <Link href="/" className="text-ink"><RodaidLogo /></Link>
         <nav className="hidden items-center gap-6 lg:flex">
-          {LINKS_SECCION.map((link) => (
-            
-              key={link.href}
-              href={link.href}
-              className="text-sm font-medium text-ink/70 transition-colors hover:text-ink"
-            >
-              {link.label}
-            </a>
-          ))}
+          {LINKS_SECCION.map((link) => (<a key={link.href} href={link.href} className="text-sm font-medium text-ink/70 transition-colors hover:text-ink">{link.label}</a>))}
           <span className="h-4 w-px bg-ink/15" />
-          {LINKS_APP.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="text-sm font-medium text-ink/70 transition-colors hover:text-ink"
-            >
-              {link.label}
-            </Link>
-          ))}
-          {!loading && isAdmin && (
-            <Link
-              href="/admin"
-              className="text-sm font-medium text-ink/70 transition-colors hover:text-ink"
-            >
-              Administración
-            </Link>
-          )}
+          {LINKS_APP.map((link) => (<Link key={link.href} href={link.href} className="text-sm font-medium text-ink/70 transition-colors hover:text-ink">{link.label}</Link>))}
         </nav>
-
-        {/* Botones principales derecha */}
         <div className="flex items-center gap-2">
-          <Link
-            href="/ingresar"
-            className="hidden rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:text-ink sm:inline-flex"
-          >
-            Ingresar
-          </Link>
-          <Link
-            href="/publicar"
-            className="inline-flex items-center rounded-full bg-ink px-4 py-2 text-sm font-semibold text-paper shadow-sm transition-transform hover:-translate-y-0.5"
-          >
-            Publicar mi bici
-          </Link>
-          {/* Hamburger mobile */}
-          <button
-            type="button"
-            onClick={() => setMenuOpen((v) => !v)}
-            className="ml-1 rounded-full p-2 text-ink/70 transition-colors hover:text-ink lg:hidden"
-            aria-label="Menú"
-          >
+          <Link href="/ingresar" className="hidden rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:text-ink sm:inline-flex">Ingresar</Link>
+          <Link href="/publicar" className="inline-flex items-center rounded-full bg-ink px-4 py-2 text-sm font-semibold text-paper shadow-sm transition-transform hover:-translate-y-0.5">Publicar mi bici</Link>
             {menuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
           </button>
         </div>
       </div>
-
-      {/* Menú mobile */}
       {menuOpen && (
         <div className="border-t border-ink/10 bg-paper/95 px-5 py-4 lg:hidden">
           <nav className="flex flex-col gap-3">
-            {LINKS_SECCION.map((link) => (
-              
-                key={link.href}
-                href={link.href}
-                onClick={() => setMenuOpen(false)}
-                className="text-sm font-medium text-ink/70 transition-colors hover:text-ink"
-              >
-                {link.label}
-              </a>
-            ))}
+            {LINKS_SECCION.map((link) => (<a key={link.href} href={link.href} onClick={() => setMenuOpen(false)} className="text-sm font-medium text-ink/70 transition-colors hover:text-ink">{link.label}</a>))}
             <hr className="border-ink/10" />
-            {LINKS_APP.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                onClick={() => setMenuOpen(false)}
-                className="text-sm font-medium text-ink/70 transition-colors hover:text-ink"
-              >
-                {link.label}
-              </Link>
-            ))}
-            {!loading && isAdmin && (
-              <Link
-                href="/admin"
-                onClick={() => setMenuOpen(false)}
-                className="text-sm font-medium text-ink/70 transition-colors hover:text-ink"
-              >
-                Administración
-              </Link>
-            )}
+            {LINKS_APP.map((link) => (<Link key={link.href} href={link.href} onClick={() => setMenuOpen(false)} className="text-sm font-medium text-ink/70 transition-colors hover:text-ink">{link.label}</Link>))}
             <hr className="border-ink/10" />
-            <Link
-              href="/ingresar"
-              onClick={() => setMenuOpen(false)}
-              className="text-sm font-medium text-ink/70 transition-colors hover:text-ink"
-            >
-              Ingresar
-            </Link>
+            <Link href="/ingresar" onClick={() => setMenuOpen(false)} className="text-sm font-medium text-ink/70 transition-colors hover:text-ink">Ingresar</Link>
           </nav>
         </div>
       )}
