@@ -20,11 +20,19 @@ const COLS = [
   },
 ]
 
+const PRODUCTOS = [
+  { label: 'Mi Garaje Digital', href: '/garaje' },
+  { label: 'Verificador público CIT', href: '/verificar' },
+  { label: 'Panel Inspector', href: '/admin/inspecciones' },
+  { label: 'Panel Admin RODAID', href: '/admin' },
+  { label: 'Sumate como Aliado', href: '/aliados' },
+]
+
 export function Footer() {
   return (
     <footer className="bg-ink text-paper">
       <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8">
-        <div className="grid gap-10 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
+        <div className="grid gap-10 lg:grid-cols-[1.4fr_1fr_1fr_1fr_1fr]">
           <div>
             <div className="text-paper">
               <RodaidLogo />
@@ -51,13 +59,28 @@ export function Footer() {
               </ul>
             </div>
           ))}
+          <div>
+            <h3 className="text-sm font-semibold text-paper">Productos</h3>
+            <ul className="mt-4 space-y-2.5">
+              {PRODUCTOS.map((p) => (
+                <li key={p.href}>
+                  <Link
+                    href={p.href}
+                    className="text-sm text-paper/55 transition-colors hover:text-lime"
+                  >
+                    {p.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
 
         {/* Sección Desarrolladores */}
         <div className="mt-10 rounded-2xl border border-paper/10 bg-paper/5 px-6 py-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
-              <Code2 className="size-5 text-lime-deep shrink-0" />
+              <Code2 className="size-5 shrink-0 text-lime-deep" />
               <div>
                 <p className="text-sm font-semibold text-paper">RODAID para Desarrolladores</p>
                 <p className="text-xs text-paper/55">API pública, webhooks, documentación técnica y sandbox.</p>
@@ -65,7 +88,7 @@ export function Footer() {
             </div>
             <Link
               href="/desarrolladores"
-              className="inline-flex items-center gap-2 rounded-full border border-lime-deep/40 px-4 py-2 text-xs font-semibold text-lime-deep transition-colors hover:bg-lime-deep/10 shrink-0"
+              className="inline-flex shrink-0 items-center gap-2 rounded-full border border-lime-deep/40 px-4 py-2 text-xs font-semibold text-lime-deep transition-colors hover:bg-lime-deep/10"
             >
               <Code2 className="size-3.5" />
               Portal de Desarrolladores
@@ -78,12 +101,6 @@ export function Footer() {
           <div className="flex flex-wrap gap-5">
             <FaqFooterLink />
             <ConsultoriaLegalEnlace />
-            <Link href="/aliados" className="transition-colors hover:text-lime">
-              Sumate como Aliado
-            </Link>
-            <Link href="/admin/inspecciones" className="transition-colors hover:text-lime">
-              Panel de Inspecciones
-            </Link>
             <Link href="/terminos" className="transition-colors hover:text-paper">
               Términos
             </Link>
