@@ -69,7 +69,7 @@ export async function POST(
         WHERE bicicleta_id = $1
           AND estado = 'activo'
           AND fecha_vencimiento > NOW()
-        ORDER BY creado_en DESC
+        ORDER BY acunado_en DESC
         LIMIT 1
       `,
       [bici.id]

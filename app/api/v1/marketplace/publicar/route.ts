@@ -193,7 +193,7 @@ export async function POST(req: Request) {
         FROM cits
         WHERE bicicleta_id = $1
           AND estado = 'activo'
-        ORDER BY creado_en DESC
+        ORDER BY acunado_en DESC
         LIMIT 1
         FOR UPDATE
       `,
