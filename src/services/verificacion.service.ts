@@ -223,7 +223,7 @@ export async function buscarYVerificar(
             WHEN 'pendiente' THEN 2
             ELSE 3
           END,
-          c.creado_en DESC
+          c.acunado_en DESC
         LIMIT 1
       ) c ON TRUE
       WHERE UPPER(b.numero_serie) = $1

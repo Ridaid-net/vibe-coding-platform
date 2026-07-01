@@ -46,7 +46,7 @@ export async function GET(
         ORDER BY
           CASE WHEN c.id = $1 THEN 0 ELSE 1 END,
           (c.estado = 'activo') DESC,
-          c.creado_en DESC
+          c.acunado_en DESC
         LIMIT 1
       `,
       [id]

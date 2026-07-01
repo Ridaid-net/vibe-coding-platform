@@ -163,7 +163,7 @@ async function computarVeredicto(serialNorm: string): Promise<VeredictoInterno> 
             WHEN 'pendiente' THEN 2
             ELSE 3
           END,
-          c.creado_en DESC
+          c.acunado_en DESC
         LIMIT 1
       ) c ON TRUE
       WHERE UPPER(REGEXP_REPLACE(b.numero_serie, '[^A-Za-z0-9]', '', 'g')) = $1
@@ -458,7 +458,7 @@ export async function procesarRecupero(
           WHERE c.bicicleta_id = b.id
           ORDER BY
             CASE c.estado WHEN 'bloqueado' THEN 0 WHEN 'activo' THEN 1 ELSE 2 END,
-            c.creado_en DESC
+            c.acunado_en DESC
           LIMIT 1
         ) c ON TRUE
         WHERE UPPER(REGEXP_REPLACE(b.numero_serie, '[^A-Za-z0-9]', '', 'g')) = $1
