@@ -49,6 +49,7 @@ export function Footer() {
                 {col.links.map((link) => (
                   <li key={link}>
                     
+                    <a
                       href="#top"
                       className="text-sm text-paper/55 transition-colors hover:text-lime"
                     >

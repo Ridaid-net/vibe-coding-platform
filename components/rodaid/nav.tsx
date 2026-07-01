@@ -47,6 +47,7 @@ export function Nav() {
         <div className="flex items-center gap-2">
           <Link href="/ingresar" className="hidden rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:text-ink sm:inline-flex">Ingresar</Link>
           <Link href="/publicar" className="inline-flex items-center rounded-full bg-ink px-4 py-2 text-sm font-semibold text-paper shadow-sm transition-transform hover:-translate-y-0.5">Publicar mi bici</Link>
+<button type="button" onClick={() => setMenuOpen((v) => !v)} className="ml-1 rounded-full p-2 text-ink/70 transition-colors hover:text-ink lg:hidden" aria-label="Menú">
             {menuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
           </button>
         </div>
