@@ -34,7 +34,7 @@ import { getPool, type DbClient } from '@/lib/marketplace'
 /** Tasa CIT oficial (ARS) que se cobra por la verificacion. */
 export function getTasaCitARS(): number {
   const raw = Number(process.env.RODAID_TASA_CIT_ARS)
-  return Number.isFinite(raw) && raw > 0 ? Math.round(raw * 100) / 100 : 8500
+  return Number.isFinite(raw) && raw > 0 ? Math.round(raw * 100) / 100 : 18000
 }
 
 /**
