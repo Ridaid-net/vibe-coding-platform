@@ -199,7 +199,7 @@ export function GarajeDigital() {
                 key={a.id}
                 activo={a}
                 onVerificar={() => setVerificar(a)}
-                puedeDenunciar={perfil?.selloGubernamental === true}
+                puedeDenunciar={true}
                 onDenunciar={() => setDenunciar(a)}
               />
             ))}
