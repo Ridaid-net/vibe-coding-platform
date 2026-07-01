@@ -211,8 +211,9 @@ export async function register(
   email: string,
   password: string,
   nombre?: string
+  cuil?: string
 ): Promise<RodaidSession> {
-  return authenticate('/api/v1/auth/registro', { email, password, nombre })
+  return authenticate('/api/v1/auth/registro', { email, password, nombre, cuil })
 }
 
 /**
