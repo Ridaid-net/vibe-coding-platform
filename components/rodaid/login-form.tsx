@@ -54,7 +54,7 @@ export function LoginForm() {
       if (modo === 'login') {
         await login(normalizarIdentificador(identificador), password)
       } else {
-        await register(normalizarIdentificador(identificador), password, nombre.trim() || undefined)
+        await register(normalizarIdentificador(identificador), password, nombre.trim() || undefined, cuil.replace(/[-s]/g, "") || undefined)
       }
       router.push(returnTo)
     } catch (err) {
@@ -125,6 +125,19 @@ export function LoginForm() {
               value={nombre}
               onChange={(e) => setNombre(e.target.value)}
               placeholder="Tu nombre"
+              className={`mt-1.5 ${inputClass}`}
+            />
+          </label>
+        )}
+        {modo === "registro" && (
+          <label className="block">
+            <span className="text-sm font-semibold text-ink">CUIL <span className="font-normal text-slate-warm">(opcional)</span></span>
+            <input
+              type="text"
+              autoComplete="off"
+              value={cuil}
+              onChange={(e) => setCuil(e.target.value)}
+              placeholder="20-12345678-9"
               className={`mt-1.5 ${inputClass}`}
             />
           </label>
