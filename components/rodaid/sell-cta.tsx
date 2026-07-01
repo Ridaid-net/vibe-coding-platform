@@ -21,7 +21,7 @@ const PASOS = [
 
 export function SellCta() {
   return (
-    <section id="vender" className="mx-auto max-w-7xl px-5 pb-24 sm:px-8">
+    <section id="vender" className="mx-auto max-w-7xl px-5 pt-16 pb-24 sm:px-8">
       <div className="relative overflow-hidden rounded-[2rem] bg-lime px-6 py-14 sm:px-12">
         <div
           aria-hidden
