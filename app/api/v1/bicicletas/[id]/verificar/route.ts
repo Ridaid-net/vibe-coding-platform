@@ -88,7 +88,7 @@ export async function POST(
     const insert = await client.query<{ id: string; codigo_cit: string }>(
       `
         INSERT INTO cits (bicicleta_id, ciclista_id, aliado_id, bicicleta_serial, estado, codigo_cit, metadata_json, huella_sha256, inspeccion)
-        VALUES ($1, $4, $4, $5, 'pendiente'::cit_estado, $2, $3::jsonb, encode(sha256(($5)::text::bytea), 'hex'), '[]'::jsonb)
+        VALUES ($1, $4, $4, $5, 'pendiente'::cit_estado, $2, $3::jsonb, $6, '[]'::jsonb)
         RETURNING id, codigo_cit
       `,
       [
@@ -97,6 +97,7 @@ export async function POST(
         JSON.stringify({ origen: 'solicitud', solicitadoPor: user.id }),
         user.id,
         bici.numero_serie,
+        require("node:crypto").createHash("sha256").update(bici.numero_serie).digest("hex"),
       ]
     )
 
