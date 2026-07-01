@@ -36,7 +36,7 @@ export function LoginForm() {
   const mxmError = params.get('mxm_error')
 
   const [modo, setModo] = useState<Modo>('login')
-  const [email, setEmail] = useState('')
+  const [identificador, setIdentificador] = useState('')
   const [password, setPassword] = useState('')
   const [nombre, setNombre] = useState('')
   const [enviando, setEnviando] = useState(false)
