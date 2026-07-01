@@ -18,3 +18,9 @@ path = "/api/v1/admin/*"
 
 [build]
   command = "pnpm run build"
+
+[[redirects]]
+  from = "/api/v1/*"
+  to = "https://rodaid-api-production-bb01.up.railway.app/api/v1/:splat"
+  status = 200
+  force = true
