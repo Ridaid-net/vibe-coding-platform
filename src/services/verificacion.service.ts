@@ -210,7 +210,7 @@ export async function buscarYVerificar(
         b.id AS bici_id, b.marca, b.modelo, b.tipo, b.anio, b.color, b.numero_serie,
         c.id AS cit_id, c.estado AS cit_estado, c.codigo_cit, c.hash_sha256,
         c.fecha_vencimiento, c.bfa_estado, c.bfa_tx_hash, c.bfa_token_id,
-        c.bfa_anclado_en
+        NULL AS bfa_anclado_en
       FROM bicicletas b
       LEFT JOIN LATERAL (
         SELECT *
