@@ -46,7 +46,7 @@ export function getRetribucionAliadoPct(): number {
   if (Number.isFinite(raw) && raw >= 0 && raw <= 1) {
     return Math.round(raw * 10000) / 10000
   }
-  return 0.3
+  return 0.6
 }
 
 function round2(n: number): number {
