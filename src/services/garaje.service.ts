@@ -163,7 +163,7 @@ export async function obtenerActivosUsuario(
     `
       SELECT
         b.id, b.marca, b.modelo, b.numero_serie, b.tipo, b.anio, b.color,
-        b.foto_url, b.rodado, b.talle_cuadro, b.created_at,
+        b.rodado, b.talle_cuadro, b.created_at,
         c.id AS cit_id,
         c.estado AS cit_estado,
         c.codigo_cit,
