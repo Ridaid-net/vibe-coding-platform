@@ -87,8 +87,8 @@ export async function POST(
     codigoCit = generarCodigoCit(bici.numero_serie)
     const insert = await client.query<{ id: string; codigo_cit: string }>(
       `
-        INSERT INTO cits (bicicleta_id, ciclista_id, aliado_id, bicicleta_serial, estado, codigo_cit, metadata_json, huella_sha256, firma_hmac, algoritmo, snapshot_canonico, inspeccion)
-        VALUES ($1, $4, $4, $5, 'pendiente'::cit_estado, $2, $3::jsonb, $6, $7, 'SHA256', $8::jsonb, '[]'::jsonb)
+        INSERT INTO cits (bicicleta_id, ciclista_id, aliado_id, bicicleta_serial, estado, codigo_cit, metadata_json, huella_sha256, firma_hmac, algoritmo, snapshot_canonico, sellado_en, expira_en, inspeccion)
+        VALUES ($1, $4, $4, $5, 'pendiente'::cit_estado, $2, $3::jsonb, $6, $7, 'SHA256', $8::jsonb, NOW(), NOW() + INTERVAL '1 year', '[]'::jsonb)
         RETURNING id, codigo_cit
       `,
       [
