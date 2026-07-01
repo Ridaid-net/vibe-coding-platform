@@ -87,8 +87,8 @@ export async function POST(
     codigoCit = generarCodigoCit(bici.numero_serie)
     const insert = await client.query<{ id: string; codigo_cit: string }>(
       `
-        INSERT INTO cits (bicicleta_id, ciclista_id, aliado_id, bicicleta_serial, estado, codigo_cit, metadata_json, huella_sha256, inspeccion)
-        VALUES ($1, $4, $4, $5, 'pendiente'::cit_estado, $2, $3::jsonb, $6, '[]'::jsonb)
+        INSERT INTO cits (bicicleta_id, ciclista_id, aliado_id, bicicleta_serial, estado, codigo_cit, metadata_json, huella_sha256, firma_hmac, algoritmo, inspeccion)
+        VALUES ($1, $4, $4, $5, 'pendiente'::cit_estado, $2, $3::jsonb, $6, $7, 'SHA256', '[]'::jsonb)
         RETURNING id, codigo_cit
       `,
       [
@@ -98,6 +98,7 @@ export async function POST(
         user.id,
         bici.numero_serie,
         require("node:crypto").createHash("sha256").update(bici.numero_serie).digest("hex"),
+        require("node:crypto").createHmac("sha256", process.env.JWT_SECRET ?? "rodaid").update(bici.numero_serie).digest("hex"),
       ]
     )
 
