@@ -6,6 +6,14 @@ import { Loader2, LogIn, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { login, register } from '@/lib/session'
 
+
+// Detecta si el input es un CUIL (solo dígitos, con o sin guiones) o un email
+function esCuil(valor: string): boolean {
+  return /^[0-9]{2}[-]?[0-9]{8}[-]?[0-9]$/.test(valor.replace(/s/g, ''))
+}
+function normalizarIdentificador(valor: string): string {
+  return esCuil(valor) ? valor.replace(/[-s]/g, '') : valor.trim()
+}
 const inputClass =
   'w-full rounded-xl border border-ink/15 bg-white px-4 py-2.5 text-sm text-ink outline-none transition-colors placeholder:text-slate-warm/60 focus:border-ink/40 focus:ring-4 focus:ring-lime/25'
 
@@ -37,16 +45,16 @@ export function LoginForm() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (enviando) return
-    if (!email.trim() || !password) {
-      toast.error('Completá tu email y contraseña.')
+    if (!normalizarIdentificador(identificador) || !password) {
+      toast.error('Completá tu CUIL o email y contraseña.')
       return
     }
     setEnviando(true)
     try {
       if (modo === 'login') {
-        await login(email.trim(), password)
+        await login(normalizarIdentificador(identificador), password)
       } else {
-        await register(email.trim(), password, nombre.trim() || undefined)
+        await register(normalizarIdentificador(identificador), password, nombre.trim() || undefined)
       }
       router.push(returnTo)
     } catch (err) {
@@ -105,7 +113,7 @@ export function LoginForm() {
 
       <div className="my-6 flex items-center gap-3 text-xs font-medium uppercase tracking-wider text-slate-warm/70">
         <span className="h-px flex-1 bg-ink/10" />
-        o con tu email
+        o con tu CUIL o email
         <span className="h-px flex-1 bg-ink/10" />
       </div>
 
@@ -122,13 +130,13 @@ export function LoginForm() {
           </label>
         )}
         <label className="block">
-          <span className="text-sm font-semibold text-ink">Email</span>
+          <span className="text-sm font-semibold text-ink">CUIL o Email</span>
           <input
-            type="email"
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="vos@email.com"
+            type="text"
+            autoComplete="username"
+            value={identificador}
+            onChange={(e) => setIdentificador(e.target.value)}
+            placeholder="20-12345678-9 o vos@email.com"
             className={`mt-1.5 ${inputClass}`}
           />
         </label>
