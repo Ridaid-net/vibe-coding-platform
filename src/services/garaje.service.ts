@@ -192,7 +192,7 @@ export async function obtenerActivosUsuario(
             WHEN 'pendiente' THEN 2
             ELSE 3
           END,
-          c.acunado_en DESC
+          acunado_en DESC
         LIMIT 1
       ) c ON TRUE
       LEFT JOIN LATERAL (
@@ -569,7 +569,7 @@ export async function obtenerAnaliticaPersonal(
               CASE c.estado
                 WHEN 'bloqueado' THEN 0 WHEN 'activo' THEN 1
                 WHEN 'pendiente' THEN 2 ELSE 3 END,
-              c.acunado_en DESC
+              acunado_en DESC
           )
           SELECT
             COUNT(*) FILTER (WHERE activo_vigente) AS verificadas,
