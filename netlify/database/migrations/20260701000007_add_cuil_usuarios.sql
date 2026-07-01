@@ -1,0 +1,2 @@
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cuil VARCHAR(11);
+CREATE UNIQUE INDEX IF NOT EXISTS usuarios_cuil_unique ON usuarios(cuil) WHERE cuil IS NOT NULL;
