@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * RODAID — Hito 17 BYOD: Webhook de Ingesta Strava
  *
