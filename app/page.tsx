@@ -5,6 +5,7 @@ import { Nav } from '@/components/rodaid/nav'
 import { RodaidPay, Seguridad } from '@/components/rodaid/how-it-works'
 import { SellCta } from '@/components/rodaid/sell-cta'
 import { DenunciaComunitaria } from '@/components/rodaid/denuncia-comunitaria'
+import { StravaGarminSection } from '@/components/rodaid/strava-garmin-section'
 
 export default function Page() {
   return (
@@ -15,6 +16,7 @@ export default function Page() {
         <Marketplace />
         <RodaidPay />
         <Seguridad />
+        <StravaGarminSection />
         <DenunciaComunitaria />
         <SellCta />
       </main>
