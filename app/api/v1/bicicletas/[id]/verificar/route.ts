@@ -120,6 +120,7 @@ export async function POST(
     //    flujo de publicacion; en LIVE queda pendiente del worker de 72hs.
     if (getModo() !== 'LIVE' || process.env.RODAID_CIT_DEMO_MODE === 'true') {
       const resultado = await procesarJob(job.id, { ignorarVentana: true })
+      console.info('[CIT Demo] procesarJob resultado:', JSON.stringify(resultado))
       if (resultado.estado === 'APROBADO') {
         return NextResponse.json(
           { estado: 'activo', codigoCit, yaVerificada: false, hashSha256: resultado.hash ?? null },
