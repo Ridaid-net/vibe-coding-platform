@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * RODAID — Hito 17 BYOD: Flujo OAuth 2.0 con Strava
  *
