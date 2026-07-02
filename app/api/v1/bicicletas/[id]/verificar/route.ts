@@ -118,7 +118,7 @@ export async function POST(
 
     // 5. En demo (no LIVE) ejecutar el pipeline al instante para no frenar el
     //    flujo de publicacion; en LIVE queda pendiente del worker de 72hs.
-    if (getModo() !== 'LIVE') {
+    if (getModo() !== 'LIVE' || process.env.RODAID_CIT_DEMO_MODE === 'true') {
       const resultado = await procesarJob(job.id, { ignorarVentana: true })
       if (resultado.estado === 'APROBADO') {
         return NextResponse.json(
