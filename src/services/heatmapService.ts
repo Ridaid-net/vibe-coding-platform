@@ -6,7 +6,7 @@
  * Aislamiento absoluto de datos entre tenants.
  */
 
-import { Router, Request, Response } from 'express'
+
 import { getPool } from '@/lib/marketplace'
 
 const router = Router()
