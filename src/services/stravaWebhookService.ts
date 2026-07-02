@@ -6,7 +6,7 @@
  * FASE 4: Mantenimiento predictivo por odómetro acumulado.
  */
 
-import { Router, Request, Response } from 'express'
+
 import { getPool } from '@/lib/marketplace'
 
 const router = Router()
