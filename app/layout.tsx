@@ -27,6 +27,8 @@ const description =
   'Comprá y vendé bicicletas con identidad verificada (CIT) y pago protegido por RODAID PAY. El escrow retiene los fondos hasta que la bici llega a destino.'
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://rodaid.net"),
+  alternates: { canonical: "https://rodaid.net" },
   title,
   description,
   applicationName: 'RODAID',
