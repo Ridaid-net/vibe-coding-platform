@@ -697,6 +697,30 @@ function WebhooksApp({ appId, origin }: { appId: string; origin: string }) {
   )
 }
 
+
+function SeccionSeguros() {
+  return (
+    <div className="mt-10 rounded-2xl border border-ink/10 bg-white p-6">
+      <span className="text-xs font-semibold uppercase tracking-widest text-clay">Sector asegurador</span>
+      <h2 className="mt-2 font-display text-xl font-semibold text-ink">RODAID para companias de seguros</h2>
+      <p className="mt-2 text-sm text-slate-warm leading-relaxed">Integra la verificacion CIT en tu flujo de contratacion de polizas. Consulta si la bicicleta existe, tiene inspeccion tecnica auditada y no figura en la red de hurtos — todo via API REST en tiempo real.</p>
+      <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="rounded-xl bg-slate-50 p-4"><p className="text-xs font-semibold text-slate-warm uppercase tracking-wide mb-1">Verificacion previa</p><p className="text-sm text-ink">Consulta el CIT antes de emitir la poliza. Elimina el riesgo de asegurar bicis robadas o inexistentes.</p></div>
+        <div className="rounded-xl bg-slate-50 p-4"><p className="text-xs font-semibold text-slate-warm uppercase tracking-wide mb-1">Alerta de hurto</p><p className="text-sm text-ink">Recibe un webhook automatico cuando una bici asegurada es denunciada como hurtada en la red RODAID.</p></div>
+        <div className="rounded-xl bg-slate-50 p-4"><p className="text-xs font-semibold text-slate-warm uppercase tracking-wide mb-1">Seguro CIT</p><p className="text-sm text-ink">Ofrece prima reducida a bicis con CIT activo. Menor riesgo, producto diferencial y alianza con RODAID.</p></div>
+      </div>
+      <div className="mt-6 rounded-xl bg-ink/3 p-4">
+        <p className="text-xs font-semibold text-ink mb-2">Endpoint de verificacion</p>
+        <code className="text-xs font-mono text-slate-warm">GET /api/v1/verificar/{'{numero_serie}'}</code>
+      </div>
+      <div className="mt-4 flex gap-3">
+        <a href="mailto:contactoarribaeleste@gmail.com" className="inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2 text-xs font-semibold text-paper hover:bg-ink/80">Solicitar acceso API</a>
+        <a href="/sobre" className="inline-flex items-center gap-2 rounded-full border border-ink/15 px-4 py-2 text-xs font-semibold text-ink hover:bg-ink/5">Ver propuesta completa</a>
+      </div>
+    </div>
+  )
+}
+
 // ── Átomos ─────────────────────────────────────────────────────────────────
 
 function Pill({ children, tono }: { children: React.ReactNode; tono: 'ok' | 'warn' | 'neutro' }) {
