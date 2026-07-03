@@ -61,7 +61,7 @@ function SobreContent() {
               </div>
               <div className="rounded-xl bg-slate-50 p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-warm mb-1">Valor del tramite</p>
-                <p className="text-2xl font-semibold text-ink">8.000</p>
+                <p className="text-2xl font-semibold text-ink">18.000</p>
                 <p className="text-xs text-slate-warm mt-1">ARS · U segun cotizacion BNA del dia</p>
               </div>
             </div>
