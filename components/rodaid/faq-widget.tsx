@@ -133,7 +133,7 @@ export function FaqWidget() {
         onClick={() => setAbierto((v) => !v)}
         aria-label="Abrir ayuda experta de RODAID"
         aria-expanded={abierto}
-        className="fixed bottom-5 right-5 z-50 inline-flex items-center gap-2 rounded-full bg-ink px-4 py-3 text-sm font-semibold text-paper shadow-lg shadow-ink/25 transition-transform hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-lime sm:bottom-6 sm:right-6"
+        className="fixed bottom-5 right-20 z-50 inline-flex items-center gap-2 rounded-full bg-ink px-4 py-3 text-sm font-semibold text-paper shadow-lg shadow-ink/25 transition-transform hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-lime sm:bottom-6 sm:right-24"
       >
         {abierto ? <X className="size-5" /> : <HelpCircle className="size-5 text-lime" />}
         <span className="hidden sm:inline">{abierto ? 'Cerrar' : 'Ayuda Experta'}</span>
@@ -144,7 +144,7 @@ export function FaqWidget() {
         <div
           role="dialog"
           aria-label="Asistente de soporte de RODAID"
-          className="fixed bottom-20 right-3 z-50 flex max-h-[min(78vh,640px)] w-[calc(100vw-1.5rem)] max-w-[420px] flex-col overflow-hidden rounded-3xl border border-ink/12 bg-white shadow-2xl shadow-ink/25 sm:bottom-24 sm:right-6"
+          className="fixed bottom-20 right-3 z-50 flex max-h-[min(78vh,640px)] w-[calc(100vw-1.5rem)] max-w-[420px] flex-col overflow-hidden rounded-3xl border border-ink/12 bg-white shadow-2xl shadow-ink/25 sm:bottom-24 sm:right-24"
         >
           {/* Encabezado */}
           <header className="flex items-center justify-between gap-3 border-b border-ink/10 bg-ink px-5 py-4 text-paper">
