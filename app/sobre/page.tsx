@@ -35,7 +35,7 @@ function SobreContent() {
         <section className="mb-10 grid grid-cols-1 sm:grid-cols-2 gap-6">
           <div className="rounded-2xl border border-ink/10 bg-white p-6">
             <span className="text-xs font-semibold uppercase tracking-widest text-[#2BBCB8]">Vision</span>
-            <p className="mt-3 text-base font-display font-semibold text-ink leading-snug">Ser la infraestructura de confianza del mercado de bicicletas en Argentina.</p>
+            <p className="mt-3 text-base font-display font-semibold text-ink leading-snug">Ser la infraestructura de confianza del mercado de bicicletas usadas de Argentina.</p>
             <p className="mt-2 text-sm text-slate-warm leading-relaxed">Donde cada rodado tenga una identidad digital verificable, cada transaccion sea segura, y cada hurto deje una huella rastreable en la red.</p>
           </div>
           <div className="rounded-2xl border border-ink/10 bg-white p-6">
