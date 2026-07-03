@@ -141,6 +141,7 @@ export function DesarrolladoresPortal() {
           </div>
         )}
       </section>
+      <SeccionSeguros />
     </div>
   )
 }
