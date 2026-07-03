@@ -51,7 +51,7 @@ export function Footer() {
                   <li key={link}>
                     
                     <a
-                      href={link === "Sobre RODAID" ? "/sobre" : "#top"}
+                      href={link === "Sobre RODAID" ? "/sobre" : link === "Contacto" ? "mailto:federicodegeaceo@rodaid.net" : "#top"}
                       className="text-sm text-paper/55 transition-colors hover:text-lime"
                     >
                       {link}
