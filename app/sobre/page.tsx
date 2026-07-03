@@ -96,7 +96,7 @@ function SobreContent() {
           </div>
           <div className="rounded-2xl border border-ink/10 bg-white p-5">
             <p className="font-semibold text-ink mb-2">Fomento del ecosistema ciclístico provincial</p>
-            <p className="text-sm text-slate-warm leading-relaxed">RODAID actua como catalizador del sector de bicycleterias de Zona Este. La demanda de CIT genera visitas a talleres aliados, el mantenimiento predictivo fideliza clientes, y la red de confianza eleva el valor percibido de todo el mercado de bicis usadas en la region.</p>
+            <p className="text-sm text-slate-warm leading-relaxed">RODAID actua como catalizador del sector de bicicleterias de Mendoza con proyeccion nacional. La demanda de CIT genera visitas a talleres aliados, el mantenimiento predictivo fideliza clientes, y la red de confianza eleva el valor percibido de todo el mercado de bicis usadas en la region.</p>
             <div className="flex flex-wrap gap-2 mt-3">
               {['Talleres aliados certificados','Economia local','Movilidad sustentable'].map(t => (
                 <span key={t} className="text-xs px-2 py-1 rounded-full bg-green-50 text-green-700">{t}</span>
