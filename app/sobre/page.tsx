@@ -45,6 +45,46 @@ function SobreContent() {
           </div>
         </section>
       <section>
+              <section>
+        <p className="text-xs font-semibold uppercase tracking-widest text-slate-warm mb-4">Que es el CIT</p>
+        <div className="rounded-2xl border border-ink/10 bg-white p-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            <div className="sm:col-span-2">
+              <h2 className="font-display text-xl font-semibold text-ink mb-3">Cedula de Identidad Tecnica de la Bicicleta</h2>
+              <p className="text-sm text-slate-warm leading-relaxed mb-4">El CIT es el certificado digital que acredita la identidad y el estado tecnico de una bicicleta. Funciona como la cedula verde de un auto: identifica al rodado de forma unica, registra su historial de inspeccion y vincula al titular verificado. Cada CIT es generado por un taller aliado RODAID luego de una inspeccion tecnica de 20 puntos, y su huella SHA-256 queda anclada de forma inmutable en la Blockchain Federal Argentina (BFA).</p>
+              <p className="text-sm text-slate-warm leading-relaxed">Una vez emitido, el CIT es publicamente verificable por cualquier persona — sin necesidad de cuenta — escaneando el codigo QR o ingresando el numero de serie en rodaid.net/verificar. Esto permite que compradores, vendedores, talleres y fuerzas de seguridad puedan confirmar la identidad del rodado en tiempo real.</p>
+            </div>
+            <div className="space-y-4">
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-warm mb-1">Vigencia</p>
+                <p className="text-2xl font-semibold text-ink">12 meses</p>
+                <p className="text-xs text-slate-warm mt-1">Renovable anualmente en cualquier taller aliado</p>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-warm mb-1">Valor del tramite</p>
+                <p className="text-2xl font-semibold text-ink">8.000</p>
+                <p className="text-xs text-slate-warm mt-1">ARS · U segun cotizacion BNA del dia</p>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 pt-6 border-t border-ink/8">
+            <div>
+              <p className="text-sm font-semibold text-ink mb-2">Para el comprador</p>
+              <p className="text-sm text-slate-warm">Certeza de que la bicicleta no es robada, que el numero de serie coincide con el cuadro y que el estado tecnico fue auditado por un profesional. Elimina el principal riesgo de la compra de bicicletas usadas.</p>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-ink mb-2">Para el vendedor</p>
+              <p className="text-sm text-slate-warm">El CIT activo aumenta el valor de venta del rodado porque elimina la desconfianza del comprador. Una bici con CIT vigente se vende mas rapido y a mejor precio que una sin certificacion.</p>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-ink mb-2">Valor al rodado</p>
+              <p className="text-sm text-slate-warm">El CIT transforma una bicicleta usada en un activo con identidad verificada. El historial de inspecciones queda registrado en la blockchain de forma permanente, agregando transparencia y trazabilidad a toda la vida util del rodado.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
         <p className="text-xs font-semibold uppercase tracking-widest text-slate-warm mb-4">Perfil de desarrollo</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="rounded-2xl border border-ink/10 bg-white p-5">
