@@ -18,7 +18,9 @@ export default function PrivacidadPage() {
           <p>Los datos se almacenan en servidores seguros. Los certificados se anclan en la Blockchain Federal Argentina (BFA) de forma permanente e inmutable.</p>
           <h2 className="font-display text-xl font-bold text-ink mt-8">4. Tus derechos</h2>
           <p>Podes solicitar acceso, rectificacion o eliminacion de tus datos escribiendo a contactoarribaeleste@gmail.com. Aplicamos la Ley 25.326 de Proteccion de Datos Personales de Argentina.</p>
-          <h2 className="font-display text-xl font-bold text-ink mt-8">5. Contacto</h2>
+          <h2 className="font-display text-xl font-bold text-ink mt-8" id="eliminar-cuenta">5. Eliminacion de cuenta y datos</h2>
+          <p className="text-sm text-slate-warm">Para solicitar la eliminacion de tu cuenta y todos los datos asociados, enviá un email a <a href="mailto:federicodegeaceo@rodaid.net" className="text-[#2BBCB8] hover:underline">federicodegeaceo@rodaid.net</a> con el asunto "Eliminar mi cuenta RODAID". Procesaremos tu solicitud dentro de los 30 dias habiles. Los datos anclados en la Blockchain Federal Argentina (certificados CIT) son inmutables por naturaleza tecnica y legal (Ley Provincial N° 9556) y no pueden eliminarse. El resto de tus datos personales seran eliminados de nuestros servidores.</p>
+          <h2 className="font-display text-xl font-bold text-ink mt-8">6. Contacto</h2>
           <p>Para consultas sobre privacidad: contactoarribaeleste@gmail.com · San Martin, Mendoza, Argentina.</p>
         </div>
       </main>
