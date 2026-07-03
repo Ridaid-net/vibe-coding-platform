@@ -47,11 +47,7 @@ function SobreContent() {
           <div className="rounded-2xl border border-ink/10 bg-white p-5">
             <p className="font-semibold text-ink mb-2">Marco legal e institucional</p>
             <p className="text-sm text-slate-warm">Ley Provincial N° 9556 · Ley 24.240 · Ley 25.326 · EDI X-Road Mendoza</p>
-            <div className="flex flex-wrap gap-2 mt-3">
-              {['Incubadora municipal','Intendente Junin','Agencia I+D+i 2026'].map(t => (
-                <span key={t} className="text-xs px-2 py-1 rounded-full bg-green-50 text-green-700">{t}</span>
-              ))}
-            </div>
+            
           </div>
         </div>
       </section>
