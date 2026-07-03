@@ -177,7 +177,7 @@ function SobreContent() {
             <p className="font-display text-2xl font-semibold text-[#0F1E35]">Federico De Gea</p>
             <p className="mt-1 text-xs font-semibold uppercase tracking-widest text-[#F47B20]">Founder &amp; CEO — RODAID</p>
             <p className="mt-3 text-sm leading-relaxed text-slate-warm max-w-xl">
-              Emprendedor tecnológico y navegante de rally raid con base en San Martín, Mendoza. 
+              Técnico en Gestión de Empresas, Miembro del Concejo Consultivo Emprendedor de Mendoza. Emprendedor tecnológico y navegante de rally raid con base en San Martín, Mendoza.
               Fundó RODAID con la visión de crear infraestructura de confianza para el mercado 
               de bicicletas usadas de Argentina, combinando blockchain, certificación técnica 
               y protección al consumidor en una sola plataforma.
