@@ -45,7 +45,6 @@ function SobreContent() {
           </div>
         </section>
       <section>
-              <section>
         <p className="text-xs font-semibold uppercase tracking-widest text-slate-warm mb-4">Que es el CIT</p>
         <div className="rounded-2xl border border-ink/10 bg-white p-6">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
