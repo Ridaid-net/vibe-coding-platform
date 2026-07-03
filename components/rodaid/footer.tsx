@@ -17,7 +17,7 @@ const COLS = [
   },
   {
     title: 'Empresa',
-    links: ['Sobre RODAID', 'Seguridad', 'Ayuda', 'Contacto'],
+    links: ["Sobre RODAID", 'Seguridad', 'Ayuda', 'Contacto'],
   },
 ]
 
