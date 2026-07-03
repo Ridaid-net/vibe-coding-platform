@@ -3,6 +3,7 @@ import { Toaster } from '@/components/ui/sonner'
 import { FaqWidget } from '@/components/rodaid/faq-widget'
 import { ConsultoriaLegalWidget } from '@/components/rodaid/consultoria-legal-widget'
 import { AuthProvider } from '@/components/rodaid/auth-context'
+import { SoporteChat } from '@/components/rodaid/SoporteChat'
 
 import type { ReactNode } from 'react'
 import type { Metadata } from 'next'
@@ -58,6 +59,7 @@ export default function RootLayout({
           <ConsultoriaLegalWidget />
         
           </AuthProvider>
+        <SoporteChat />
         <Toaster />
       </body>
     </html>
