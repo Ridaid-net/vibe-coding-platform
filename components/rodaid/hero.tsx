@@ -82,7 +82,7 @@ export function Hero() {
           </div>
 
           <dl className="mt-12 grid max-w-lg grid-cols-3 gap-6 border-t border-paper/15 pt-7">
-            <Stat value="1.247" label="bicis publicadas" />
+            <Stat value="1" label="bici publicada" />
             <Stat value="$0" label="al estafador" />
             <Stat value="72 h" label="garantía de entrega" />
           </dl>
