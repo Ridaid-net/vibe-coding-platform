@@ -162,6 +162,37 @@ function SobreContent() {
         </div>
       </section>
 
+            <section className="mt-12 border-t border-ink/8 pt-10">
+        <p className="text-xs font-semibold uppercase tracking-widest text-slate-warm mb-6">Fundador</p>
+        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
+          <div className="shrink-0">
+            <img
+              src="/Federico-degea.jpg"
+              alt="Federico De Gea — Founder CEO RODAID"
+              className="size-28 rounded-full object-cover object-top"
+              style={{border: '2.5px solid #2BBCB8'}}
+            />
+          </div>
+          <div className="text-center sm:text-left">
+            <p className="font-display text-2xl font-semibold text-[#0F1E35]">Federico De Gea</p>
+            <p className="mt-1 text-xs font-semibold uppercase tracking-widest text-[#F47B20]">Founder &amp; CEO — RODAID</p>
+            <p className="mt-3 text-sm leading-relaxed text-slate-warm max-w-xl">
+              Emprendedor tecnológico y navegante de rally raid con base en San Martín, Mendoza. 
+              Fundó RODAID con la visión de crear infraestructura de confianza para el mercado 
+              de bicicletas usadas de Argentina, combinando blockchain, certificación técnica 
+              y protección al consumidor en una sola plataforma.
+            </p>
+            <div className="mt-4 flex flex-wrap justify-center sm:justify-start gap-2">
+              <span className="text-xs px-3 py-1 rounded-full bg-[#0F1E35]/8 text-[#0F1E35]">Rally Raid SAR 2021</span>
+              <span className="text-xs px-3 py-1 rounded-full bg-[#0F1E35]/8 text-[#0F1E35]">Zona Este · Mendoza</span>
+              <span className="text-xs px-3 py-1 rounded-full bg-[#0F1E35]/8 text-[#0F1E35]">Blockchain &amp; Fintech</span>
+            </div>
+            <p className="mt-4 text-xs text-slate-warm/70">
+              <a href="mailto:federicodegeaceo@rodaid.net" className="text-[#2BBCB8] hover:underline">federicodegeaceo@rodaid.net</a>
+            </p>
+          </div>
+        </div>
+      </section>
       <p className="text-xs text-center text-slate-warm/60 pt-4">RODAID · rodaid.net · San Martin, Mendoza, Argentina · 2026</p>
     </div>
   )
