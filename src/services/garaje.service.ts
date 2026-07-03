@@ -163,7 +163,7 @@ export async function obtenerActivosUsuario(
     `
       SELECT
         b.id, b.marca, b.modelo, b.numero_serie, b.tipo, b.anio, b.color,
-        b.rodado, b.talle_cuadro, b.created_at,
+        b.foto_url, b.rodado, b.talle_cuadro, b.created_at,
         c.id AS cit_id,
         c.estado AS cit_estado,
         NULL AS codigo_cit,
@@ -223,7 +223,7 @@ export async function obtenerActivosUsuario(
     tipo: row.tipo,
     anio: row.anio,
     color: row.color,
-    fotoUrl: null,
+    fotoUrl: row.foto_url,
     rodado: row.rodado === null ? null : Number(row.rodado),
     talleCuadro: row.talle_cuadro,
     creadoEn: row.created_at,
