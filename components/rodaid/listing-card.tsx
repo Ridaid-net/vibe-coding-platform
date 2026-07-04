@@ -1,4 +1,5 @@
 'use client'
+import { ChatMarketplace } from './ChatMarketplace'
 
 import Link from 'next/link'
 import { Eye, Fingerprint, ShieldCheck } from 'lucide-react'
@@ -93,6 +94,15 @@ export function ListingCard({ pub }: { pub: Publicacion }) {
             <ShieldCheck className="size-4 text-lime" />
             Comprar protegido
           </Link>
+        </div>
+        <div className="mt-3">
+          <ChatMarketplace
+            publicacionId={listing.id}
+            tituloPublicacion={listing.titulo ?? listing.marca + " " + listing.modelo}
+            vendedorAlias={listing.vendedor ?? "Vendedor"}
+            citActivo={listing.citEstado === "activo" || listing.citEstado === "verificado"}
+            esVendedor={false}
+          />
         </div>
       </div>
     </article>
