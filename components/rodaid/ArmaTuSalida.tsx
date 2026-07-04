@@ -184,7 +184,7 @@ export function ArmaTuSalida() {
                       <span>{int.emoji}</span> {int.label} <span className="text-slate-400 font-normal">(opcional)</span>
                     </label>
                     <input type="url" placeholder={int.placeholder}
-                      value={(salida as Record<string, unknown>)[int.campo] as string}
+                      value={(salida as unknown as Record<string, string>)[int.campo]}
                       onChange={e => actualizar(int.campo as keyof SalidaData, e.target.value)}
                       className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#2BBCB8]" />
                   </div>
