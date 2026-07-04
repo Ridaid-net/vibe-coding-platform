@@ -242,6 +242,7 @@ export function useAnaliticaPersonal() {
 }
 
 export interface MiPerfil {
+  id: string
   nombre: string | null
   email: string
   rol: string
@@ -260,6 +261,7 @@ export function useMiPerfil() {
       const u = data?.usuario
       if (!u) return null
       return {
+        id: u.id as string,
         nombre: (u.datosPerfil?.nombre as string | undefined) ?? null,
         email: u.email,
         rol: u.rol,
