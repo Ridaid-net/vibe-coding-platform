@@ -30,6 +30,8 @@ import {
   type ActivoGaraje,
 } from '@/lib/garaje-digital'
 import { AgregarBicicletaForm } from './garaje'
+import { BiciSaludBot } from './BiciSaludBot'
+import { BiciSeguraShare } from './BiciSeguraShare'
 import { SolicitarVerificacionModal } from './solicitar-verificacion-modal'
 import { DenunciaMpfModal } from './denuncia-mpf-modal'
 
