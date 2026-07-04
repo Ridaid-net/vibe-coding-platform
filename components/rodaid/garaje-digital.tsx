@@ -155,8 +155,8 @@ export function GarajeDigital() {
         <ArmaTuSalida />
       </div>
       <ProgramaEmbajadores
-        usuarioId={usuario?.id ?? ""}
-        nombreUsuario={usuario?.nombre ?? ""}
+        usuarioId={perfil?.id ?? ""}
+        nombreUsuario={perfil?.nombre ?? perfil?.email ?? ""}
         nivel="Ciclista"
         referidosActivos={0}
       />
