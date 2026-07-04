@@ -34,6 +34,7 @@ import { BiciSaludBot } from './BiciSaludBot'
 import { InsigniasUsuario } from './InsigniasUsuario'
 import { ProgramaEmbajadores } from './ProgramaEmbajadores'
 import { SeguroDinamico } from './SeguroDinamico'
+import { ArmaTuSalida } from './ArmaTuSalida'
 import { BiciSeguraShare } from './BiciSeguraShare'
 import { SolicitarVerificacionModal } from './solicitar-verificacion-modal'
 import { DenunciaMpfModal } from './denuncia-mpf-modal'
@@ -152,7 +153,10 @@ export function GarajeDigital() {
       )}
 
       {agregando && (
-        <ProgramaEmbajadores
+        <div className="mb-4 flex justify-center">
+          <ArmaTuSalida />
+        </div>
+          <ProgramaEmbajadores
             usuarioId={usuario?.id ?? ""}
             nombreUsuario={usuario?.nombre ?? ""}
             nivel="Ciclista"
