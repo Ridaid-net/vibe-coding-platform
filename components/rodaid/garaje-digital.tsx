@@ -151,11 +151,9 @@ export function GarajeDigital() {
           </span>
         </Link>
       )}
-
-      {agregando && (
-        <div className="mb-4 flex justify-center">
-          <ArmaTuSalida />
-        </div>
+      <div className="mb-6 flex justify-center">
+        <ArmaTuSalida />
+      </div>
           <ProgramaEmbajadores
             usuarioId={usuario?.id ?? ""}
             nombreUsuario={usuario?.nombre ?? ""}
