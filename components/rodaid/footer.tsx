@@ -13,7 +13,7 @@ const COLS = [
   },
   {
     title: 'RODAID PAY',
-    links: ['Academia', 'Pago protegido', 'Disputas', 'Reembolsos', 'Seguimiento'],
+    links: ['Academia', 'Eventos', 'Pago protegido', 'Disputas', 'Reembolsos', 'Seguimiento'],
   },
   {
     title: 'Empresa',
@@ -51,7 +51,7 @@ export function Footer() {
                   <li key={link}>
                     
                     <a
-                      href={link === "Sobre RODAID" ? "/sobre" : link === "Contacto" ? "mailto:federicodegeaceo@rodaid.net" : link === "Academia" ? "/academia" : link === "Pago protegido" ? "/pago-protegido" : link === "Disputas" ? "/disputas" : link === "Reembolsos" ? "/reembolsos" : link === "Seguimiento" ? "/seguimiento" : "#top"}
+                      href={link === "Sobre RODAID" ? "/sobre" : link === "Contacto" ? "mailto:federicodegeaceo@rodaid.net" : link === "Academia" ? "/academia" : link === "Eventos" ? "/eventos" : link === "Pago protegido" ? "/pago-protegido" : link === "Disputas" ? "/disputas" : link === "Reembolsos" ? "/reembolsos" : link === "Seguimiento" ? "/seguimiento" : "#top"}
                       className="text-sm text-paper/55 transition-colors hover:text-lime"
                     >
                       {link}
