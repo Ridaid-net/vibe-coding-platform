@@ -32,6 +32,7 @@ import {
 import { AgregarBicicletaForm } from './garaje'
 import { BiciSaludBot } from './BiciSaludBot'
 import { InsigniasUsuario } from './InsigniasUsuario'
+import { ProgramaEmbajadores } from './ProgramaEmbajadores'
 import { BiciSeguraShare } from './BiciSeguraShare'
 import { SolicitarVerificacionModal } from './solicitar-verificacion-modal'
 import { DenunciaMpfModal } from './denuncia-mpf-modal'
@@ -150,7 +151,13 @@ export function GarajeDigital() {
       )}
 
       {agregando && (
-        <InsigniasUsuario
+        <ProgramaEmbajadores
+            usuarioId={usuario?.id ?? ""}
+            nombreUsuario={usuario?.nombre ?? ""}
+            nivel="Ciclista"
+            referidosActivos={0}
+          />
+          <InsigniasUsuario
             tieneCit={activos.some(a => a.citCodigo)}
             citActivo={activos.some(a => a.estado === "verificado")}
             stravaConectado={false}
