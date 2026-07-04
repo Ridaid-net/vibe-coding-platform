@@ -13,6 +13,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/disputas`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.6 },
     { url: `${base}/reembolsos`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.6 },
     { url: `${base}/seguimiento`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.6 },
+    { url: `${base}/academia`, lastModified: new Date(), changeFrequency: 'weekly', priority: 0.7 },
+    { url: `${base}/eventos`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.8 },
     { url: `${base}/privacidad`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
     { url: `${base}/terminos`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
   ]
