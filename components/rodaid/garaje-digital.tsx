@@ -31,6 +31,7 @@ import {
 } from '@/lib/garaje-digital'
 import { AgregarBicicletaForm } from './garaje'
 import { BiciSaludBot } from './BiciSaludBot'
+import { InsigniasUsuario } from './InsigniasUsuario'
 import { BiciSeguraShare } from './BiciSeguraShare'
 import { SolicitarVerificacionModal } from './solicitar-verificacion-modal'
 import { DenunciaMpfModal } from './denuncia-mpf-modal'
@@ -149,7 +150,15 @@ export function GarajeDigital() {
       )}
 
       {agregando && (
-        <AgregarBicicletaForm
+        <InsigniasUsuario
+            tieneCit={activos.some(a => a.citCodigo)}
+            citActivo={activos.some(a => a.estado === "verificado")}
+            stravaConectado={false}
+            kmTotales={0}
+            tienePublicacion={false}
+            denunciasRegistradas={0}
+          />
+          <AgregarBicicletaForm
           onCancel={() => setAgregando(false)}
           onCreada={() => {
             setAgregando(false)
