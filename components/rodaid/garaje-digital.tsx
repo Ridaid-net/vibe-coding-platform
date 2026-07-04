@@ -154,21 +154,22 @@ export function GarajeDigital() {
       <div className="mb-6 flex justify-center">
         <ArmaTuSalida />
       </div>
-          <ProgramaEmbajadores
-            usuarioId={usuario?.id ?? ""}
-            nombreUsuario={usuario?.nombre ?? ""}
-            nivel="Ciclista"
-            referidosActivos={0}
-          />
-          <InsigniasUsuario
-            tieneCit={activos.some(a => a.citCodigo)}
-            citActivo={activos.some(a => a.estado === "verificado")}
-            stravaConectado={false}
-            kmTotales={0}
-            tienePublicacion={false}
-            denunciasRegistradas={0}
-          />
-          <AgregarBicicletaForm
+      <ProgramaEmbajadores
+        usuarioId={usuario?.id ?? ""}
+        nombreUsuario={usuario?.nombre ?? ""}
+        nivel="Ciclista"
+        referidosActivos={0}
+      />
+      <InsigniasUsuario
+        tieneCit={activos.some(a => a.citCodigo)}
+        citActivo={activos.some(a => a.estado === "verificado")}
+        stravaConectado={false}
+        kmTotales={0}
+        tienePublicacion={false}
+        denunciasRegistradas={0}
+      />
+      {agregando && (
+        <AgregarBicicletaForm
           onCancel={() => setAgregando(false)}
           onCreada={() => {
             setAgregando(false)
