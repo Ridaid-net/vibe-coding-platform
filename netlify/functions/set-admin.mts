@@ -1,20 +1,20 @@
 import type { Config } from '@netlify/functions'
-import { neon } from '@neondatabase/serverless'
 
 export default async (req: Request) => {
   try {
-    const sql = neon(process.env.DATABASE_URL!)
-    const result = await sql`
-      UPDATE usuarios SET rol = 'admin', updated_at = NOW() 
-      WHERE lower(email) = 'federicodegeaceo@rodaid.net' 
-      RETURNING id, email, rol
-    `
-    return new Response(JSON.stringify(result[0] ?? { msg: 'no rows updated' }), { 
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    })
-  } catch (err) {
-    return new Response(JSON.stringify({ error: String(err) }), { status: 500 })
+    const dbUrl = process.env.DATABASE_URL ?? ''
+    
+    // Usar el cliente HTTP de Neon serverless directamente
+    const { neon } = await import('@neondatabase/serverless')
+    const sql = neon(dbUrl)
+    
+    const rows = await sql('UPDATE usuarios SET rol = $1, updated_at = NOW() WHERE lower(email) = $2 RETURNING id, email, rol', ['admin', 'federicodegeaceo@rodaid.net'])
+    
+    const body = JSON.stringify({ ok: true, row: rows[0] ?? null })
+    return new Response(body, { status: 200, headers: { 'Content-Type': 'application/json' } })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return new Response(JSON.stringify({ ok: false, error: msg }), { status: 500, headers: { 'Content-Type': 'application/json' } })
   }
 }
 
