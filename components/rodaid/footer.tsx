@@ -13,7 +13,7 @@ const COLS = [
   },
   {
     title: 'RODAID PAY',
-    links: ['Academia', 'Eventos', 'Pago protegido', 'Disputas', 'Reembolsos', 'Seguimiento'],
+    links: ['Academia', 'Eventos', 'Servicios', 'Pago protegido', 'Disputas', 'Reembolsos', 'Seguimiento'],
   },
   {
     title: 'Empresa',
@@ -25,7 +25,6 @@ const PRODUCTOS = [
   { label: 'Mi Garaje Digital', href: '/garaje' },
   { label: 'Verificador público CIT', href: '/verificar' },
   { label: 'Panel Inspector', href: '/admin/inspecciones' },
-  { label: 'Panel Admin RODAID', href: '/admin' },
   { label: 'Sumate como Aliado', href: '/aliados' },
 ]
 
@@ -51,7 +50,7 @@ export function Footer() {
                   <li key={link}>
                     
                     <a
-                      href={link === "Sobre RODAID" ? "/sobre" : link === "Contacto" ? "mailto:federicodegeaceo@rodaid.net" : link === "Academia" ? "/academia" : link === "Eventos" ? "/eventos" : link === "Pago protegido" ? "/pago-protegido" : link === "Disputas" ? "/disputas" : link === "Reembolsos" ? "/reembolsos" : link === "Seguimiento" ? "/seguimiento" : "#top"}
+                      href={link === "Sobre RODAID" ? "/sobre" : link === "Contacto" ? "mailto:federicodegeaceo@rodaid.net" : link === "Academia" ? "/academia" : link === "Servicios" ? "/servicios" : link === "Eventos" ? "/eventos" : link === "Pago protegido" ? "/pago-protegido" : link === "Disputas" ? "/disputas" : link === "Reembolsos" ? "/reembolsos" : link === "Seguimiento" ? "/seguimiento" : "#top"}
                       className="text-sm text-paper/55 transition-colors hover:text-lime"
                     >
                       {link}
