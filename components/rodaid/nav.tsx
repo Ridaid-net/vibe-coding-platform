@@ -25,9 +25,6 @@ export function Nav() {
   const [scrolled, setScrolled] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   useEffect(() => {
-  }, [])
-  }
-  const { user, loading } = useAuth()
   const isAdmin = user?.role === 'admin'
 
   useEffect(() => {
