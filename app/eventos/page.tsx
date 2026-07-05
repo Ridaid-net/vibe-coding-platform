@@ -1,4 +1,5 @@
 'use client'
+import Link from 'next/link'
 import { Nav } from '@/components/rodaid/nav'
 import { Footer } from '@/components/rodaid/footer'
 import { MapPin, Calendar, Users, ChevronRight, Bike, Wrench, Star } from 'lucide-react'
@@ -10,7 +11,7 @@ const EVENTOS = [
     icono: Bike,
     color: '#2BBCB8',
     bg: 'bg-teal-50',
-    titulo: 'Rodada Nocturna Zona Este',
+    titulo: 'Rodada Nocturna Zona Este', href: '/eventos/rodada-nocturna',
     fecha: 'Sabado 12 de julio · 20:00hs',
     lugar: 'Plaza San Martin, San Martin, Mendoza',
     participantes: 24,
@@ -25,7 +26,7 @@ const EVENTOS = [
     icono: Wrench,
     color: '#F47B20',
     bg: 'bg-orange-50',
-    titulo: 'Taller de Mecanica Basica',
+    titulo: 'Taller de Mecanica Basica', href: '/eventos/taller-mecanica',
     fecha: 'Sabado 19 de julio · 10:00hs',
     lugar: 'Taller Aliado RODAID — San Martin',
     participantes: 12,
@@ -40,7 +41,7 @@ const EVENTOS = [
     icono: Star,
     color: '#7c3aed',
     bg: 'bg-violet-50',
-    titulo: 'Feria de Bicicletas Verificadas',
+    titulo: 'Feria de Bicicletas Verificadas', href: '/eventos/feria-bicicletas',
     fecha: 'Domingo 27 de julio · 09:00 a 14:00hs',
     lugar: 'Parque Municipal San Martin',
     participantes: 89,
@@ -55,7 +56,7 @@ const EVENTOS = [
     icono: Bike,
     color: '#2BBCB8',
     bg: 'bg-teal-50',
-    titulo: 'Gran Vuelta Zona Este',
+    titulo: 'Gran Vuelta Zona Este', href: '/eventos/gran-vuelta',
     fecha: 'Domingo 3 de agosto · 08:00hs',
     lugar: 'Municipalidad de Junin',
     participantes: 41,
@@ -116,9 +117,7 @@ export default function EventosPage() {
                         <span className="text-xs text-slate-warm/70">Organiza: {evento.organizador}</span>
                         <div className="flex gap-2">
                           {evento.libre && <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-1 rounded-full">Entrada libre</span>}
-                          <button className="inline-flex items-center gap-1 rounded-full bg-[#0F1E35] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0F1E35]/80">
-                            Me apunto <ChevronRight className="size-3" />
-                          </button>
+                          <Link href={evento.href ?? "#"} className="inline-flex items-center gap-1 rounded-full bg-[#0F1E35] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0F1E35]/80">Me apunto <ChevronRight className="size-3" /></Link>
                         </div>
                       </div>
                     </div>
