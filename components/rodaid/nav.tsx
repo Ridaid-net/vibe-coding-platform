@@ -5,7 +5,6 @@ import { RodaidLogo } from './logo'
 import { useAuth } from './auth-context'
 import { useEffect, useState } from 'react'
 import { Menu, X } from 'lucide-react'
-import { getSession, clearSession } from '@/lib/session'
 
 const LINKS_SECCION = [
   { href: '#comprar', label: 'Comprar' },
@@ -25,14 +24,8 @@ const LINKS_APP = [
 export function Nav() {
   const [scrolled, setScrolled] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [logueado, setLogueado] = useState(false)
   useEffect(() => {
-    setLogueado(!!getSession())
   }, [])
-  const handleSalir = () => {
-    clearSession()
-    setLogueado(false)
-    window.location.href = "/"
   }
   const { user, loading } = useAuth()
   const isAdmin = user?.role === 'admin'
