@@ -159,7 +159,7 @@ export function LoginForm() {
         <label className="block">
           <span className="text-sm font-semibold text-ink">Contraseña</span>
           <input
-            type="password" autoComplete="new-password"
+            type="password"
             autoComplete={modo === 'login' ? 'current-password' : 'new-password'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
