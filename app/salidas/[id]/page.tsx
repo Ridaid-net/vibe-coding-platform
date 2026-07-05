@@ -3,8 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { Nav } from '@/components/rodaid/nav'
 import { Footer } from '@/components/rodaid/footer'
-import { MapPin, Calendar, Route, Users, Image, MessageCircle, Send, ChevronRight, Clock } from 'lucide-react'
-import { authedFetch } from '@/lib/session'
+import { MapPin, Calendar, Route, Users, Image, MessageCircle, Send, Clock, Navigation } from 'lucide-react'
 
 interface Salida {
   id: string
@@ -21,8 +20,10 @@ interface Salida {
   garmin_link: string | null
   trailforks_link: string | null
   wikilok_link: string | null
+  trackeo_url: string | null
+  trackeo_tipo: string | null
+  trackeo_nombre: string | null
   participantes_count: number
-  fotos_count: number
 }
 
 interface Foto {
@@ -56,7 +57,9 @@ export default function SalidaDetallePage() {
   const [nombreInvitado, setNombreInvitado] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [cargando, setCargando] = useState(true)
+  const [subiendoTrackeo, setSubiendoTrackeo] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const trackeoRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!id) return
@@ -105,18 +108,53 @@ export default function SalidaDetallePage() {
     reader.readAsDataURL(file)
   }
 
+  const subirTrackeo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setSubiendoTrackeo(true)
+    const reader = new FileReader()
+    reader.onload = async (ev) => {
+      const contenido = ev.target?.result as string
+      const res = await fetch(`/api/v1/salidas/${id}/trackeo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          trackeo_url: contenido,
+          trackeo_tipo: file.name.endsWith('.gpx') ? 'gpx' : 'kml',
+          trackeo_nombre: file.name
+        })
+      })
+      const data = await res.json()
+      if (data.ok && salida) {
+        setSalida({ ...salida, trackeo_url: contenido, trackeo_nombre: file.name })
+      }
+      setSubiendoTrackeo(false)
+    }
+    reader.readAsDataURL(file)
+  }
+
   const textoWsp = salida ? encodeURIComponent(
-    `🚲 *${salida.titulo}*\n📅 ${salida.fecha} · ${salida.hora}\n📍 ${salida.lugar_encuentro}\n🗺️ ${salida.km_recorrido ?? '?'} km\n\nSuma fotos y comentarios: https://rodaid.net/salidas/${id}`
+    `🚲 *${salida.titulo}*\n📅 ${salida.fecha} · ${salida.hora}\n📍 ${salida.lugar_encuentro}\n🗺️ ${salida.km_recorrido ?? '?'} km\n\nSuma fotos, comentarios y trackeo: https://rodaid.net/salidas/${id}`
   ) : ''
 
-  if (cargando) return <div className="flex items-center justify-center min-h-screen"><p className="text-slate-warm">Cargando salida...</p></div>
-  if (!salida) return <div className="flex items-center justify-center min-h-screen"><p className="text-slate-warm">Salida no encontrada.</p></div>
+  if (cargando) return (
+    <div className="flex items-center justify-center min-h-screen">
+      <p className="text-slate-warm">Cargando salida...</p>
+    </div>
+  )
+  if (!salida) return (
+    <div className="flex items-center justify-center min-h-screen">
+      <p className="text-slate-warm">Salida no encontrada.</p>
+    </div>
+  )
 
   return (
     <div className="min-h-screen bg-paper">
       <Nav />
-      <main className="mx-auto max-w-3xl px-5 py-10 sm:px-8">
-        <div className="rounded-2xl border border-ink/10 bg-white p-6 mb-6">
+      <main className="mx-auto max-w-3xl px-5 py-10 sm:px-8 space-y-5">
+
+        {/* Header */}
+        <div className="rounded-2xl border border-ink/10 bg-white p-6">
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
               <span className={`text-xs font-semibold px-2 py-1 rounded-full ${NIVEL_COLOR[salida.nivel]}`}>{salida.nivel}</span>
@@ -146,7 +184,7 @@ export default function SalidaDetallePage() {
             {salida.trailforks_link && <a href={salida.trailforks_link} target="_blank" rel="noopener noreferrer" className="text-xs px-3 py-1 rounded-full bg-green-50 text-green-700 hover:underline">🟢 Trailforks</a>}
             {salida.wikilok_link && <a href={salida.wikilok_link} target="_blank" rel="noopener noreferrer" className="text-xs px-3 py-1 rounded-full bg-teal-50 text-teal-700 hover:underline">🗺️ Wikilok</a>}
           </div>
-          <div className="mt-4 flex items-center gap-3">
+          <div className="mt-4 flex items-center gap-4">
             <span className="flex items-center gap-1 text-xs text-slate-warm"><Users className="size-3" /> {salida.participantes_count} participantes</span>
             <span className="flex items-center gap-1 text-xs text-slate-warm"><Image className="size-3" /> {fotos.length} fotos</span>
             <span className="flex items-center gap-1 text-xs text-slate-warm"><MessageCircle className="size-3" /> {comentarios.length} comentarios</span>
@@ -159,15 +197,46 @@ export default function SalidaDetallePage() {
         </div>
 
         {/* Nombre invitado */}
-        <div className="rounded-2xl border border-ink/10 bg-white p-4 mb-4">
-          <p className="text-xs font-semibold text-slate-warm mb-2">Tu nombre (para fotos y comentarios)</p>
+        <div className="rounded-2xl border border-ink/10 bg-white p-4">
+          <p className="text-xs font-semibold text-slate-warm mb-2">Tu nombre (para fotos, trackeo y comentarios)</p>
           <input type="text" placeholder="Ej: Juan Perez" value={nombreInvitado}
             onChange={e => setNombreInvitado(e.target.value)}
             className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#2BBCB8]" />
         </div>
 
+        {/* Trackeo GPS */}
+        <div className="rounded-2xl border border-ink/10 bg-white p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-display text-base font-semibold text-ink flex items-center gap-2">
+              <Navigation className="size-4 text-[#2BBCB8]" /> Trackeo GPS
+            </h2>
+            <label className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold cursor-pointer ${subiendoTrackeo ? 'bg-slate-100 text-slate-400' : 'bg-[#2BBCB8] text-white hover:bg-[#2BBCB8]/80'}`}>
+              {subiendoTrackeo ? 'Subiendo...' : '+ Subir GPX/KML'}
+              <input ref={trackeoRef} type="file" accept=".gpx,.kml,.fit" className="hidden" onChange={subirTrackeo} disabled={subiendoTrackeo} />
+            </label>
+          </div>
+          {salida.trackeo_url ? (
+            <div className="rounded-xl bg-green-50 border border-green-200 p-4">
+              <p className="text-sm font-semibold text-green-700 flex items-center gap-2">
+                <Navigation className="size-4" /> {salida.trackeo_nombre ?? 'Trackeo cargado'}
+              </p>
+              <p className="text-xs text-green-600 mt-1">Trackeo disponible para los participantes</p>
+              <a href={salida.trackeo_url} download={salida.trackeo_nombre ?? 'trackeo.gpx'}
+                className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-green-700 hover:underline">
+                ⬇ Descargar archivo
+              </a>
+            </div>
+          ) : (
+            <div className="rounded-xl bg-slate-50 border border-dashed border-slate-200 p-6 text-center">
+              <Navigation className="size-8 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm text-slate-warm">Subí el archivo GPX, KML o FIT de la salida</p>
+              <p className="text-xs text-slate-warm/60 mt-1">Compatible con Strava, Garmin, Komoot y Wikilok</p>
+            </div>
+          )}
+        </div>
+
         {/* Fotos */}
-        <div className="rounded-2xl border border-ink/10 bg-white p-5 mb-4">
+        <div className="rounded-2xl border border-ink/10 bg-white p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-display text-base font-semibold text-ink flex items-center gap-2"><Image className="size-4 text-[#F47B20]" /> Fotos de la salida</h2>
             <label className="inline-flex items-center gap-1 rounded-full bg-[#F47B20] px-3 py-1.5 text-xs font-semibold text-white cursor-pointer hover:bg-[#F47B20]/80">
@@ -176,12 +245,12 @@ export default function SalidaDetallePage() {
             </label>
           </div>
           {fotos.length === 0 ? (
-            <p className="text-sm text-slate-warm text-center py-6">Todavia no hay fotos. ¡Se el primero en subir una!</p>
+            <p className="text-sm text-slate-warm text-center py-6">Todavia no hay fotos. Se el primero en subir una!</p>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {fotos.map(f => (
-                <div key={f.id} className="rounded-xl overflow-hidden aspect-square bg-slate-100 relative group">
-                  <img src={f.foto_url} alt={f.caption ?? 'Foto de la salida'} className="w-full h-full object-cover" />
+                <div key={f.id} className="rounded-xl overflow-hidden aspect-square bg-slate-100 relative">
+                  <img src={f.foto_url} alt={f.caption ?? 'Foto'} className="w-full h-full object-cover" />
                   {(f.caption || f.nombre_autor) && (
                     <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-2 py-1">
                       {f.nombre_autor && <p className="text-[10px] text-white/70">{f.nombre_autor}</p>}
@@ -199,7 +268,7 @@ export default function SalidaDetallePage() {
           <h2 className="font-display text-base font-semibold text-ink flex items-center gap-2 mb-4"><MessageCircle className="size-4 text-[#2BBCB8]" /> Comentarios</h2>
           <div className="space-y-3 mb-4">
             {comentarios.length === 0 ? (
-              <p className="text-sm text-slate-warm text-center py-4">Todavia no hay comentarios. Dejá el tuyo!</p>
+              <p className="text-sm text-slate-warm text-center py-4">Todavia no hay comentarios. Deja el tuyo!</p>
             ) : (
               comentarios.map(c => (
                 <div key={c.id} className="rounded-xl bg-slate-50 p-3">
@@ -211,7 +280,7 @@ export default function SalidaDetallePage() {
             )}
           </div>
           <div className="flex gap-2">
-            <input type="text" placeholder="Dejá tu comentario..." value={comentario}
+            <input type="text" placeholder="Deja tu comentario..." value={comentario}
               onChange={e => setComentario(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && enviarComentario()}
               className="flex-1 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm outline-none focus:border-[#2BBCB8]" />
@@ -221,6 +290,7 @@ export default function SalidaDetallePage() {
             </button>
           </div>
         </div>
+
       </main>
       <Footer />
     </div>
