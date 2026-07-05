@@ -1,6 +1,7 @@
 import { Nav } from '@/components/rodaid/nav'
 import { Footer } from '@/components/rodaid/footer'
 import { BookOpen, Shield, Wrench, Bike, ChevronRight, Lock } from 'lucide-react'
+import Link from 'next/link'
 
 export const metadata = {
   title: 'Academia RODAID — Aprende a cuidar tu bici',
@@ -14,7 +15,7 @@ const CURSOS = [
     color: '#F47B20',
     bg: 'bg-orange-50',
     nivel: 'Basico',
-    titulo: 'Mecanica de Emergencia',
+    titulo: 'Mecanica de Emergencia', href: '/academia/mecanica-emergencia',
     descripcion: 'Como reparar un pinchaso, ajustar frenos y cambios, y resolver las fallas mas comunes en ruta sin herramientas especializadas.',
     modulos: [
       'Como cambiar una camara en 5 minutos',
@@ -31,7 +32,7 @@ const CURSOS = [
     color: '#2BBCB8',
     bg: 'bg-teal-50',
     nivel: 'Esencial',
-    titulo: 'Seguridad Vial y Legislacion',
+    titulo: 'Seguridad Vial y Legislacion', href: '/academia/seguridad-vial',
     descripcion: 'Derechos y obligaciones del ciclista en Mendoza, uso correcto del casco, luces y reflectivos, y como actuar ante un siniestro vial.',
     modulos: [
       'Legislacion ciclista en Mendoza (Ley provincial)',
@@ -48,7 +49,7 @@ const CURSOS = [
     color: '#0F1E35',
     bg: 'bg-slate-50',
     nivel: 'Prevencion',
-    titulo: 'Anticipo al Robo',
+    titulo: 'Anticipo al Robo', href: '/academia/anticipo-robo',
     descripcion: 'Estrategias probadas para reducir el riesgo de robo: tecnicas de candado, puntos criticos de la ciudad y como usar RODAID para proteger tu bici.',
     modulos: [
       'Los 3 errores mas comunes al guardar la bici',
@@ -65,7 +66,7 @@ const CURSOS = [
     color: '#16a34a',
     bg: 'bg-green-50',
     nivel: 'Mantenimiento',
-    titulo: 'Mantenimiento Preventivo',
+    titulo: 'Mantenimiento Preventivo', href: '/academia/mantenimiento-preventivo',
     descripcion: 'Guia de mantenimiento por kilometraje: que revisar cada 500, 1000 y 1500 km para que tu bici dure el doble.',
     modulos: [
       'Checklist de 20 puntos (igual que el CIT RODAID)',
@@ -82,7 +83,7 @@ const CURSOS = [
     color: '#7c3aed',
     bg: 'bg-violet-50',
     nivel: 'Avanzado',
-    titulo: 'Como usar RODAID al maximo',
+    titulo: 'Como usar RODAID al maximo', href: '/academia/usar-rodaid',
     descripcion: 'Tutorial completo de la plataforma: certificar tu bici, publicar en el marketplace, usar el escrow y conectar Strava para mantenimiento predictivo.',
     modulos: [
       'Como obtener tu CIT paso a paso',
