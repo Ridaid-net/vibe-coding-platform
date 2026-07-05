@@ -5,6 +5,7 @@ import { RodaidLogo } from './logo'
 import { useAuth } from './auth-context'
 import { useEffect, useState } from 'react'
 import { Menu, X } from 'lucide-react'
+import { getSession, clearSession } from '@/lib/session'
 
 const LINKS_SECCION = [
   { href: '#comprar', label: 'Comprar' },
