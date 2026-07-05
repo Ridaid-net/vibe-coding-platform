@@ -59,7 +59,7 @@ export function LoginForm() {
       }
       const sesion = getSession()
       const dest = sesion?.rol === 'admin' && returnTo === '/garaje' ? '/admin' : returnTo
-      router.push(dest)
+      window.location.href = dest
     } catch (err) {
       toast.error('No pudimos iniciar sesión', {
         description: (err as Error).message ?? 'Revisá tus datos e intentá de nuevo.',
