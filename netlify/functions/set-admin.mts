@@ -4,17 +4,39 @@ export default async (req: Request) => {
   try {
     const dbUrl = process.env.DATABASE_URL ?? ''
     
-    // Usar el cliente HTTP de Neon serverless directamente
-    const { neon } = await import('@neondatabase/serverless')
-    const sql = neon(dbUrl)
+    // Extraer credenciales de la URL de conexión
+    const url = new URL(dbUrl)
+    const host = url.hostname
+    const user = url.username
+    const pass = url.password
+    const db = url.pathname.slice(1)
     
-    const rows = await sql('UPDATE usuarios SET rol = $1, updated_at = NOW() WHERE lower(email) = $2 RETURNING id, email, rol', ['admin', 'federicodegeaceo@rodaid.net'])
+    // Usar Neon HTTP API directamente
+    const neonApiUrl = `https://${host}/sql`
+    const response = await fetch(neonApiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${btoa(`${user}:${pass}`)}`,
+        'Neon-Connection-String': dbUrl,
+      },
+      body: JSON.stringify({
+        query: "UPDATE usuarios SET rol = 'admin', updated_at = NOW() WHERE lower(email) = 'federicodegeaceo@rodaid.net' RETURNING id, email, rol",
+        params: []
+      })
+    })
     
-    const body = JSON.stringify({ ok: true, row: rows[0] ?? null })
-    return new Response(body, { status: 200, headers: { 'Content-Type': 'application/json' } })
+    const data = await response.json()
+    return new Response(JSON.stringify({ ok: true, data }), { 
+      status: 200, 
+      headers: { 'Content-Type': 'application/json' } 
+    })
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
-    return new Response(JSON.stringify({ ok: false, error: msg }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    return new Response(JSON.stringify({ ok: false, error: msg }), { 
+      status: 500, 
+      headers: { 'Content-Type': 'application/json' } 
+    })
   }
 }
 
