@@ -24,6 +24,7 @@ const LINKS_APP = [
 export function Nav() {
   const [scrolled, setScrolled] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const { user, loading } = useAuth()
   const isAdmin = user?.role === 'admin'
 
   useEffect(() => {
