@@ -62,7 +62,11 @@ export async function POST(req: Request) {
     }
 
     const sesion = await buildAuthResponse(row, req)
-    return NextResponse.json(sesion)
+    const res = NextResponse.json(sesion)
+    if (sesion.accessToken) {
+      res.cookies.set("nf_jwt", sesion.accessToken, { httpOnly: true, secure: true, sameSite: "lax", maxAge: 86400, path: "/" })
+    }
+    return res
   } catch (error) {
     return jsonError(error)
   }
