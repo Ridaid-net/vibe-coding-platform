@@ -1,12 +1,31 @@
 import { NextResponse } from 'next/server'
 
 export async function GET() {
-  const vars = Object.keys(process.env).filter(k => 
-    k.includes('DB') || k.includes('DATABASE') || k.includes('NETLIFY') || k.includes('NEON') || k.includes('POSTGRES')
-  )
-  return NextResponse.json({ vars, nodeEnv: process.env.NODE_ENV })
+  return NextResponse.json({ ok: true, msg: 'use POST' })
 }
 
 export async function POST() {
-  return NextResponse.json({ msg: 'use GET to debug' })
+  try {
+    const dbUrl = process.env.NETLIFY_DB_URL!
+    const url = new URL(dbUrl)
+    
+    const response = await fetch(`https://${url.hostname}/sql`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${btoa(`${url.username}:${url.password}`)}`,
+        'Neon-Connection-String': dbUrl,
+      },
+      body: JSON.stringify({
+        query: "UPDATE usuarios SET rol = 'admin', updated_at = NOW() WHERE lower(email) = 'federicodegeaceo@rodaid.net' RETURNING id, email, rol",
+        params: []
+      })
+    })
+    
+    const text = await response.text()
+    return NextResponse.json({ ok: true, status: response.status, body: text })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 })
+  }
 }
