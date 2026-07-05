@@ -57,7 +57,9 @@ export function LoginForm() {
       } else {
         await register(normalizarIdentificador(identificador), password, nombre.trim() || undefined, cuil.replace(/[-s]/g, "") || undefined)
       }
-      router.push(returnTo)
+      const sesion = getSession()
+      const dest = sesion?.rol === 'admin' && returnTo === '/garaje' ? '/admin' : returnTo
+      router.push(dest)
     } catch (err) {
       toast.error('No pudimos iniciar sesión', {
         description: (err as Error).message ?? 'Revisá tus datos e intentá de nuevo.',
