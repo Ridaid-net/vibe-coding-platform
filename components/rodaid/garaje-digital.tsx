@@ -35,6 +35,7 @@ import { InsigniasUsuario } from './InsigniasUsuario'
 import { ProgramaEmbajadores } from './ProgramaEmbajadores'
 import { SeguroDinamico } from './SeguroDinamico'
 import { ArmaTuSalida } from './ArmaTuSalida'
+import { MisSalidas } from './MisSalidas'
 import { clearSession } from '@/lib/session'
 import { BiciSeguraShare } from './BiciSeguraShare'
 import { SolicitarVerificacionModal } from './solicitar-verificacion-modal'
@@ -169,7 +170,8 @@ export function GarajeDigital() {
         <div className="mb-6 flex justify-center">
         <ArmaTuSalida />
       </div>
-      <ProgramaEmbajadores
+      <MisSalidas />
+          <ProgramaEmbajadores
         usuarioId={perfil?.id ?? ""}
         nombreUsuario={perfil?.nombre ?? perfil?.email ?? ""}
         nivel="Ciclista"
