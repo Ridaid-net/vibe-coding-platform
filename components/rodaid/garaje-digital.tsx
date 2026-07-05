@@ -35,6 +35,7 @@ import { InsigniasUsuario } from './InsigniasUsuario'
 import { ProgramaEmbajadores } from './ProgramaEmbajadores'
 import { SeguroDinamico } from './SeguroDinamico'
 import { ArmaTuSalida } from './ArmaTuSalida'
+import { clearSession } from '@/lib/session'
 import { BiciSeguraShare } from './BiciSeguraShare'
 import { SolicitarVerificacionModal } from './solicitar-verificacion-modal'
 import { DenunciaMpfModal } from './denuncia-mpf-modal'
@@ -151,7 +152,10 @@ export function GarajeDigital() {
           </span>
         </Link>
       )}
-      <div className="mb-6 flex justify-center">
+      <div className="mb-4 flex justify-end">
+          <button type="button" onClick={() => { clearSession(); window.location.href = "/" }} className="inline-flex items-center gap-2 rounded-full border border-clay/30 bg-clay/5 px-3 py-1.5 text-xs font-semibold text-clay hover:bg-clay/10">Cerrar sesion</button>
+        </div>
+        <div className="mb-6 flex justify-center">
         <ArmaTuSalida />
       </div>
       <ProgramaEmbajadores
