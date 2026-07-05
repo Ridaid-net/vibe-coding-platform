@@ -6,12 +6,6 @@
 # _redirects o que la función de origen, garantizando la defensa en profundidad.
 [[edge_functions]]
 function = "auth-admin"
-path = "/admin"
-[[edge_functions]]
-function = "auth-admin"
-path = "/admin/*"
-[[edge_functions]]
-function = "auth-admin"
 path = "/api/v1/admin/*"
 [build]
   command = "pnpm run build"
