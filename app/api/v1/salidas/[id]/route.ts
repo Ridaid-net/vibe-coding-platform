@@ -2,7 +2,7 @@ export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
 import { getPool } from '@/lib/marketplace'
 
-export async function GET(req: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const pool = getPool()
     const result = await pool.query(`
@@ -16,7 +16,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       LEFT JOIN salidas_comentarios sc ON sc.salida_id = sg.id
       WHERE sg.id = $1
       GROUP BY sg.id
-    `, [params.id])
+    `, [(await params).id])
     if (!result.rows[0]) return NextResponse.json({ error: 'No encontrada' }, { status: 404 })
     return NextResponse.json({ salida: result.rows[0] })
   } catch (e: unknown) {
