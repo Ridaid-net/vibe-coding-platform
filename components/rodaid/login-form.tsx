@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2, LogIn, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
-import { login, register } from '@/lib/session'
+import { login, register, getSession } from '@/lib/session'
 
 
 // Detecta si el input es un CUIL (solo dígitos, con o sin guiones) o un email
