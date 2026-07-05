@@ -32,7 +32,7 @@ type Modo = 'login' | 'registro'
 export function LoginForm() {
   const router = useRouter()
   const params = useSearchParams()
-  const returnTo = sanitizeReturnTo(params.get('returnTo'))
+  const returnTo = sanitizeReturnTo(params.get('next') ?? params.get('returnTo'))
   const mxmError = params.get('mxm_error')
 
   const [modo, setModo] = useState<Modo>('login')
