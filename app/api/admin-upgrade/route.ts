@@ -6,9 +6,8 @@ export async function POST() {
   try {
     const db = getDatabase()
     const result = await db.sql`
-      UPDATE usuarios 
-      SET rol = 'admin', updated_at = NOW() 
-      WHERE lower(email) = 'federicodegeaceo@rodaid.net' 
+      UPDATE usuarios SET rol = 'admin', updated_at = NOW() 
+      WHERE lower(email) IN ('federicodegeaceo@rodaid.net', 'federico2@rodaid.net')
       RETURNING id, email, rol
     `
     return NextResponse.json({ ok: true, rows: result })
