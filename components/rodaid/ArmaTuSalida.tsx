@@ -1,4 +1,5 @@
 'use client'
+import { authedFetch } from '@/lib/session'
 import { useState } from 'react'
 import { Calendar, Clock, MapPin, Route, Image, Share2, X, ChevronRight, Map, Users, Plus } from 'lucide-react'
 
@@ -74,13 +75,33 @@ export function ArmaTuSalida() {
     return `https://wa.me/?text=${encodeURIComponent(texto)}`
   }
 
-  const handlePublicar = () => {
+  const handlePublicar = async () => {
+    try {
+      const res = await authedFetch("/api/v1/salidas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          titulo: salida.lugar + " - " + salida.dia,
+          descripcion: salida.descripcion,
+          fecha: salida.dia,
+          hora: salida.hora,
+          lugar: salida.lugar,
+          km: salida.km,
+          nivel: salida.nivel,
+          mapLink: salida.mapLink,
+          stravaLink: salida.stravaLink,
+          garminLink: salida.garminLink,
+          trailforksLink: salida.trailforksLink,
+          wikilokLink: salida.wikilokLink,
+        })
+      })
+      const data = await res.json()
+      if (data.salida?.id) {
+        window.open("/salidas/" + data.salida.id, "_blank")
+      }
+    } catch { /* silencioso */ }
     setPublicado(true)
-    setTimeout(() => {
-      setAbierto(false)
-      setPublicado(false)
-      setPaso(1)
-    }, 3000)
+    setTimeout(() => { setAbierto(false); setPublicado(false); setPaso(1) }, 2000)
   }
 
   if (!abierto) return (
