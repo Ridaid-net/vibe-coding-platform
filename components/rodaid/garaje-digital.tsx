@@ -153,7 +153,7 @@ export function GarajeDigital() {
         </Link>
       )}
       <div className="mt-2 mb-4 flex justify-end gap-2">
-          
+          <a
             href={`https://wa.me/?text=${encodeURIComponent('Te invito a verificar tu bici en RODAID - la plataforma de identidad digital para ciclistas de Mendoza. Certifica tu bici con blockchain, vendela con pago protegido y unite a la comunidad. Registrate gratis: https://rodaid.net\n\nParticipa de la red de ciclistas donde encontraras salidas, prevencion, eventos, red de talleres aliados para el mejor mantenimiento de tu unidad o unidades registradas. Somos RODAID, la plataforma que disenamos para la mayor seguridad de la comunidad de ciclistas de Mendoza')}`}
             target="_blank"
             rel="noopener noreferrer"
