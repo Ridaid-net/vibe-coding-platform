@@ -53,3 +53,8 @@ CREATE INDEX IF NOT EXISTS idx_salidas_estado ON salidas_grupales(estado);
 CREATE INDEX IF NOT EXISTS idx_salidas_fecha ON salidas_grupales(fecha);
 CREATE INDEX IF NOT EXISTS idx_salidas_fotos_salida ON salidas_fotos(salida_id);
 CREATE INDEX IF NOT EXISTS idx_salidas_comentarios_salida ON salidas_comentarios(salida_id);
+
+-- Trackeo GPS de la salida
+ALTER TABLE salidas_grupales ADD COLUMN IF NOT EXISTS trackeo_url TEXT;
+ALTER TABLE salidas_grupales ADD COLUMN IF NOT EXISTS trackeo_tipo TEXT DEFAULT 'gpx';
+ALTER TABLE salidas_grupales ADD COLUMN IF NOT EXISTS trackeo_nombre TEXT;
