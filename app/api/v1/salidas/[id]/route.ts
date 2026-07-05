@@ -2,8 +2,9 @@ export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
 import { getPool } from '@/lib/marketplace'
 
-export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(_req: Request, context: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await context.params
     const pool = getPool()
     const result = await pool.query(`
       SELECT sg.*,
@@ -16,7 +17,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       LEFT JOIN salidas_comentarios sc ON sc.salida_id = sg.id
       WHERE sg.id = $1
       GROUP BY sg.id
-    `, [(await params).id])
+    `, [id])
     if (!result.rows[0]) return NextResponse.json({ error: 'No encontrada' }, { status: 404 })
     return NextResponse.json({ salida: result.rows[0] })
   } catch (e: unknown) {
