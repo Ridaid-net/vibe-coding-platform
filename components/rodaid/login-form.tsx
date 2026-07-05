@@ -195,6 +195,7 @@ export function LoginForm() {
 }
 
 function sanitizeReturnTo(value: string | null): string {
-  if (value && value.startsWith('/') && !value.startsWith('//')) return value
-  return '/garaje'
+  const clean = value ? value.split("?")[0] : ""
+  if (clean && clean.startsWith("/") && clean.indexOf("//") !== 0) return clean
+  return "/garaje"
 }
