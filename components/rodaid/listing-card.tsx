@@ -97,10 +97,10 @@ export function ListingCard({ pub }: { pub: Publicacion }) {
         </div>
         <div className="mt-3">
           <ChatMarketplace
-            publicacionId={listing.id}
-            tituloPublicacion={listing.titulo ?? listing.marca + " " + listing.modelo}
-            vendedorAlias={listing.vendedor ?? "Vendedor"}
-            citActivo={listing.citEstado === "activo" || listing.citEstado === "verificado"}
+            publicacionId={pub.id}
+            tituloPublicacion={pub.titulo ?? pub.marca + " " + pub.modelo}
+            vendedorAlias={pub.vendedor ?? "Vendedor"}
+            citActivo={pub.citEstado === "activo" || pub.citEstado === "verificado"}
             esVendedor={false}
           />
         </div>
