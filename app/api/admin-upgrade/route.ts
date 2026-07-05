@@ -4,12 +4,13 @@ export async function POST() {
   try {
     const dbUrl = process.env.NETLIFY_DB_URL!
     const url = new URL(dbUrl)
-    const response = await fetch(`https://${url.hostname}/sql`, {
+    
+    // Netlify DB usa el driver serverless de Neon con endpoint HTTP especifico
+    const response = await fetch(`https://${url.hostname}/query`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Basic ${btoa(`${url.username}:${url.password}`)}`,
-        'Neon-Connection-String': dbUrl,
       },
       body: JSON.stringify({
         query: "UPDATE usuarios SET rol = 'admin', updated_at = NOW() WHERE lower(email) = 'federicodegeaceo@rodaid.net' RETURNING id, email, rol",
