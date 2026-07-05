@@ -55,11 +55,7 @@ export function Nav() {
           {isAdmin && (<Link href="/admin" className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">Administración</Link>)}
         </nav>
         <div className="flex items-center gap-2">
-          {logueado ? (
-            <button type="button" onClick={handleSalir} className="hidden rounded-full px-3 py-1.5 text-xs font-medium text-ink/70 transition-colors hover:text-ink sm:inline-flex border border-ink/15">Salir</button>
-          ) : (
-            <Link href="/ingresar" className="hidden rounded-full px-3 py-1.5 text-xs font-medium text-ink/70 transition-colors hover:text-ink sm:inline-flex border border-ink/15">Ingresar</Link>
-          )}
+          <Link href="/ingresar" className="hidden rounded-full px-3 py-1.5 text-xs font-medium text-ink/70 transition-colors hover:text-ink sm:inline-flex border border-ink/15">Ingresar</Link>
           <Link href="/publicar" className="inline-flex items-center rounded-full bg-[#F47B20] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-transform hover:-translate-y-0.5">Publicar mi bici</Link>
 <button type="button" onClick={() => setMenuOpen((v) => !v)} className="ml-1 rounded-full p-2 text-ink/70 transition-colors hover:text-ink lg:hidden" aria-label="Menú">
             {menuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
@@ -73,11 +69,7 @@ export function Nav() {
             <hr className="border-ink/10" />
             {LINKS_APP.map((link) => (<Link key={link.href} href={link.href} onClick={() => setMenuOpen(false)} className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">{link.label}</Link>))}
             <hr className="border-ink/10" />
-            {logueado ? (
-              <button type="button" onClick={handleSalir} className="text-sm font-medium text-ink/70 transition-colors hover:text-ink">Salir</button>
-            ) : (
-              <Link href="/ingresar" onClick={() => setMenuOpen(false)} className="text-sm font-medium text-ink/70 transition-colors hover:text-ink">Ingresar</Link>
-            )}
+            <Link href="/ingresar" onClick={() => setMenuOpen(false)} className="text-sm font-medium text-ink/70 transition-colors hover:text-ink">Ingresar</Link>
           </nav>
         </div>
       )}
