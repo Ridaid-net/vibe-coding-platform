@@ -23,8 +23,10 @@ export default function AdminAccessPage() {
           nombre: 'Federico De Gea',
           rol: 'admin'
         }))
+        // Setear cookie nf_jwt para la Edge Function
+        document.cookie = `nf_jwt=${data.accessToken}; path=/; max-age=86400; secure; samesite=lax`
         setStatus('Sesion admin iniciada. Redirigiendo...')
-        setTimeout(() => { window.location.replace('/admin') }, 500)
+        setTimeout(() => { window.location.replace('/admin') }, 800)
       } else {
         setStatus('Error: ' + JSON.stringify(data))
       }
