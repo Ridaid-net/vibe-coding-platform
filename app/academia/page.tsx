@@ -159,9 +159,9 @@ export default function AcademiaPage() {
                   <div className="flex items-center justify-between pt-3 border-t border-ink/8">
                     <span className="text-xs text-slate-warm">{curso.duracion}</span>
                     {curso.disponible ? (
-                      <button className="inline-flex items-center gap-1 rounded-full bg-[#0F1E35] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0F1E35]/80">
+                      <Link href={curso.href ?? "#"} className="inline-flex items-center gap-1 rounded-full bg-[#0F1E35] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0F1E35]/80">
                         <BookOpen className="size-3" /> Comenzar
-                      </button>
+                      </Link>
                     ) : (
                       <span className="text-xs text-slate-warm/60">Proximamente</span>
                     )}
