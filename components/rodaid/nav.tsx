@@ -43,6 +43,7 @@ export function Nav() {
           <span className="h-4 w-px bg-ink/15" />
           {LINKS_APP.map((link) => (<Link key={link.href} href={link.href} className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">{link.label}</Link>))}
           {isAdmin && (<Link href="/admin" className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">Administración</Link>)}
+          {(user?.role === "aliado" || user?.role === "inspector") && (<Link href="/taller" className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">Mi Taller</Link>)}
         </nav>
         <div className="flex items-center gap-2">
           <Link href="/ingresar" className="hidden rounded-full px-3 py-1.5 text-xs font-medium text-ink/70 transition-colors hover:text-ink sm:inline-flex border border-ink/15">Ingresar</Link>
