@@ -13,6 +13,8 @@ export interface Publicacion {
   fotosUrls: string[]
   slug: string
   vistas: number
+  citEstado?: string | null
+  vendedor?: string | null
   bicicleta: {
     marca: string | null
     modelo: string | null
@@ -98,7 +100,7 @@ export function ListingCard({ pub }: { pub: Publicacion }) {
         <div className="mt-3">
           <ChatMarketplace
             publicacionId={pub.id}
-            tituloPublicacion={pub.titulo ?? pub.marca + " " + pub.modelo}
+            tituloPublicacion={pub.titulo ?? (pub.bicicleta.marca ?? "") + " " + (pub.bicicleta.modelo ?? "")}
             vendedorAlias={pub.vendedor ?? "Vendedor"}
             citActivo={pub.citEstado === "activo" || pub.citEstado === "verificado"}
             esVendedor={false}
