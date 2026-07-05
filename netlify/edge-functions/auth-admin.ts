@@ -299,5 +299,5 @@ export default async (req: Request, context: Context): Promise<Response | void> 
 }
 
 export const config: Config = {
-  path: ['/admin', '/admin/*', '/api/v1/admin/*'],
+  path: ['/api/v1/admin/*'],
 }
