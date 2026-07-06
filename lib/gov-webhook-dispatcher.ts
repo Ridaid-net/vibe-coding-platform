@@ -45,7 +45,7 @@ export async function dispatchGovWebhook(
     }
 
     // Disparar todos los webhooks en paralelo con timeout de 5 segundos
-    const promises = result.rows.map(async (webhook) => {
+    const promises = result.rows.map(async (webhook: { id: string; tenant_slug: string; url: string; secret: string | null; eventos: string[] }) => {
       try {
         const body = JSON.stringify(webhookPayload)
         const headers: Record<string, string> = {
