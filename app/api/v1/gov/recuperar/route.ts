@@ -1,3 +1,4 @@
+// v2
 /**
  * RODAID · API Gubernamental — Recuperación de Bicicleta
  * POST /api/v1/gov/recuperar
