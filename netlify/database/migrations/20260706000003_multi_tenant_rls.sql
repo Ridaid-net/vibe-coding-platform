@@ -28,17 +28,17 @@ ON CONFLICT (slug) DO NOTHING;
 
 -- 3. Agregar tenant_id a tablas sensibles
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id);
-ALTER TABLE activos ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id);
+ALTER TABLE bicicletas ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id);
 ALTER TABLE salidas_grupales ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id);
 
 -- 4. Asignar tenant rodaid a registros existentes
 UPDATE usuarios SET tenant_id = (SELECT id FROM tenants WHERE slug = 'rodaid') WHERE tenant_id IS NULL;
-UPDATE activos SET tenant_id = (SELECT id FROM tenants WHERE slug = 'rodaid') WHERE tenant_id IS NULL;
+UPDATE bicicletas SET tenant_id = (SELECT id FROM tenants WHERE slug = 'rodaid') WHERE tenant_id IS NULL;
 UPDATE salidas_grupales SET tenant_id = (SELECT id FROM tenants WHERE slug = 'rodaid') WHERE tenant_id IS NULL;
 
 -- 5. Activar RLS
 ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
-ALTER TABLE activos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bicicletas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE salidas_grupales ENABLE ROW LEVEL SECURITY;
 
 -- 6. Políticas RLS
@@ -49,8 +49,8 @@ CREATE POLICY usuarios_tenant_policy ON usuarios
     OR current_setting('app.bypass_rls', true) = 'true'
   );
 
-DROP POLICY IF EXISTS activos_tenant_policy ON activos;
-CREATE POLICY activos_tenant_policy ON activos
+DROP POLICY IF EXISTS bicicletas_tenant_policy ON bicicletas;
+CREATE POLICY bicicletas_tenant_policy ON bicicletas
   FOR ALL USING (
     tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid
     OR current_setting('app.bypass_rls', true) = 'true'
@@ -65,7 +65,7 @@ CREATE POLICY salidas_grupales_tenant_policy ON salidas_grupales
 
 -- 7. Índices
 CREATE INDEX IF NOT EXISTS idx_usuarios_tenant ON usuarios(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_activos_tenant ON activos(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_bicicletas_tenant ON bicicletas(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_salidas_tenant ON salidas_grupales(tenant_id);
 
 -- 8. Audit log EDI
