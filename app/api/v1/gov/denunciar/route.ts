@@ -7,7 +7,7 @@ export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
 import { getTenantFromHeader, auditTenant } from '@/lib/tenant'
 import { getPool } from '@/lib/marketplace'
-import { dispatchGovWebhook } from '@/lib/gov-webhook-dispatcher'
+import { dispatchGovWebhook, notificarEventoGov } from '@/lib/gov-webhook-dispatcher'
 
 export async function POST(req: Request) {
   const ip = req.headers.get('x-forwarded-for') ?? 'unknown'
@@ -65,6 +65,7 @@ export async function POST(req: Request) {
       bicicleta: { id: bici.id, numero_serie: bici.numero_serie, marca: bici.marca, modelo: bici.modelo },
       datos: { expediente: numero_expediente, organismo: organismo_denunciante ?? tenantSlug }
     }).catch(() => undefined)
+    notificarEventoGov({ evento: 'DENUNCIA_ACTIVA', numeroSerie: numero_serie, marca: bici.marca, modelo: bici.modelo, expediente: numero_expediente, organismo: organismo_denunciante ?? tenantSlug }).catch(() => undefined)
     await auditTenant({
       tenantSlug,
       accion: 'GOV_DENUNCIAR',

@@ -8,7 +8,7 @@
 export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
 import { getTenantFromHeader, auditTenant } from '@/lib/tenant'
-import { dispatchGovWebhook } from '@/lib/gov-webhook-dispatcher'
+import { dispatchGovWebhook, notificarEventoGov } from '@/lib/gov-webhook-dispatcher'
 import { getPool } from '@/lib/marketplace'
 
 export async function POST(req: Request) {
@@ -67,6 +67,7 @@ export async function POST(req: Request) {
       bicicleta: { id: bici.id, numero_serie: bici.numero_serie, marca: bici.marca, modelo: bici.modelo },
       datos: { motivo: motivo_recuperacion, expediente: numero_expediente, organismo: tenantSlug }
     }).catch(() => undefined)
+    notificarEventoGov({ evento: 'BICI_RECUPERADA', numeroSerie: numero_serie, marca: bici.marca, modelo: bici.modelo, expediente: numero_expediente, organismo: tenantSlug }).catch(() => undefined)
 
     await auditTenant({
       tenantSlug,
