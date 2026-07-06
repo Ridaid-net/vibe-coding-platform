@@ -48,9 +48,9 @@ export async function GET(req: Request) {
         a.color,
         c.codigo_cit as cit_codigo,
         c.estado::text as cit_estado,
-        c.emitido_en,
-        c.vence_en,
-        c.hash_bfa,
+        c.created_at,
+        c.fecha_vencimiento,
+        c.hash_sha256,
         t.nombre as taller_nombre,
         t.ciudad as taller_ciudad,
         CASE WHEN d.id IS NOT NULL THEN true ELSE false END as tiene_denuncia_activa
