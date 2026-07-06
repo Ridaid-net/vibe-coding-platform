@@ -43,3 +43,4 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'ERROR_INTERNO', message: String(e) }, { status: 500 })
   }
 }
+// refreshed
