@@ -53,7 +53,7 @@ export async function POST(req: Request) {
     // Registrar denuncia en denuncias_mpf
     const denunciaResult = await pool.query(`
       INSERT INTO denuncias_mpf (
-        bicicleta_id, expediente_mpf, motivo, estado, organismo_origen, ip_origen
+        bicicleta_id, numero_expediente, motivo, estado, organismo_origen, ip_origen
       ) VALUES ($1, $2, $3, 'DENUNCIA_JUDICIAL_ACTIVA', $4, $5)
       ON CONFLICT DO NOTHING
       RETURNING id, created_at
@@ -86,7 +86,7 @@ export async function POST(req: Request) {
         },
         estado: 'DENUNCIA_JUDICIAL_ACTIVA',
         expediente: expediente ?? null,
-        registrado_en: denunciaResult.rows[0]?.created_at ?? new Date().toISOString(),
+        registrado_en: denunciaResult.rows[0]?.creado_en ?? new Date().toISOString(),
         tenant: tenantSlug,
         mensaje: 'La bicicleta queda bloqueada en toda la red RODAID. Ningún taller podrá emitir un nuevo CIT para este rodado.',
       }
