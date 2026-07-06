@@ -321,6 +321,11 @@ function VeredictoCard({ veredicto }: { veredicto: VerificacionVeredicto }) {
         </div>
       )}
     </div>
+      {veredicto.bicicleta?.numeroSerie && (
+        <div className="mt-4">
+          <a href={"/api/v1/gov/certificado?serie=" + veredicto.bicicleta.numeroSerie} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-full border border-[#2BBCB8] px-4 py-2 text-xs font-semibold text-[#2BBCB8] hover:bg-[#2BBCB8]/10">📄 Certificado oficial</a>
+        </div>
+      )}
   )
 }
 
