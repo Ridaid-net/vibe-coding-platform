@@ -54,10 +54,10 @@ export async function GET(req: Request) {
         t.nombre as taller_nombre,
         t.ciudad as taller_ciudad,
         CASE WHEN d.id IS NOT NULL THEN true ELSE false END as tiene_denuncia_activa
-      FROM activos a
+      FROM bicicletas a
       LEFT JOIN cits c ON c.activo_id = a.id AND c.estado = 'activo'
       LEFT JOIN aliados t ON t.id = c.aliado_id
-      LEFT JOIN denuncias d ON d.activo_id = a.id AND d.estado = 'activa'
+      LEFT JOIN denuncias d ON d.bicicleta_id = a.id AND d.estado = 'activa'
       WHERE ($1::text IS NULL OR lower(a.numero_serie) = lower($1))
         AND ($2::text IS NULL OR c.codigo = $2)
       LIMIT 1
