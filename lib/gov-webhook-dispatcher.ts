@@ -96,3 +96,26 @@ export async function dispatchGovWebhook(
     console.error('Error en dispatchGovWebhook:', err)
   }
 }
+
+/** Envia email de notificacion al equipo RODAID por eventos gubernamentales */
+export async function notificarEventoGov({
+  evento, numeroSerie, marca, modelo, expediente, organismo,
+}: {
+  evento: string; numeroSerie: string; marca?: string | null
+  modelo?: string | null; expediente?: string | null; organismo?: string | null
+}) {
+  try {
+    const { enviarEmail } = await import('@/lib/email')
+    const colores: Record<string, string> = { DENUNCIA_ACTIVA: '#dc2626', BICI_RECUPERADA: '#16a34a', CIT_BLOQUEADO: '#F47B20', CIT_EMITIDO: '#2BBCB8' }
+    const color = colores[evento] ?? '#0F1E35'
+    const logoB64 = require('fs').readFileSync(process.cwd() + '/public/logo-rodaid.jpeg').toString('base64')
+    const logoSrc = 'data:image/jpeg;base64,' + logoB64
+    await enviarEmail({
+      to: process.env.ZOHO_SMTP_USER ?? 'federicodegeaceo@rodaid.net',
+      subject: `RODAID GOV · ${evento} · ${numeroSerie}`,
+      html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;background:#f7f6f3;"><div style="background:#0F1E35;padding:24px;text-align:center;"><img src="${logoSrc}" alt="RODAID" style="height:60px;border-radius:10px;margin-bottom:10px;" /><h1 style="color:white;margin:0;font-size:26px;">RODAID · Alerta Gubernamental</h1></div><div style="padding:24px;"><div style="background:white;padding:20px;border-radius:12px;border-left:4px solid ${color};"><p style="margin:0 0 8px;color:${color};font-weight:700;font-size:16px;">${evento}</p><table style="width:100%;"><tr><td style="padding:6px 0;font-weight:700;color:#0F1E35;width:40%;">Serie</td><td>${numeroSerie}</td></tr><tr><td style="padding:6px 0;font-weight:700;color:#0F1E35;">Bicicleta</td><td>${marca ?? '-'} ${modelo ?? ''}</td></tr><tr><td style="padding:6px 0;font-weight:700;color:#0F1E35;">Expediente</td><td>${expediente ?? '-'}</td></tr><tr><td style="padding:6px 0;font-weight:700;color:#0F1E35;">Organismo</td><td>${organismo ?? '-'}</td></tr></table></div><div style="margin-top:16px;text-align:center;"><a href="https://rodaid.net/admin/gov" style="background:#0F1E35;color:white;padding:10px 24px;border-radius:999px;text-decoration:none;font-weight:700;">Ver Panel Gubernamental</a></div></div><div style="background:#0F1E35;padding:16px;text-align:center;"><p style="color:#888;font-size:11px;margin:0;">RODAID · API Gubernamental · rodaid.net</p></div></div>`
+    })
+  } catch (err) {
+    console.error('Error email gov:', err)
+  }
+}
