@@ -57,7 +57,7 @@ export async function GET(req: Request) {
       FROM bicicletas a
       LEFT JOIN cits c ON c.bicicleta_id = a.id AND c.estado = 'activo'
       LEFT JOIN aliados t ON t.id = c.aliado_id
-      LEFT JOIN denuncias d ON d.bicicleta_id = a.id AND d.estado = 'activa'
+      LEFT JOIN denuncias_mpf d ON d.bicicleta_id = a.id AND d.estado_mpf = 'activa'
       WHERE ($1::text IS NULL OR lower(a.numero_serie) = lower($1))
         AND ($2::text IS NULL OR c.codigo = $2)
       LIMIT 1
