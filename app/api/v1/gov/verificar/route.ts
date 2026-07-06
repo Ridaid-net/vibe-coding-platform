@@ -59,7 +59,7 @@ export async function GET(req: Request) {
       LEFT JOIN aliados t ON t.id = c.aliado_id
       LEFT JOIN denuncias_mpf d ON d.bicicleta_id = a.id AND d.estado = 'DENUNCIA_JUDICIAL_ACTIVA'
       WHERE ($1::text IS NULL OR lower(a.numero_serie) = lower($1))
-        AND ($2::text IS NULL OR c.codigo = $2)
+        AND ($2::text IS NULL OR c.codigo_cit = $2)
       LIMIT 1
     `, [serie ?? null, numeroCit ?? null])
 
