@@ -38,6 +38,8 @@ export async function GET(req: Request) {
 
     // Consulta directa — verificación es pública entre tenants
     const pool = getPool()
+    // Bypass RLS para verificacion publica inter-tenant
+    await pool.query("SET app.bypass_rls = true").catch(() => undefined)
     const result = await pool.query(`
       SELECT 
         a.numero_serie,
