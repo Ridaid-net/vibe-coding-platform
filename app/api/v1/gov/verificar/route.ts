@@ -10,6 +10,7 @@ export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
 import { withTenant, getTenantFromHeader, auditTenant, TenantSlug } from '@/lib/tenant'
 import { getPool } from '@/lib/marketplace'
+import { checkRateLimit, rateLimitHeaders } from '@/lib/gov-rate-limit'
 
 export async function GET(req: Request) {
   const url = new URL(req.url)

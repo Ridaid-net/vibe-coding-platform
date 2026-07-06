@@ -7,6 +7,7 @@ export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
 import { getTenantFromHeader, auditTenant } from '@/lib/tenant'
 import { getPool } from '@/lib/marketplace'
+import { checkRateLimit, rateLimitHeaders } from '@/lib/gov-rate-limit'
 import { dispatchGovWebhook, notificarEventoGov } from '@/lib/gov-webhook-dispatcher'
 
 export async function POST(req: Request) {

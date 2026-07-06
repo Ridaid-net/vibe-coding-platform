@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server'
 import { getTenantFromHeader, auditTenant } from '@/lib/tenant'
 import { dispatchGovWebhook, notificarEventoGov } from '@/lib/gov-webhook-dispatcher'
 import { getPool } from '@/lib/marketplace'
+import { checkRateLimit, rateLimitHeaders } from '@/lib/gov-rate-limit'
 
 export async function POST(req: Request) {
   const ip = req.headers.get('x-forwarded-for') ?? 'unknown'

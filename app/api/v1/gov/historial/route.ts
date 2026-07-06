@@ -2,6 +2,7 @@ export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
 import { getTenantFromHeader, auditTenant } from '@/lib/tenant'
 import { getPool } from '@/lib/marketplace'
+import { checkRateLimit, rateLimitHeaders } from '@/lib/gov-rate-limit'
 
 export async function GET(req: Request) {
   const govToken = req.headers.get('x-gov-token')
