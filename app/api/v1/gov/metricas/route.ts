@@ -47,11 +47,11 @@ export async function GET(req: Request) {
         bicicletas: {
           total: parseInt(bicicletas.rows[0]?.total ?? '0'),
         },
-        cits: cits.rows.reduce((acc: Record<string, number>, r) => {
+        cits: cits.rows.reduce(( acc: Record<string, number>, r: { estado: string; total: string }) => {
           acc[r.estado] = parseInt(r.total)
           return acc
         }, {}),
-        denuncias: denuncias.rows.reduce((acc: Record<string, number>, r) => {
+        denuncias: denuncias.rows.reduce(( acc: Record<string, number>, r: { estado: string; total: string }) => {
           acc[r.estado] = parseInt(r.total)
           return acc
         }, {}),
