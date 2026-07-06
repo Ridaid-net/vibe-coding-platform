@@ -48,15 +48,12 @@ export async function GET(req: Request) {
         a.color,
         c.codigo_cit as cit_codigo,
         c.estado::text as cit_estado,
-        c.created_at,
-        c.fecha_vencimiento,
-        c.hash_sha256,
-        t.nombre as taller_nombre,
-        t.ciudad as taller_ciudad,
+        c.created_at as emitido_en,
+        c.fecha_vencimiento as vence_en,
+        c.hash_sha256 as hash_bfa,
         CASE WHEN d.id IS NOT NULL THEN true ELSE false END as tiene_denuncia_activa
       FROM bicicletas a
       LEFT JOIN cits c ON c.bicicleta_id = a.id AND c.estado = 'activo'
-      LEFT JOIN aliados t ON t.id = c.aliado_id
       LEFT JOIN denuncias_mpf d ON d.bicicleta_id = a.id AND d.estado = 'DENUNCIA_JUDICIAL_ACTIVA'
       WHERE ($1::text IS NULL OR lower(a.numero_serie) = lower($1))
         AND ($2::text IS NULL OR c.codigo_cit = $2)
@@ -98,10 +95,7 @@ export async function GET(req: Request) {
         emitido_en: bici.emitido_en,
         vence_en: bici.vence_en,
         hash_bfa: bici.hash_bfa,
-        taller: {
-          nombre: bici.taller_nombre,
-          ciudad: bici.taller_ciudad,
-        }
+        taller: null
       } : null,
       alerta: bici.tiene_denuncia_activa ? {
         tipo: 'DENUNCIA_ACTIVA',
