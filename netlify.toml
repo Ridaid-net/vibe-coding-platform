@@ -9,3 +9,15 @@ function = "auth-admin"
 path = "/api/v1/admin/*"
 [build]
   command = "pnpm run build"
+
+[[redirects]]
+  from = "https://rodaid.com/*"
+  to = "https://rodaid.net/:splat"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "https://www.rodaid.com/*"
+  to = "https://rodaid.net/:splat"
+  status = 301
+  force = true
