@@ -320,6 +320,7 @@ function ResultadoInspeccion({
           </p>
         </div>
         {cit && <EstadoBadge estado={cit.estado} />}
+        {cit && (<div className="flex gap-2 mt-2"><a href={`/api/v1/gov/certificado?serie=${b.numeroSerie}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-full border border-[#2BBCB8] px-3 py-1.5 text-xs font-semibold text-[#2BBCB8] hover:bg-[#2BBCB8]/10"><Printer className="size-3.5" />Imprimir CIT</a><a href={`/api/v1/gov/certificado?serie=${b.numeroSerie}`} download={`CIT-${b.numeroSerie}.html`} className="inline-flex items-center gap-1.5 rounded-full border border-[#F47B20] px-3 py-1.5 text-xs font-semibold text-[#F47B20] hover:bg-[#F47B20]/10"><Download className="size-3.5" />Descargar</a></div>)}
       </div>
 
       <div className="grid gap-6 px-6 py-5 sm:grid-cols-2">
