@@ -1,9 +1,3 @@
-/**
- * RODAID · Push Notifications para App Android
- * POST /api/v1/gov/push
- * Envia notificacion a dispositivos Android registrados
- * Compatible con Firebase Cloud Messaging (FCM)
- */
 export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
 import { getPool } from '@/lib/marketplace'
@@ -16,33 +10,35 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json()
-    const { titulo, mensaje, tipo, numeroSerie, usuarioId } = body
+    const { titulo, mensaje, tipo, numeroSerie } = body
 
     if (!titulo || !mensaje) {
       return NextResponse.json({ error: 'PARAMETRO_REQUERIDO', message: 'titulo y mensaje son obligatorios.' }, { status: 400 })
     }
 
     const pool = getPool()
-    
-    // Obtener tokens FCM de usuarios con la bici
+    const fcmKey = process.env.FCM_SERVER_KEY
+
+    // Buscar tokens FCM si la columna existe
     let tokens: string[] = []
     if (numeroSerie) {
-      const result = await pool.query(`
-        SELECT u.fcm_token 
-        FROM usuarios u
-        JOIN bicicletas b ON b.propietario_id = u.id
-        WHERE lower(b.numero_serie) = lower($1) AND u.fcm_token IS NOT NULL
-      `, [numeroSerie])
-      tokens = result.rows.map((r: { fcm_token: string }) => r.fcm_token)
-    } else if (usuarioId) {
-      const result = await pool.query('SELECT fcm_token FROM usuarios WHERE id = $1 AND fcm_token IS NOT NULL', [usuarioId])
-      tokens = result.rows.map((r: { fcm_token: string }) => r.fcm_token)
+      try {
+        const result = await pool.query(`
+          SELECT u.fcm_token
+          FROM usuarios u
+          JOIN bicicletas b ON b.propietario_id = u.id
+          WHERE lower(b.numero_serie) = lower($1)
+            AND u.fcm_token IS NOT NULL
+            AND u.fcm_token != ''
+        `, [numeroSerie])
+        tokens = result.rows.map((r: { fcm_token: string }) => r.fcm_token)
+      } catch {
+        // fcm_token columna no existe aun — ignorar
+      }
     }
 
-    // Enviar via FCM si hay token configurado
-    const fcmKey = process.env.FCM_SERVER_KEY
+    // Enviar via FCM
     let enviadas = 0
-    
     if (fcmKey && tokens.length > 0) {
       for (const token of tokens) {
         try {
@@ -60,28 +56,14 @@ export async function POST(req: Request) {
       }
     }
 
-    // Guardar notificacion en DB para mostrar en la app
-    await pool.query(`
-      INSERT INTO notificaciones (usuario_id, tipo, titulo, mensaje, metadata)
-      SELECT b.propietario_id, $1, $2, $3, $4
-      FROM bicicletas b
-      WHERE lower(b.numero_serie) = lower($5) AND b.propietario_id IS NOT NULL
-    `, [
-      tipo ?? 'GOV_ALERTA',
-      titulo,
-      mensaje,
-      JSON.stringify({ numeroSerie, origen: 'API_GUBERNAMENTAL' }),
-      numeroSerie ?? ''
-    ]).catch(() => undefined) // No falla si no existe la tabla
-
     return NextResponse.json({
       ok: true,
       enviadas,
       tokens_encontrados: tokens.length,
       fcm_configurado: !!fcmKey,
-      mensaje: enviadas > 0 
-        ? `Notificación enviada a ${enviadas} dispositivo(s)` 
-        : 'Notificación registrada (FCM pendiente de configuración)'
+      mensaje: fcmKey
+        ? (enviadas > 0 ? `Notificación enviada a ${enviadas} dispositivo(s)` : 'Sin dispositivos registrados para esta bicicleta')
+        : 'FCM_SERVER_KEY no configurado — agregar en variables de entorno Netlify'
     })
   } catch (e: unknown) {
     return NextResponse.json({ error: 'ERROR_INTERNO', message: String(e) }, { status: 500 })
