@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { RodaidLogo } from './logo'
 import { useAuth } from './auth-context'
 import { useEffect, useState } from 'react'
@@ -22,6 +23,7 @@ const LINKS_APP = [
 ]
 
 export function Nav() {
+  const pathname = usePathname()
   const [scrolled, setScrolled] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const { user, loading } = useAuth()
@@ -47,7 +49,7 @@ export function Nav() {
         </nav>
         <div className="flex items-center gap-2">
           <Link href="/ingresar" className="hidden rounded-full px-3 py-1.5 text-xs font-medium text-ink/70 transition-colors hover:text-ink sm:inline-flex border border-ink/15">Ingresar</Link>
-          <Link href="/publicar" className="inline-flex items-center rounded-full bg-[#F47B20] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-transform hover:-translate-y-0.5">Publicar mi bici</Link>
+          {pathname !== "/garaje" && <Link href="/publicar" className="inline-flex items-center rounded-full bg-[#F47B20] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-transform hover:-translate-y-0.5">Publicar mi bici</Link>}
 <button type="button" onClick={() => setMenuOpen((v) => !v)} className="ml-1 rounded-full p-2 text-ink/70 transition-colors hover:text-ink lg:hidden" aria-label="Menú">
             {menuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
           </button>
