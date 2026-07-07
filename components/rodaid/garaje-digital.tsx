@@ -149,8 +149,6 @@ export function GarajeDigital() {
             Cerrar sesión
           </button>
         </div>
-        <div className="mt-4 mb-2 flex justify-end">
-          </div>
         ) : (
           <ul className="grid gap-4 sm:grid-cols-2">
             {lista.map((a) => (
