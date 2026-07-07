@@ -126,6 +126,21 @@ export function GarajeDigital() {
       </div>
 
       {/* Sello Gubernamental (Hito 9) — identidad verificada con el Estado. */}
+        ) : (
+          <ul className="grid gap-4 sm:grid-cols-2">
+            {lista.map((a) => (
+              <ActivoCard
+                key={a.id}
+                activo={a}
+                onVerificar={() => setVerificar(a)}
+                puedeDenunciar={true}
+                onDenunciar={() => setDenunciar(a)}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+
       {perfil?.selloGubernamental && (
         <div className="mt-6 flex flex-wrap items-center gap-2">
           <button
@@ -149,20 +164,6 @@ export function GarajeDigital() {
             Cerrar sesión
           </button>
         </div>
-        ) : (
-          <ul className="grid gap-4 sm:grid-cols-2">
-            {lista.map((a) => (
-              <ActivoCard
-                key={a.id}
-                activo={a}
-                onVerificar={() => setVerificar(a)}
-                puedeDenunciar={true}
-                onDenunciar={() => setDenunciar(a)}
-              />
-            ))}
-          </ul>
-        )}
-      </div>
 
       <SolicitarVerificacionModal
         bici={verificar}
