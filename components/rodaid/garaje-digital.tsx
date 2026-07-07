@@ -127,116 +127,29 @@ export function GarajeDigital() {
 
       {/* Sello Gubernamental (Hito 9) — identidad verificada con el Estado. */}
       {perfil?.selloGubernamental && (
-        <div className="mt-5 flex items-center gap-3 rounded-2xl border border-[#0a7d5a]/25 bg-[#0a7d5a]/8 px-5 py-3.5">
-          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#0a7d5a]/15 text-[#0a7d5a]">
-            <ShieldCheck className="size-5" />
-          </span>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-[#0a7d5a]">
-              Identidad verificada por Mendoza por Mí
-            </p>
-            <p className="text-xs text-slate-warm">
-              Tu sello gubernamental acelera la confianza de tus operaciones en
-              RODAID.
-            </p>
-          </div>
-          <BadgeCheck className="ml-auto hidden size-5 shrink-0 text-[#0a7d5a] sm:block" />
-        </div>
-      )}
-
-      {hayVerificada && !agregando && (
-        <Link
-          href="/publicar"
-          className="mt-6 flex items-center justify-between gap-3 rounded-2xl border border-lime-deep/40 bg-lime/15 px-5 py-4 transition-colors hover:bg-lime/25"
-        >
-          <span className="flex items-center gap-2 text-sm font-semibold text-ink">
-            <ShieldCheck className="size-4 text-lime-deep" />
-            Tenés una bici verificada lista para publicar
-          </span>
-          <span className="inline-flex items-center gap-1 text-sm font-semibold text-ink">
-            Publicar
-            <ArrowRight className="size-4" />
-          </span>
-        </Link>
-      )}
-      <div className="mt-2 mb-4 flex justify-end gap-2">
-          <a
-            href={`https://wa.me/?text=${encodeURIComponent('Te invito a verificar tu bici en RODAID - la plataforma de identidad digital para ciclistas de Mendoza. Certifica tu bici con blockchain, vendela con pago protegido y unite a la comunidad. Registrate gratis: https://rodaid.net\n\nParticipa de la red de ciclistas donde encontraras salidas, prevencion, eventos, red de talleres aliados para el mejor mantenimiento de tu unidad o unidades registradas. Somos RODAID, la plataforma que disenamos para la mejor seguridad en la comunidad de ciclistas de Mendoza')}`}
+        <div className="mt-6 flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setAgregando(true)}
+            className="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-xs font-semibold text-paper transition-colors hover:bg-ink-soft"
+          >
+            <Plus className="size-3.5 text-lime" />
+            Agregar bicicleta
+          </button>
+          <ArmaTuSalida />
+          
+            href={`https://wa.me/?text=${encodeURIComponent('Te invito a verificar tu bici en RODAID - la plataforma de identidad digital para ciclistas de Mendoza. Certifica tu bici con blockchain, vendela con pago protegido y unite a la comunidad. Registrate gratis: https://rodaid.net')}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-full bg-[#25D366] px-4 py-2 text-xs font-semibold text-white hover:bg-[#25D366]/80"
+            className="inline-flex items-center gap-1.5 rounded-full border border-ink/15 bg-white px-4 py-2 text-xs font-semibold text-ink hover:border-ink/40"
           >
-            <svg viewBox="0 0 24 24" className="size-3.5 fill-white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.117.554 4.1 1.523 5.82L0 24l6.337-1.505A11.955 11.955 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 01-5.015-1.373l-.36-.213-3.73.886.938-3.63-.235-.374A9.818 9.818 0 1112 21.818z"/></svg>
+            <svg viewBox="0 0 24 24" className="size-3.5 fill-[#25D366]" xmlns="http://www.w3.org/2000/svg"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 01-5.015-1.373l-.36-.213-3.73.886.938-3.63-.235-.374A9.818 9.818 0 1112 21.818z"/></svg>
             Invitar ciclistas
           </a>
+          <button type="button" onClick={() => { clearSession(); window.location.href = "/" }} className="inline-flex items-center gap-1.5 rounded-full border border-clay/30 bg-clay/5 px-4 py-2 text-xs font-semibold text-clay hover:bg-clay/10">
+            Cerrar sesión
+          </button>
         </div>
         <div className="mt-4 mb-2 flex justify-end">
-          <button type="button" onClick={() => { clearSession(); window.location.href = "/" }} className="inline-flex items-center gap-2 rounded-full border border-clay/30 bg-clay/5 px-3 py-1.5 text-xs font-semibold text-clay hover:bg-clay/10">Cerrar sesion</button>
-        </div>
-        <div className="mb-6 flex justify-center">
-        <ArmaTuSalida />
-      </div>
-      <PushNotificaciones />
-          <MisSalidas />
-          <ProgramaEmbajadores
-        usuarioId={perfil?.id ?? ""}
-        nombreUsuario={perfil?.nombre ?? perfil?.email ?? ""}
-        nivel="Ciclista"
-        referidosActivos={0}
-      />
-      <InsigniasUsuario
-        tieneCit={activos?.some(a => a.codigoCit) ?? false}
-        citActivo={activos?.some(a => a.estado === "verificado") ?? false}
-        stravaConectado={false}
-        kmTotales={0}
-        tienePublicacion={false}
-        denunciasRegistradas={0}
-      />
-      {agregando && (
-        <AgregarBicicletaForm
-          onCancel={() => setAgregando(false)}
-          onCreada={() => {
-            setAgregando(false)
-            mutate()
-          }}
-        />
-      )}
-
-      <div className="mt-8">
-        {isLoading && !activos ? (
-          <GarajeSkeleton />
-        ) : error ? (
-          <div className="rounded-3xl border border-clay/30 bg-clay/5 px-6 py-14 text-center">
-            <h3 className="font-display text-xl font-bold text-ink">
-              No pudimos cargar tu garaje
-            </h3>
-            <button
-              onClick={() => mutate()}
-              className="mt-5 inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-semibold text-paper transition-colors hover:bg-ink-soft"
-            >
-              <RefreshCw className="size-4" />
-              Reintentar
-            </button>
-          </div>
-        ) : lista.length === 0 ? (
-          <div className="flex flex-col items-center rounded-3xl border border-dashed border-ink/20 bg-white/50 px-6 py-16 text-center">
-            <span className="flex size-16 items-center justify-center rounded-full bg-lime/20 text-ink">
-              <Bike className="size-8" />
-            </span>
-            <h3 className="mt-5 font-display text-2xl font-bold text-ink">
-              Tu garaje está vacío
-            </h3>
-            <p className="mt-2 max-w-sm text-sm text-slate-warm">
-              Agregá tu primera bicicleta para verificar su identidad y
-              publicarla.
-            </p>
-            <button
-              onClick={() => setAgregando(true)}
-              className="mt-6 inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-semibold text-paper transition-colors hover:bg-ink-soft"
-            >
-              <Plus className="size-4 text-lime" />
-              Agregar bicicleta
-            </button>
           </div>
         ) : (
           <ul className="grid gap-4 sm:grid-cols-2">
