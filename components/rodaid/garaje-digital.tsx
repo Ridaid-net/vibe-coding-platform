@@ -127,35 +127,62 @@ export function GarajeDigital() {
 
       {/* Sello Gubernamental (Hito 9) — identidad verificada con el Estado. */}
       {perfil?.selloGubernamental && (
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => setAgregando(true)}
-            className="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-xs font-semibold text-paper transition-colors hover:bg-ink-soft"
-          >
-            <Plus className="size-3.5 text-lime" />
-            Agregar bicicleta
-          </button>
-          <ArmaTuSalida />
-          <a
-            href={`https://wa.me/?text=${encodeURIComponent('Te invito a verificar tu bici en RODAID - la plataforma que diseñamos para la mejor seguridad en la comunidad de ciclistas de Mendoza. Registrate gratis: https://rodaid.net')}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-full border border-ink/15 bg-white px-4 py-2 text-xs font-semibold text-ink hover:border-ink/40"
-          >
-            Invitar ciclistas
-          </a>
-          <button
-            type="button"
-            onClick={() => { clearSession(); window.location.href = "/" }}
-            className="inline-flex items-center gap-1.5 rounded-full border border-clay/30 bg-clay/5 px-4 py-2 text-xs font-semibold text-clay hover:bg-clay/10"
-          >
-            Cerrar sesión
-          </button>
+        <div className="mt-5 flex items-center gap-3 rounded-2xl border border-[#0a7d5a]/25 bg-[#0a7d5a]/8 px-5 py-3.5">
+          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#0a7d5a]/15 text-[#0a7d5a]">
+            <ShieldCheck className="size-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-[#0a7d5a]">
+              Identidad verificada por Mendoza por Mí
+            </p>
+            <p className="text-xs text-slate-warm">
+              Tu sello gubernamental acelera la confianza de tus operaciones en
+              RODAID.
+            </p>
+          </div>
+          <BadgeCheck className="ml-auto hidden size-5 shrink-0 text-[#0a7d5a] sm:block" />
         </div>
-        <div className="mt-4 mb-2 flex justify-end">
-          <button type="button" onClick={() => { clearSession(); window.location.href = "/" }} className="inline-flex items-center gap-2 rounded-full border border-clay/30 bg-clay/5 px-3 py-1.5 text-xs font-semibold text-clay hover:bg-clay/10">Cerrar sesion</button>
-        </div>
-        <div className="mb-6 flex justify-center">
+      )}
+
+      {hayVerificada && !agregando && (
+        <Link
+          href="/publicar"
+          className="mt-6 flex items-center justify-between gap-3 rounded-2xl border border-lime-deep/40 bg-lime/15 px-5 py-4 transition-colors hover:bg-lime/25"
+        >
+          <span className="flex items-center gap-2 text-sm font-semibold text-ink">
+            <ShieldCheck className="size-4 text-lime-deep" />
+            Tenés una bici verificada lista para publicar
+          </span>
+          <span className="inline-flex items-center gap-1 text-sm font-semibold text-ink">
+            Publicar
+            <ArrowRight className="size-4" />
+          </span>
+        </Link>
+      )}
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => setAgregando(true)}
+          className="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-xs font-semibold text-paper transition-colors hover:bg-ink-soft"
+        >
+          <Plus className="size-3.5 text-lime" />
+          Agregar bicicleta
+        </button>
+        <ArmaTuSalida />
+        <a
+          href={`https://wa.me/?text=${encodeURIComponent('Te invito a verificar tu bici en RODAID - la plataforma que diseñamos para la mejor seguridad en la comunidad de ciclistas de Mendoza. Registrate gratis: https://rodaid.net')}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 rounded-full bg-[#25D366] px-4 py-2 text-xs font-semibold text-white hover:bg-[#25D366]/80"
+        >
+          Invitar ciclistas
+        </a>
+        <button
+          type="button"
+          onClick={() => { clearSession(); window.location.href = "/" }}
+          className="inline-flex items-center gap-1.5 rounded-full border border-clay/30 bg-clay/5 px-4 py-2 text-xs font-semibold text-clay hover:bg-clay/10"
+        >
+          Cerrar sesión
+        </button>
       </div>
       <PushNotificaciones />
           <MisSalidas />
