@@ -30,7 +30,7 @@ export async function POST(req: Request) {
       const result = await pool.query(`
         SELECT u.fcm_token 
         FROM usuarios u
-        JOIN bicicletas b ON b.usuario_id = u.id
+        JOIN bicicletas b ON b.propietario_id = u.id
         WHERE lower(b.numero_serie) = lower($1) AND u.fcm_token IS NOT NULL
       `, [numeroSerie])
       tokens = result.rows.map((r: { fcm_token: string }) => r.fcm_token)
@@ -63,9 +63,9 @@ export async function POST(req: Request) {
     // Guardar notificacion en DB para mostrar en la app
     await pool.query(`
       INSERT INTO notificaciones (usuario_id, tipo, titulo, mensaje, metadata)
-      SELECT b.usuario_id, $1, $2, $3, $4
+      SELECT b.propietario_id, $1, $2, $3, $4
       FROM bicicletas b
-      WHERE lower(b.numero_serie) = lower($5) AND b.usuario_id IS NOT NULL
+      WHERE lower(b.numero_serie) = lower($5) AND b.propietario_id IS NOT NULL
     `, [
       tipo ?? 'GOV_ALERTA',
       titulo,
