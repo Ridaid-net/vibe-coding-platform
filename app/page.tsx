@@ -1,13 +1,11 @@
-import dynamic from 'next/dynamic'
 import { Footer } from '@/components/rodaid/footer'
 import { Hero } from '@/components/rodaid/hero'
+import { Marketplace } from '@/components/rodaid/marketplace'
 import { Nav } from '@/components/rodaid/nav'
-const Marketplace = dynamic(() => import('@/components/rodaid/marketplace').then(m => ({ default: m.Marketplace })), { ssr: false })
-const RodaidPay = dynamic(() => import('@/components/rodaid/how-it-works').then(m => ({ default: m.RodaidPay })), { ssr: false })
-const Seguridad = dynamic(() => import('@/components/rodaid/how-it-works').then(m => ({ default: m.Seguridad })), { ssr: false })
-const SellCta = dynamic(() => import('@/components/rodaid/sell-cta').then(m => ({ default: m.SellCta })), { ssr: false })
-const DenunciaComunitaria = dynamic(() => import('@/components/rodaid/denuncia-comunitaria').then(m => ({ default: m.DenunciaComunitaria })), { ssr: false })
-const StravaGarminSection = dynamic(() => import('@/components/rodaid/strava-garmin-section').then(m => ({ default: m.StravaGarminSection })), { ssr: false })
+import { RodaidPay, Seguridad } from '@/components/rodaid/how-it-works'
+import { SellCta } from '@/components/rodaid/sell-cta'
+import { DenunciaComunitaria } from '@/components/rodaid/denuncia-comunitaria'
+import { StravaGarminSection } from '@/components/rodaid/strava-garmin-section'
 
 export default function Page() {
   return (
