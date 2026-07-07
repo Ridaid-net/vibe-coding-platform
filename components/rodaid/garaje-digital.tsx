@@ -253,6 +253,7 @@ export function GarajeDigital() {
         open={verificar !== null}
         onOpenChange={(o) => !o && setVerificar(null)}
         onVerificada={() => mutate()}
+        esRenovacion={verificar?.estado === 'vencido'}
       />
 
       <DenunciaMpfModal
