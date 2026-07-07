@@ -86,7 +86,7 @@ export async function POST(
       ok: true,
       transferencia: {
         bicicleta: { id: bici.id, numero_serie: bici.numero_serie, marca: bici.marca, modelo: bici.modelo },
-        propietario_anterior: user.email,
+        propietario_anterior: (user as { id: string; email?: string }).email ?? user.id,
         propietario_nuevo: destino.email,
         cit_revocado: true,
         mensaje: `Bicicleta transferida a ${destino.email}. El CIT fue revocado — el nuevo propietario deberá certificarla nuevamente.`
