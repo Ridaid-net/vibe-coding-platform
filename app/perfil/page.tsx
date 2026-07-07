@@ -2,16 +2,21 @@
 import { useState, useEffect } from 'react'
 import { Nav } from '@/components/rodaid/nav'
 import { Footer } from '@/components/rodaid/footer'
-import { User, Mail, Shield, Star, Calendar, Edit3, Save, X } from 'lucide-react'
+import { User, Mail, Shield, Calendar, Edit3, Save, X, TrendingUp, DollarSign, ShoppingBag, Star, Route } from 'lucide-react'
 import { getSession, authedFetch } from '@/lib/session'
 
 interface Perfil {
   id: string
   email: string
   rol: string
-  datosPerfil: { nombre?: string; avatar?: string }
+  datosPerfil: { nombre?: string }
   emailVerificado: boolean
   createdAt: string
+}
+
+interface Facturacion {
+  resumen: { transacciones: number; bruto: number; neto_vendedor: number; comision_rodaid: number }
+  nota: string
 }
 
 const ROL_BADGE: Record<string, { label: string; color: string }> = {
@@ -21,6 +26,16 @@ const ROL_BADGE: Record<string, { label: string; color: string }> = {
   ciclista: { label: 'Ciclista', color: 'bg-teal-100 text-teal-700' },
 }
 
+function Estrella({ valor, max = 5 }: { valor: number; max?: number }) {
+  return (
+    <div className="flex gap-0.5">
+      {Array.from({ length: max }).map((_, i) => (
+        <Star key={i} className={`size-4 ${i < Math.round(valor) ? 'text-amber-400 fill-amber-400' : 'text-slate-200 fill-slate-200'}`} />
+      ))}
+    </div>
+  )
+}
+
 export default function PerfilPage() {
   const [perfil, setPerfil] = useState<Perfil | null>(null)
   const [editando, setEditando] = useState(false)
@@ -28,20 +43,40 @@ export default function PerfilPage() {
   const [guardando, setGuardando] = useState(false)
   const [cargando, setCargando] = useState(true)
   const [bicicletas, setBicicletas] = useState<{id: string; marca: string; modelo: string; numero_serie: string; cit_activo: boolean}[]>([])
+  const [facturacion, setFacturacion] = useState<Facturacion | null>(null)
+  const [stats, setStats] = useState<{bicicletas:number;cits_activos:number;ventas:{total:number;monto_total:number};valoraciones:{total:number;promedio:number};salidas_organizadas:number} | null>(null)
+  const [mesSeleccionado, setMesSeleccionado] = useState('')
 
   useEffect(() => {
     const sesion = getSession()
     if (!sesion) { window.location.href = '/ingresar?next=/perfil'; return }
-    
+
     Promise.all([
       authedFetch('/api/v1/auth/me').then(r => r.json()),
       authedFetch('/api/v1/bicicletas').then(r => r.json()),
-    ]).then(([me, bicis]) => {
-      setPerfil(me.usuario ?? me)
-      setNombre(me.usuario?.datosPerfil?.nombre ?? me.datosPerfil?.nombre ?? '')
+      authedFetch('/api/v1/facturacion').then(r => r.json()),
+    ]).then(([me, bicis, fact]) => {
+      const usuario = me.usuario ?? me
+      setPerfil(usuario)
+      setNombre(usuario?.datosPerfil?.nombre ?? '')
       setBicicletas(bicis.bicicletas ?? [])
+      setFacturacion(fact.facturacion ?? null)
+      // Estadísticas derivadas
+      setStats({
+        bicicletas: (bicis.bicicletas ?? []).length,
+        cits_activos: (bicis.bicicletas ?? []).filter((b: {cit_activo: boolean}) => b.cit_activo).length,
+        ventas: fact.facturacion?.resumen ? { total: fact.facturacion.resumen.transacciones, monto_total: fact.facturacion.resumen.neto_vendedor } : { total: 0, monto_total: 0 },
+        valoraciones: { total: 0, promedio: 0 },
+        salidas_organizadas: 0,
+      })
     }).finally(() => setCargando(false))
   }, [])
+
+  const cargarFacturacion = async (mes: string) => {
+    setMesSeleccionado(mes)
+    const fact = await authedFetch(`/api/v1/facturacion${mes ? `?mes=${mes}` : ''}`).then(r => r.json())
+    setFacturacion(fact.facturacion ?? null)
+  }
 
   const guardar = async () => {
     setGuardando(true)
@@ -56,13 +91,10 @@ export default function PerfilPage() {
     } finally { setGuardando(false) }
   }
 
-  if (cargando) return (
-    <div className="flex items-center justify-center min-h-screen">
-      <p className="text-slate-warm">Cargando perfil...</p>
-    </div>
-  )
+  if (cargando) return <div className="flex items-center justify-center min-h-screen"><p className="text-slate-warm">Cargando perfil...</p></div>
 
   const badge = ROL_BADGE[perfil?.rol ?? 'ciclista'] ?? ROL_BADGE.ciclista
+  const mesActual = new Date().toISOString().slice(0, 7)
 
   return (
     <div className="min-h-screen bg-paper">
@@ -81,9 +113,7 @@ export default function PerfilPage() {
                   <input type="text" value={nombre} onChange={e => setNombre(e.target.value)}
                     className="font-display text-xl font-bold text-[#0F1E35] border-b-2 border-[#2BBCB8] outline-none bg-transparent" />
                 ) : (
-                  <h1 className="font-display text-xl font-bold text-[#0F1E35]">
-                    {perfil?.datosPerfil?.nombre ?? 'Usuario RODAID'}
-                  </h1>
+                  <h1 className="font-display text-xl font-bold text-[#0F1E35]">{perfil?.datosPerfil?.nombre ?? 'Usuario RODAID'}</h1>
                 )}
                 <span className={`text-xs font-semibold px-2 py-1 rounded-full ${badge.color}`}>{badge.label}</span>
               </div>
@@ -119,12 +149,13 @@ export default function PerfilPage() {
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-4">
+        {/* Stats rápidas */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: 'Bicicletas', valor: bicicletas.length, icono: '🚲' },
-            { label: 'CITs activos', valor: bicicletas.filter(b => b.cit_activo).length, icono: '✅' },
-            { label: 'Rol', valor: badge.label, icono: '🏅' },
+            { label: 'Bicicletas', valor: stats?.bicicletas ?? 0, icono: '🚲' },
+            { label: 'CITs activos', valor: stats?.cits_activos ?? 0, icono: '✅' },
+            { label: 'Ventas', valor: stats?.ventas.total ?? 0, icono: '💰' },
+            { label: 'Salidas', valor: stats?.salidas_organizadas ?? 0, icono: '🗺️' },
           ].map((s, i) => (
             <div key={i} className="rounded-2xl border border-ink/10 bg-white p-4 text-center">
               <div className="text-2xl mb-1">{s.icono}</div>
@@ -134,10 +165,63 @@ export default function PerfilPage() {
           ))}
         </div>
 
+        {/* Dashboard Facturación */}
+        <div className="rounded-2xl border border-ink/10 bg-white p-5">
+          <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+            <h2 className="font-display text-base font-semibold text-[#0F1E35] flex items-center gap-2">
+              <TrendingUp className="size-4 text-[#F47B20]" /> Facturación y Comisiones
+            </h2>
+            <div className="flex gap-2 flex-wrap">
+              <button type="button" onClick={() => cargarFacturacion('')}
+                className={`text-xs px-3 py-1.5 rounded-full font-semibold border ${!mesSeleccionado ? 'bg-[#0F1E35] text-white border-[#0F1E35]' : 'border-slate-200 text-slate-600'}`}>
+                Todo
+              </button>
+              <button type="button" onClick={() => cargarFacturacion(mesActual)}
+                className={`text-xs px-3 py-1.5 rounded-full font-semibold border ${mesSeleccionado === mesActual ? 'bg-[#0F1E35] text-white border-[#0F1E35]' : 'border-slate-200 text-slate-600'}`}>
+                Este mes
+              </button>
+            </div>
+          </div>
+
+          {/* KPIs */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+            {[
+              { label: 'Transacciones', valor: facturacion?.resumen.transacciones ?? 0, icono: ShoppingBag, color: '#2BBCB8' },
+              { label: 'Bruto ARS', valor: `$${((facturacion?.resumen.bruto ?? 0)).toLocaleString('es-AR')}`, icono: DollarSign, color: '#0F1E35' },
+              { label: 'Neto ARS (80%)', valor: `$${((facturacion?.resumen.neto_vendedor ?? 0)).toLocaleString('es-AR')}`, icono: TrendingUp, color: '#16a34a' },
+              { label: 'Comisión RODAID', valor: `$${((facturacion?.resumen.comision_rodaid ?? 0)).toLocaleString('es-AR')}`, icono: Star, color: '#F47B20' },
+            ].map((k, i) => (
+              <div key={i} className="rounded-xl bg-slate-50 p-3">
+                <k.icono className="size-4 mb-2" style={{ color: k.color }} />
+                <p className="text-sm font-bold text-[#0F1E35]">{k.valor}</p>
+                <p className="text-[10px] text-slate-warm mt-0.5">{k.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Nota */}
+          {facturacion?.nota && (
+            <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 mb-4">
+              <p className="text-xs text-amber-700">{facturacion.nota}</p>
+            </div>
+          )}
+
+          {/* Ventas vacías */}
+          {(!facturacion || facturacion.resumen.transacciones === 0) && (
+            <div className="text-center py-8">
+              <ShoppingBag className="size-8 text-slate-200 mx-auto mb-2" />
+              <p className="text-sm text-slate-warm">Sin transacciones en este período.</p>
+              <p className="text-xs text-slate-warm/60 mt-1">Las ventas aparecerán aquí cuando MercadoPago LIVE esté activo.</p>
+            </div>
+          )}
+        </div>
+
         {/* Bicicletas */}
         {bicicletas.length > 0 && (
           <div className="rounded-2xl border border-ink/10 bg-white p-5">
-            <h2 className="font-display text-base font-semibold text-[#0F1E35] mb-4">Mis Bicicletas</h2>
+            <h2 className="font-display text-base font-semibold text-[#0F1E35] mb-4 flex items-center gap-2">
+              🚲 Mis Bicicletas
+            </h2>
             <div className="space-y-3">
               {bicicletas.map(b => (
                 <div key={b.id} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
