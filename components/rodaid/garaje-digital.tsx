@@ -125,8 +125,12 @@ export function GarajeDigital() {
         </div>
       </div>
 
-      {/* Sello Gubernamental (Hito 9) — identidad verificada con el Estado. */}
-        ) : (
+      {lista.length === 0 ? (
+        <div className="rounded-2xl border border-ink/10 bg-white px-6 py-12 text-center">
+          <span className="text-4xl">🚲</span>
+          <h3 className="mt-3 font-display text-lg font-bold text-ink">Sin bicicletas aún</h3>
+          <p className="mt-1 text-sm text-slate-warm">Agregá tu primera bicicleta para comenzar.</p>
+        </div>
           <ul className="grid gap-4 sm:grid-cols-2">
             {lista.map((a) => (
               <ActivoCard
