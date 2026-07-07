@@ -144,7 +144,6 @@ export function GarajeDigital() {
             ))}
           </ul>
         )}
-      </div>
 
       {perfil?.selloGubernamental && (
         <div className="mt-6 flex flex-wrap items-center gap-2">
