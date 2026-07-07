@@ -64,7 +64,13 @@ td:first-child{font-weight:bold;background:#f7f6f3;width:35%}
         'content-disposition': `inline; filename="${nombre}"`,
       },
     })
-  } catch (error) {
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error)
+    const code = (error as { code?: string })?.code ?? ''
+    if (code === 'DOCUMENTO_NOT_FOUND' || msg.includes('gov-api-no-pdf') || msg.includes('sin PDF')) {
+      const html = '<div style="font-family:sans-serif;max-width:600px;margin:40px auto;padding:20px;color:#0F1E35"><h2 style="color:#0F1E35;border-bottom:3px solid #2BBCB8;padding-bottom:10px">RODAID · Denuncia Gubernamental</h2><p style="background:#fff8f0;border-left:4px solid #F47B20;padding:12px 16px;border-radius:4px">Esta denuncia fue registrada via API Gubernamental RODAID sin PDF adjunto del MPF. El bloqueo en la red fue aplicado automaticamente.</p><p style="color:#555">Para consultar el estado: <a href="https://rodaid.net/verificar" style="color:#2BBCB8">rodaid.net/verificar</a></p><p style="font-size:12px;color:#888;margin-top:20px">RODAID · Ley Provincial N° 9.556 · EDI X-Road Mendoza</p></div>'
+      return new Response(html, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } })
+    }
     return jsonError(error)
   }
 }
