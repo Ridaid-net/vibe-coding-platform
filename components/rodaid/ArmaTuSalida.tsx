@@ -234,7 +234,7 @@ export function ArmaTuSalida() {
                   <div className="grid grid-cols-4 gap-2 mt-2">
                     {salida.imagenes.map((img, i) => (
                       <div key={i} className="relative aspect-square rounded-lg overflow-hidden">
-                        <img src={img} alt={`foto ${i+1}`} className="w-full h-full object-cover" />
+                        <img src={img} alt={`foto ${i+1}`} loading="lazy" className="w-full h-full object-cover" />
                         <button type="button"
                           onClick={() => setSalida(prev => ({ ...prev, imagenes: prev.imagenes.filter((_, j) => j !== i) }))}
                           className="absolute top-0.5 right-0.5 size-4 rounded-full bg-black/60 text-white flex items-center justify-center">

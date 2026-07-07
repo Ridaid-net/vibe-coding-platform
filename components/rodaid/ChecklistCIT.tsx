@@ -172,7 +172,7 @@ export function ChecklistCIT({ onSubmit, enviando = false }: Props) {
           <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
             {fotos.map((f, i) => (
               <div key={i} className="relative aspect-square rounded-xl overflow-hidden bg-slate-100">
-                <img src={f} alt={`Foto ${i+1}`} className="w-full h-full object-cover" />
+                <img src={f} alt={`Foto ${i+1}`} loading="lazy" className="w-full h-full object-cover" />
                 <button type="button" onClick={() => setFotos(prev => prev.filter((_, j) => j !== i))}
                   className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-full bg-black/60 text-white">
                   <X className="size-3" />

@@ -203,7 +203,7 @@ export function PublicacionDetalle({ id }: { id: string }) {
                   }`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={foto} alt="" className="h-full w-full object-cover" />
+                  <img src={foto} alt="" loading="lazy" className="h-full w-full object-cover" />
                 </button>
               ))}
             </div>
