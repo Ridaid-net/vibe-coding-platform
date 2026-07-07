@@ -29,10 +29,10 @@ export default function GarajePage() {
         {/* Widget lateral derecho — Pronóstico del Tiempo */}
         {/* Lado izquierdo disponible para futuras cajas: Noticias, Prensa, Eventos */}
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+          <PronosticoTiempo />
           <div className="rounded-3xl border border-dashed border-ink/10 bg-white/50 p-6 flex items-center justify-center min-h-[120px]">
             <p className="text-xs text-slate-warm/50 text-center">Próximamente: Noticias y Prensa</p>
           </div>
-          <PronosticoTiempo />
         </div>
 
         <StravaActividades />
