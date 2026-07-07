@@ -6,6 +6,7 @@ import { GarajeAnalitica } from '@/components/rodaid/garaje-analitica'
 import { IotTiempoReal } from '@/components/rodaid/iot-tiempo-real'
 import { StravaActividades } from '@/components/rodaid/StravaActividades'
 import { GarminActividades } from '@/components/rodaid/GarminActividades'
+import { PronosticoTiempo } from '@/components/rodaid/PronosticoTiempo'
 import { PerfilCard } from '@/components/rodaid/perfil-card'
 import { NotificacionesCard } from '@/components/rodaid/notificaciones-card'
 
@@ -26,6 +27,7 @@ export default function GarajePage() {
         <IotTiempoReal />
         <StravaActividades />
         <GarminActividades />
+        <PronosticoTiempo />
         <PerfilCard />
         <NotificacionesCard />
       </main>
