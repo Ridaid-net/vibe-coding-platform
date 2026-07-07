@@ -8,6 +8,8 @@ import {
   Bike,
   CheckCircle2,
   Fingerprint,
+  Printer,
+  Download,
   Loader2,
   Search,
   ShieldAlert,
