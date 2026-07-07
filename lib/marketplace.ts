@@ -5,6 +5,7 @@ import { getModo } from '@/src/services/mercadopago.service'
 
 export interface AuthenticatedUser {
   id: string
+  email?: string
 }
 
 export interface PublicacionRow {
