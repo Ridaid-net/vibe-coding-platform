@@ -8,6 +8,7 @@ import { SoporteChat } from '@/components/rodaid/SoporteChat'
 import type { ReactNode } from 'react'
 import type { Metadata } from 'next'
 import './globals.css'
+import { JsonLdOrganizacion, JsonLdMarketplace } from '@/components/rodaid/json-ld'
 
 const display = Bricolage_Grotesque({
   subsets: ['latin'],
@@ -71,6 +72,8 @@ export default function RootLayout({
   return (
     <html lang="es-AR" className={`${display.variable} ${body.variable}`}>
       <body className="font-body bg-paper text-ink antialiased">
+        <JsonLdOrganizacion />
+        <JsonLdMarketplace />
         <AuthProvider>
           {children}
           <FaqWidget />
