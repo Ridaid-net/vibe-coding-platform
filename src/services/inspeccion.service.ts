@@ -7,6 +7,7 @@ import {
 } from '@/src/services/validation.service'
 import { anclarCITEnSegundoPlano } from '@/src/services/blockchain.service'
 import { emitirEvento } from '@/src/services/notification.service'
+import { enviarEmail } from '@/lib/email'
 import {
   firmarActa,
   firmaHashActa,
@@ -742,6 +743,28 @@ export async function aprobarInspeccionFisica(opts: {
         inspectorNombre: inspector.nombre,
       },
     })
+  }
+
+
+  // Email felicitaciones CIT al propietario
+  if (!bloqueada && atomico.propietarioId) {
+    try {
+      const { getPool } = await import('@/lib/marketplace')
+      const pool = getPool()
+      const userRes = await pool.query('SELECT email, datos_perfil FROM usuarios WHERE id = $1', [atomico.propietarioId])
+      const row = userRes.rows[0]
+      if (row?.email) {
+        const nombre = row.datos_perfil?.nombre ?? 'Ciclista'
+        const logoB64 = require('fs').readFileSync(process.cwd() + '/public/logo-rodaid.jpeg').toString('base64')
+        await enviarEmail({
+          to: row.email,
+          subject: '🎉 Felicitaciones! Obtuviste tu CIT RODAID',
+          html: '<div style="font-family:sans-serif;max-width:600px;margin:0 auto;background:#f7f6f3;"><div style="background:#0F1E35;padding:32px;text-align:center;"><img src="data:image/jpeg;base64,' + logoB64 + '" alt="RODAID" style="height:70px;border-radius:12px;margin-bottom:12px;" /><h1 style="color:white;margin:0;font-size:32px;font-weight:900;">RODAID</h1><p style="color:#2BBCB8;margin:6px 0 0;">Certificado de Identidad Técnica</p></div><div style="padding:32px;"><div style="background:white;padding:28px;border-radius:16px;text-align:center;"><div style="font-size:64px;margin-bottom:16px;">🎉</div><h2 style="color:#0F1E35;margin:0 0 8px;">Felicitaciones ' + nombre + '!</h2><p style="color:#555;line-height:1.7;margin-bottom:20px;">Tu bicicleta obtuvo su <strong>Certificado de Identidad Técnica (CIT)</strong> oficial de RODAID. Tu rodado ahora tiene identidad digital verificada en la <strong>Blockchain Federal Argentina</strong>.</p><div style="background:#f0fafa;padding:20px;border-radius:12px;margin:20px 0;border:2px solid #2BBCB8;"><p style="margin:0;color:#0F1E35;font-weight:700;font-size:18px;">Codigo CIT</p><p style="margin:8px 0 0;font-family:monospace;font-size:20px;color:#2BBCB8;font-weight:700;">' + atomico.codigoCit + '</p></div><div style="margin-top:24px;"><a href="https://rodaid.net/garaje" style="background:#F47B20;color:white;padding:14px 32px;border-radius:999px;text-decoration:none;font-weight:700;font-size:15px;">Ver mi CIT en el Garaje</a></div></div></div><div style="background:#0F1E35;padding:20px;text-align:center;"><p style="color:#888;font-size:12px;margin:0;">RODAID · rodaid.net</p></div></div>'
+        })
+      }
+    } catch (emailErr) {
+      console.error('Error email CIT:', emailErr)
+    }
   }
 
   return {
