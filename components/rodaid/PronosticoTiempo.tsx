@@ -50,6 +50,21 @@ export function PronosticoTiempo() {
   const [error, setError] = useState('')
   const [diaSeleccionado, setDiaSeleccionado] = useState(0)
 
+  const cargarConUbicacion = async (lat: number, lon: number, ciudad: string) => {
+    setCargando(true)
+    setError('')
+    try {
+      const res = await fetch(`/api/v1/clima/pronostico?lat=${lat}&lon=${lon}&ciudad=${encodeURIComponent(ciudad)}`)
+      const json = await res.json()
+      if (json.ok) setData(json)
+      else setError(json.error ?? 'Error obteniendo pronóstico')
+    } catch {
+      setError('No se pudo cargar el pronóstico')
+    } finally {
+      setCargando(false)
+    }
+  }
+
   const cargar = async () => {
     setCargando(true)
     setError('')
@@ -65,7 +80,26 @@ export function PronosticoTiempo() {
     }
   }
 
-  useEffect(() => { cargar() }, [])
+  useEffect(() => {
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const { latitude, longitude } = pos.coords
+          // Geocodificacion inversa con Open-Meteo nominatim
+          fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&accept-language=es`)
+            .then(r => r.json())
+            .then(geo => {
+              const ciudad = geo.address?.city ?? geo.address?.town ?? geo.address?.village ?? 'Tu ubicación'
+              cargarConUbicacion(latitude, longitude, ciudad)
+            })
+            .catch(() => cargarConUbicacion(latitude, longitude, 'Tu ubicación'))
+        },
+        () => cargar() // Si deniega, usa San Martín por defecto
+      )
+    } else {
+      cargar()
+    }
+  }, [])
 
   if (cargando) return (
     <div className="mt-4 rounded-3xl border border-ink/10 bg-white p-6 animate-pulse">
