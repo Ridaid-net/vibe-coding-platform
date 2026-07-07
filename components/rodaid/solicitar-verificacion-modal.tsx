@@ -1,7 +1,6 @@
 'use client'
-
 import { useState } from 'react'
-import { Fingerprint, Loader2, ShieldCheck } from 'lucide-react'
+import { Fingerprint, Loader2, ShieldCheck, RefreshCw, Clock } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   Dialog,
@@ -14,24 +13,18 @@ import { authedFetch } from '@/lib/session'
 import { parseApiError } from '@/lib/api-errors'
 import { etiquetaBici, type BicicletaGaraje } from '@/lib/garaje'
 
-/**
- * Modal rapido de "Solicitar verificación" (CIT).
- *
- * Diseno: la friccion en el momento de la venta es enemiga de la conversion,
- * por eso ofrecemos la verificacion en el lugar — sin mandar al usuario a una
- * pestana nueva. En entornos de demo la verificacion se concede al instante;
- * en produccion real queda pendiente del peritaje y se le avisa.
- */
 export function SolicitarVerificacionModal({
   bici,
   open,
   onOpenChange,
   onVerificada,
+  esRenovacion = false,
 }: {
   bici: BicicletaGaraje | null
   open: boolean
   onOpenChange: (open: boolean) => void
   onVerificada: () => void
+  esRenovacion?: boolean
 }) {
   const [enviando, setEnviando] = useState(false)
 
@@ -45,7 +38,7 @@ export function SolicitarVerificacionModal({
       )
       if (!res.ok) {
         const info = await parseApiError(res)
-        toast.error('No pudimos verificar tu bicicleta', {
+        toast.error(esRenovacion ? 'No pudimos renovar el CIT' : 'No pudimos verificar tu bicicleta', {
           description: info.message,
         })
         return
@@ -55,19 +48,26 @@ export function SolicitarVerificacionModal({
         pendienteRevision?: boolean
       }
       if (data.estado === 'activo') {
-        toast.success('¡Identidad verificada!', {
-          description: `${etiquetaBici(bici)} ya tiene su CIT activo. Podés publicarla.`,
-        })
+        esRenovacion
+          ? toast.success('¡CIT Renovado exitosamente!', {
+              description: `${etiquetaBici(bici)} tiene su CIT renovado por 12 meses más. Revisá tu email para el certificado actualizado.`,
+            })
+          : toast.success('¡Identidad verificada!', {
+              description: `${etiquetaBici(bici)} ya tiene su CIT activo. Podés publicarla.`,
+            })
       } else {
-        toast.info('Solicitud enviada', {
-          description:
-            'Tu bicicleta quedó en revisión. Te avisamos cuando el CIT esté activo.',
-        })
+        esRenovacion
+          ? toast.info('Solicitud de renovación enviada', {
+              description: 'Tu bicicleta quedó en revisión para renovación del CIT. Un taller aliado realizará la inspección y recibirás un email cuando esté listo.',
+            })
+          : toast.info('Solicitud enviada', {
+              description: 'Tu bicicleta quedó en revisión. Te avisamos cuando el CIT esté activo.',
+            })
       }
       onOpenChange(false)
       onVerificada()
     } catch {
-      toast.error('No pudimos verificar tu bicicleta', {
+      toast.error(esRenovacion ? 'No pudimos renovar el CIT' : 'No pudimos verificar tu bicicleta', {
         description: 'Revisá tu conexión e intentá nuevamente.',
       })
     } finally {
@@ -79,48 +79,67 @@ export function SolicitarVerificacionModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="rounded-2xl border border-ink/10 bg-paper">
         <DialogHeader>
-          <span className="flex size-12 items-center justify-center rounded-xl bg-lime text-ink">
-            <Fingerprint className="size-6" />
-          </span>
-          <DialogTitle className="font-display text-ink">
-            Verificá la identidad de tu bici
+          <DialogTitle className="font-display text-xl font-bold text-ink">
+            {esRenovacion ? 'Renovar CIT' : 'Solicitar verificación'}
           </DialogTitle>
-          <DialogDescription className="text-slate-warm">
-            {bici
-              ? `Vamos a generar el CIT de ${etiquetaBici(bici)} (N° ${bici.numeroSerie}). El CIT es la cédula de identidad de tu bicicleta: confirma que es tuya y habilita la publicación con la protección RODAID PAY.`
-              : 'El CIT es la cédula de identidad de tu bicicleta.'}
+          <DialogDescription className="text-sm text-slate-warm">
+            {bici ? etiquetaBici(bici) : ''}
           </DialogDescription>
         </DialogHeader>
 
-        <ul className="space-y-2 text-sm text-slate-warm">
-          <li className="flex items-start gap-2">
-            <ShieldCheck className="mt-0.5 size-4 shrink-0 text-lime-deep" />
-            Asociamos el número de serie a tu cuenta como titular.
-          </li>
-          <li className="flex items-start gap-2">
-            <ShieldCheck className="mt-0.5 size-4 shrink-0 text-lime-deep" />
-            La bici queda marcada como verificada en el marketplace.
-          </li>
-        </ul>
-
-        <button
-          type="button"
-          onClick={solicitar}
-          disabled={enviando || !bici}
-          className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-full bg-ink px-5 py-3 text-sm font-semibold text-paper transition-colors hover:bg-ink-soft disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {enviando ? (
-            <>
-              <Loader2 className="size-4 animate-spin" />
-              Verificando…
-            </>
+        <div className="space-y-4 py-2">
+          {esRenovacion ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <div className="flex items-start gap-3">
+                <Clock className="size-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">CIT Vencido</p>
+                  <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+                    Tu Certificado de Identidad Técnica venció. Para renovarlo, un taller aliado RODAID realizará una nueva inspección de 20 puntos. El costo es de <strong>$18.000 ARS</strong>.
+                  </p>
+                </div>
+              </div>
+            </div>
           ) : (
-            <>
-              <Fingerprint className="size-4 text-lime" />
-              Solicitar verificación
-            </>
+            <div className="rounded-2xl border border-[#2BBCB8]/30 bg-teal-50 p-4">
+              <div className="flex items-start gap-3">
+                <Fingerprint className="size-5 text-[#2BBCB8] shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-[#0F1E35]">Solicitar CIT</p>
+                  <p className="text-xs text-slate-warm mt-1 leading-relaxed">
+                    Un taller aliado RODAID inspeccionará tu bicicleta en 20 puntos y emitirá el Certificado de Identidad Técnica. Válido por 12 meses.
+                  </p>
+                </div>
+              </div>
+            </div>
           )}
-        </button>
+
+          <div className="rounded-xl bg-slate-50 p-3 space-y-1.5 text-xs text-slate-warm">
+            <p className="flex items-center gap-1.5"><ShieldCheck className="size-3 text-[#2BBCB8]" /> Inspección de 20 puntos por taller aliado certificado</p>
+            <p className="flex items-center gap-1.5"><ShieldCheck className="size-3 text-[#2BBCB8]" /> Hash SHA-256 anclado en Blockchain Federal Argentina</p>
+            <p className="flex items-center gap-1.5"><ShieldCheck className="size-3 text-[#2BBCB8]" /> Vigencia 12 meses · Costo $18.000 ARS</p>
+            <p className="flex items-center gap-1.5"><ShieldCheck className="size-3 text-[#2BBCB8]" /> Email de confirmación al completarse</p>
+          </div>
+
+          <button
+            onClick={solicitar}
+            disabled={enviando}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#0F1E35] px-5 py-3 text-sm font-semibold text-white hover:bg-[#0F1E35]/80 disabled:opacity-50"
+          >
+            {enviando ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : esRenovacion ? (
+              <RefreshCw className="size-4" />
+            ) : (
+              <Fingerprint className="size-4" />
+            )}
+            {enviando
+              ? 'Enviando solicitud...'
+              : esRenovacion
+                ? 'Solicitar renovación del CIT'
+                : 'Solicitar verificación CIT'}
+          </button>
+        </div>
       </DialogContent>
     </Dialog>
   )
