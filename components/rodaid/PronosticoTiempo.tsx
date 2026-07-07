@@ -102,7 +102,7 @@ export function PronosticoTiempo() {
   }, [])
 
   if (cargando) return (
-    <div className="mt-4 rounded-3xl border border-ink/10 bg-white p-6 animate-pulse">
+    <div className="rounded-3xl border border-ink/10 bg-white p-6 animate-pulse">
       <div className="h-5 w-48 rounded bg-slate-100 mb-4" />
       <div className="grid grid-cols-5 gap-2">
         {[1,2,3,4,5].map(i => <div key={i} className="h-20 rounded-xl bg-slate-50" />)}
@@ -111,7 +111,7 @@ export function PronosticoTiempo() {
   )
 
   if (error) return (
-    <div className="mt-4 rounded-3xl border border-ink/10 bg-white p-5">
+    <div className="rounded-3xl border border-ink/10 bg-white p-5">
       <div className="flex items-center gap-2 text-sm text-slate-warm">
         <Cloud className="size-4" />
         <span>No se pudo cargar el pronóstico. <button type="button" onClick={cargar} className="text-[#2BBCB8] underline">Reintentar</button></span>
@@ -124,7 +124,7 @@ export function PronosticoTiempo() {
   const dia = data.pronostico[diaSeleccionado]
 
   return (
-    <div className="mt-4 rounded-3xl border border-ink/10 bg-white p-6">
+    <div className="rounded-3xl border border-ink/10 bg-white p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-3">
