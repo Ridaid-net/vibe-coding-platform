@@ -804,6 +804,9 @@ export async function accederDocumentoSeguro(
     throw new ApiError(404, 'DENUNCIA_NOT_FOUND', 'No se encontró la denuncia.')
   }
 
+  if (row.pdf_blob_key === 'gov-api-no-pdf') {
+    throw new ApiError(404, 'DOCUMENTO_NOT_FOUND', 'Denuncia registrada via API gubernamental sin PDF adjunto.')
+  }
   const pdf = await leerPdfCifrado(row.pdf_blob_key)
   if (!pdf) {
     throw new ApiError(404, 'DOCUMENTO_NOT_FOUND', 'El documento no está disponible.')
