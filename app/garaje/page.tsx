@@ -31,9 +31,7 @@ export default function GarajePage() {
         {/* Lado izquierdo disponible para futuras cajas: Noticias, Prensa, Eventos */}
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
           <PronosticoTiempo />
-          <div className="rounded-3xl border border-dashed border-ink/10 bg-white/50 p-6 flex flex-col items-center justify-center h-full">
-            <p className="text-xs text-slate-warm/50 text-center">Próximamente: Noticias y Prensa</p>
-          </div>
+          <NoticiasPrensaWidget />
         </div>
 
         <StravaActividades />
