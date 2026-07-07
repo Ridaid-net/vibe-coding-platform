@@ -286,7 +286,7 @@ export function PublicacionDetalle({ id }: { id: string }) {
           <div className="mt-4">
             <ProteccionRodaidPay />
           </div>
-          <div className="mt-4"><ChatMarketplace publicacionId={pub.id} /></div>
+          <div className="mt-4"><ChatMarketplace publicacionId={pub.id} tituloPublicacion={pub.titulo} vendedorAlias={pub.vendedorId} citActivo={true} esVendedor={esVendedor} /></div>
 
           {ficha.length > 0 && (
             <dl className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-ink/10 bg-ink/10 text-sm">
