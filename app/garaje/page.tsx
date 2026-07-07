@@ -9,6 +9,7 @@ import { GarminActividades } from '@/components/rodaid/GarminActividades'
 import { PronosticoTiempo } from '@/components/rodaid/PronosticoTiempo'
 import { PerfilCard } from '@/components/rodaid/perfil-card'
 import { NotificacionesCard } from '@/components/rodaid/notificaciones-card'
+import { MisSalidas } from '@/components/rodaid/MisSalidas'
 
 export const metadata = {
   title: 'Mi Garaje Digital — RODAID',
@@ -25,9 +26,15 @@ export default function GarajePage() {
         <MisPublicaciones />
         <GarajeAnalitica />
         <IotTiempoReal />
+
+        {/* Salidas Grupales + Pronóstico del Tiempo — misma fila */}
+        <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+          <MisSalidas />
+          <PronosticoTiempo />
+        </div>
+
         <StravaActividades />
         <GarminActividades />
-        <PronosticoTiempo />
         <PerfilCard />
         <NotificacionesCard />
       </main>
