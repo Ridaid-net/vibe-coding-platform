@@ -97,7 +97,7 @@ const SALUD_LABEL: Record<SaludEstado, string> = {
 
 // ── Componente raiz ──────────────────────────────────────────────────────────
 
-type Pestana = 'integridad' | 'moderacion' | 'analitica' | 'identidades' | 'bitacora'
+type Pestana = 'integridad' | 'moderacion' | 'analitica' | 'identidades' | 'bitacora' | 'gobierno'
 
 const PESTANAS: { id: Pestana; label: string; icon: typeof Activity; permiso: AdminPermiso }[] = [
   { id: 'integridad', label: 'Integridad', icon: Activity, permiso: 'integridad:ver' },
