@@ -37,7 +37,7 @@ import { SeguroDinamico } from './SeguroDinamico'
 import { ArmaTuSalida } from './ArmaTuSalida'
 import { MisSalidas } from './MisSalidas'
 import { PushNotificaciones } from './PushNotificaciones'
-import { clearSession } from '@/lib/session'
+import { clearSession, getSession } from '@/lib/session'
 import { BiciSeguraShare } from './BiciSeguraShare'
 import { SolicitarVerificacionModal } from './solicitar-verificacion-modal'
 import { DenunciaMpfModal } from './denuncia-mpf-modal'
@@ -54,6 +54,11 @@ import { DenunciaMpfModal } from './denuncia-mpf-modal'
  * Identidad visual 'Bianco Sport': papel calido, tinta casi negra y acento lima.
  */
 export function GarajeDigital() {
+  const sesion = typeof window !== "undefined" ? getSession() : null
+  if (typeof window !== "undefined" && !sesion) {
+    window.location.replace("/ingresar?next=/garaje")
+    return null
+  }
   const { data, error, isLoading, mutate } = useActivosGaraje()
   const { data: perfil } = useMiPerfil()
   const [verificar, setVerificar] = useState<ActivoGaraje | null>(null)
