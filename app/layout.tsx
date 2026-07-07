@@ -33,19 +33,35 @@ export const metadata: Metadata = {
   description,
   applicationName: 'RODAID',
   keywords: [
-    'bicicletas',
-    'marketplace',
-    'Argentina',
-    'comprar bici',
-    'vender bici',
-    'RODAID PAY',
-    'escrow',
+    'bicicletas', 'marketplace', 'Argentina', 'Mendoza', 'comprar bici',
+    'vender bici', 'RODAID PAY', 'escrow', 'CIT', 'certificado bicicleta',
+    'blockchain bicicleta', 'bicicletas verificadas', 'certificacion tecnica',
+    'Zona Este Mendoza', 'San Martin Mendoza', 'bicicleta usada segura',
   ],
   openGraph: {
     title,
     description,
     type: 'website',
     locale: 'es_AR',
+    url: 'https://rodaid.net',
+    siteName: 'RODAID',
+    images: [{
+      url: 'https://rodaid.net/og-image.png',
+      width: 1200,
+      height: 630,
+      alt: 'RODAID — Marketplace de bicicletas verificadas en Argentina',
+    }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title,
+    description,
+    images: ['https://rodaid.net/og-image.png'],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, 'max-image-preview': 'large' },
   },
 }
 
