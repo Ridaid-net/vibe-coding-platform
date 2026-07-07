@@ -162,7 +162,7 @@ export function GarajeDigital() {
       <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
         <button
           onClick={() => setAgregando(true)}
-          className="inline-flex items-center justify-center gap-2 rounded-full bg-ink px-5 py-2.5 text-xs font-semibold text-paper transition-colors hover:bg-ink-soft min-w-[140px]"
+          className="w-full h-11 inline-flex items-center justify-center gap-2 rounded-full text-xs font-semibold transition-colors bg-ink text-paper hover:bg-ink-soft"
         >
           <Plus className="size-3.5 text-lime" />
           Agregar bicicleta
@@ -172,14 +172,14 @@ export function GarajeDigital() {
           href={`https://wa.me/?text=${encodeURIComponent('Te invito a verificar tu bici en RODAID - la plataforma que diseñamos para la mejor seguridad en la comunidad de ciclistas de Mendoza. Registrate gratis: https://rodaid.net')}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center justify-center gap-2 rounded-full bg-[#25D366] px-5 py-2.5 text-xs font-semibold text-white hover:bg-[#25D366]/80 min-w-[140px]"
+          className="w-full h-11 inline-flex items-center justify-center gap-2 rounded-full text-xs font-semibold transition-colors bg-[#25D366] text-white hover:bg-[#25D366]/80"
         >
           Invitar ciclistas
         </a>
         <button
           type="button"
           onClick={() => { clearSession(); window.location.href = "/" }}
-          className="inline-flex items-center justify-center gap-2 rounded-full border border-clay/30 bg-clay/5 px-5 py-2.5 text-xs font-semibold text-clay hover:bg-clay/10 min-w-[140px]"
+          className="w-full h-11 inline-flex items-center justify-center gap-2 rounded-full text-xs font-semibold transition-colors border border-clay/30 bg-clay/5 text-clay hover:bg-clay/10"
         >
           Cerrar sesión
         </button>
