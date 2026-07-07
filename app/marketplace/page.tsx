@@ -29,7 +29,6 @@ const ORDEN_OPS = [
   { value: 'precio_desc', label: 'Mayor precio' },
 ]
 
-export const metadata = undefined
 
 export default function MarketplacePage() {
   const [publicaciones, setPublicaciones] = useState<Publicacion[]>([])
