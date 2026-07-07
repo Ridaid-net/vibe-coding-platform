@@ -108,7 +108,7 @@ export function ArmaTuSalida() {
     <button
       type="button"
       onClick={() => setAbierto(true)}
-      className="inline-flex items-center gap-2 rounded-full bg-[#2BBCB8] px-5 py-3 text-sm font-semibold text-white shadow-lg hover:bg-[#2BBCB8]/80 transition-all hover:-translate-y-0.5"
+      className="w-full h-11 inline-flex items-center justify-center gap-2 rounded-full text-xs font-semibold transition-colors bg-[#2BBCB8] text-white hover:bg-[#2BBCB8]/80"
     >
       <Route className="size-4" />
       Arma tu Salida 🚲
