@@ -7,6 +7,7 @@ import { IotTiempoReal } from '@/components/rodaid/iot-tiempo-real'
 import { StravaActividades } from '@/components/rodaid/StravaActividades'
 import { GarminActividades } from '@/components/rodaid/GarminActividades'
 import { PronosticoTiempo } from '@/components/rodaid/PronosticoTiempo'
+import { NoticiasPrensaWidget } from '@/components/rodaid/NoticiasPrensaWidget'
 import { PerfilCard } from '@/components/rodaid/perfil-card'
 import { NotificacionesCard } from '@/components/rodaid/notificaciones-card'
 
