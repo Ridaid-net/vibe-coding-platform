@@ -136,7 +136,7 @@ export function GarajeDigital() {
             Agregar bicicleta
           </button>
           <ArmaTuSalida />
-          
+          <a
             href={`https://wa.me/?text=${encodeURIComponent('Te invito a verificar tu bici en RODAID - la plataforma de identidad digital para ciclistas de Mendoza. Certifica tu bici con blockchain, vendela con pago protegido y unite a la comunidad. Registrate gratis: https://rodaid.net')}`}
             target="_blank"
             rel="noopener noreferrer"
