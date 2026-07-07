@@ -144,21 +144,6 @@ export function GarajeDigital() {
         </div>
       )}
 
-      {hayVerificada && !agregando && (
-        <Link
-          href="/publicar"
-          className="mt-6 flex items-center justify-between gap-3 rounded-2xl border border-lime-deep/40 bg-lime/15 px-5 py-4 transition-colors hover:bg-lime/25"
-        >
-          <span className="flex items-center gap-2 text-sm font-semibold text-ink">
-            <ShieldCheck className="size-4 text-lime-deep" />
-            Tenés una bici verificada lista para publicar
-          </span>
-          <span className="inline-flex items-center gap-1 text-sm font-semibold text-ink">
-            Publicar
-            <ArrowRight className="size-4" />
-          </span>
-        </Link>
-      )}
       <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
         <button
           onClick={() => setAgregando(true)}
