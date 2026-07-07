@@ -131,6 +131,7 @@ export function GarajeDigital() {
           <h3 className="mt-3 font-display text-lg font-bold text-ink">Sin bicicletas aún</h3>
           <p className="mt-1 text-sm text-slate-warm">Agregá tu primera bicicleta para comenzar.</p>
         </div>
+      ) : (
           <ul className="grid gap-4 sm:grid-cols-2">
             {lista.map((a) => (
               <ActivoCard
