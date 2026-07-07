@@ -1,5 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
+import { getSession } from '@/lib/session'
 import { Nav } from '@/components/rodaid/nav'
 import { Footer } from '@/components/rodaid/footer'
 import { Inspecciones } from '@/components/rodaid/inspecciones'
@@ -7,6 +9,13 @@ import { ShieldCheck, DollarSign, Clock, Award } from 'lucide-react'
 import { authedFetch } from '@/lib/session'
 
 export default function TallerPage() {
+  useEffect(() => {
+    const sesion = getSession()
+    if (!sesion) { window.location.replace("/ingresar?next=/taller"); return }
+    if (sesion.rol !== "aliado" && sesion.rol !== "inspector" && sesion.rol !== "admin") {
+      window.location.replace("/garaje")
+    }
+  }, [])
   const [stats, setStats] = useState({ cits: 0, pendientes: 0, ingresos: 0 })
 
   useEffect(() => {
