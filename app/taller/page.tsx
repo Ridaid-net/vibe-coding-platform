@@ -1,6 +1,5 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { useEffect } from 'react'
 import { getSession } from '@/lib/session'
 import { Nav } from '@/components/rodaid/nav'
 import { Footer } from '@/components/rodaid/footer'
