@@ -293,7 +293,7 @@ function resolverBaseUrl(): string | null {
  * el endpoint mock `POST /api/seguridad/cross-reference`; si no hay URL base o
  * el fetch falla, usa el mismo evaluador en proceso (resultado equivalente).
  */
-async function ejecutarCrossReference(
+export async function ejecutarCrossReference(
   input: CrossReferenceInput,
   ahoraISO: string
 ): Promise<{ resultado: CrossReferenceResultado; via: 'http' | 'inproc' }> {
