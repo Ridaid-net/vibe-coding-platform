@@ -31,7 +31,7 @@ export default function GovDashboardPage() {
     setCargando(true)
     try {
       const headers = {
-        'X-Gov-Token': GOV_TOKEN || 'cbe8b6ac5fdd31b7050a99108e7cf0e436a6e52994042752de96fa11e3873e69',
+        'X-Gov-Token': GOV_TOKEN || '',
         'X-Tenant-ID': slug
       }
       const [mRes, wRes] = await Promise.all([
