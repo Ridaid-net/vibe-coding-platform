@@ -27,8 +27,10 @@ export function CampanaNotificaciones() {
   const [cargando, setCargando] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
-  const sesion = getSession()
+  const [sesion, setSesion] = useState<ReturnType<typeof getSession>>(null)
   const noLeidas = notifs.filter(n => !n.leida).length
+
+  useEffect(() => { setSesion(getSession()) }, [])
 
   const cargar = async () => {
     if (!sesion) return
