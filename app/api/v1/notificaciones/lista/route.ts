@@ -9,7 +9,7 @@ export async function GET(req: Request) {
     const limite = parseInt(url.searchParams.get('limite') ?? '20')
     const pool = getPool()
     const result = await pool.query(
-      `SELECT id, tipo, titulo, mensaje, leida, url, created_at
+      `SELECT id, tipo, titulo, cuerpo as mensaje, leida, cta_url as url, created_at
        FROM notificaciones
        WHERE usuario_id = $1
        ORDER BY created_at DESC
