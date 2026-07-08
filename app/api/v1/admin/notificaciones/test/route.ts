@@ -11,7 +11,7 @@ export async function POST(req: Request) {
     const pool = getPool()
     const result = await pool.query(
       `INSERT INTO notificaciones (usuario_id, tipo, titulo, cuerpo, cta_url)
-       VALUES ($1, $2::notificacion_tipo, $3, $4, $5)
+       VALUES ($1, $2::notif_tipo, $3, $4, $5)
        RETURNING id, titulo`,
       [
         usuario_id,
