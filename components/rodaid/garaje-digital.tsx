@@ -397,11 +397,11 @@ function ActivoCard({
 
         {/* Denuncia ciudadana (Hito 18) — solo para identidad gubernamental (MxM)
             y bicis con identidad que no estén ya bloqueadas. */}
-        {(
+        {puedeDenunciar &&
           (activo.estado === 'verificado' ||
             activo.estado === 'pendiente' ||
             activo.estado === 'vencido' ||
-            activo.estado === 'sin_verificar'
+            activo.estado === 'sin_verificar') && (
             <button
               onClick={onDenunciar}
               className="inline-flex items-center gap-1.5 rounded-full border border-clay/40 bg-clay/5 px-3.5 py-2 text-xs font-semibold text-clay transition-colors hover:bg-clay/10"
