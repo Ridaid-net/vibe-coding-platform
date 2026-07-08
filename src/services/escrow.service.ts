@@ -85,6 +85,8 @@ export interface TransaccionRow {
   envio_confirmado_en: string | null
   entrega_confirmada_en: string | null
   auto_release_en: string | null
+  /** Fase 5 (CIT Completo): ventana de 48hs de la reserva. Distinto de auto_release_en. */
+  reserva_vence_en: string | null
   expira_en: string | null
   created_at: string
   updated_at: string
@@ -1008,6 +1010,15 @@ export async function resolverPagoForzado(input: {
 /**
  * Libera automaticamente las transacciones EN_CAMINO cuyo plazo de
  * confirmacion vencio (5 dias sin accion del comprador).
+ *
+ * TODO(unificar retries): ni esta funcion ni procesarReservasVencidas()
+ * tienen backoff ni tope de reintentos -- a diferencia de cola_validaciones
+ * (intentos/max_intentos/proximo_intento_en + estado ERROR como dead-letter),
+ * una fila que falla por un bug persistente se reintenta en CADA corrida del
+ * scheduled function para siempre, sin marcarse como agotada. Vale la pena
+ * unificar los tres barridos (este, procesarReservasVencidas y
+ * cola_validaciones) al mismo estandar en una pasada dedicada -- no parchar
+ * esto aca.
  */
 export async function procesarAutoReleases(limite = 100) {
   const pendientes = await getPool().query<{ id: string }>(
@@ -1055,6 +1066,96 @@ export async function procesarAutoReleases(limite = 100) {
   }
 
   return { procesadas: pendientes.rows.length, liberadas }
+}
+
+// ── 9. procesarReservasVencidas (Fase 5: timeout de 48hs de la reserva) ─────
+
+/**
+ * Barre las transacciones cuya reserva_vence_en vencio y revierte el estado
+ * de la publicacion vinculada:
+ *   - si ya tiene un acta de inspeccion sellada (inspeccion_sellado_id no
+ *     nulo) -> PUBLICADO_CERTIFICADO (no hace falta re-disparar la
+ *     verificacion al proximo comprador; la sena ya cubrio ese trabajo).
+ *   - si no -> PUBLICADO_PENDIENTE_CERTIFICACION.
+ *
+ * El chequeo real de "sigue viva esta reserva" se hace contra el estado de
+ * marketplace_publicaciones (debe seguir en 'RESERVADO'), no contra
+ * escrow_transacciones.estado: todavia no esta definido que valor de
+ * escrow_transaccion_estado representa "reservado, esperando confirmacion de
+ * pago" (lo define la Fase 6, que es la que va a poblar reserva_vence_en por
+ * primera vez). Hoy esta columna nunca se puebla, asi que esta funcion es un
+ * no-op en la practica hasta que la Fase 6 exista.
+ *
+ * TODO(unificar retries): ver la nota en procesarAutoReleases -- esta funcion
+ * tiene exactamente la misma falta de backoff/dead-letter.
+ */
+export async function procesarReservasVencidas(limite = 100) {
+  const pendientes = await getPool().query<{ id: string }>(
+    `
+      SELECT id FROM escrow_transacciones
+      WHERE reserva_vence_en IS NOT NULL AND reserva_vence_en <= NOW()
+      ORDER BY reserva_vence_en ASC
+      LIMIT $1
+    `,
+    [limite]
+  )
+
+  const revertidas: string[] = []
+  for (const { id } of pendientes.rows) {
+    try {
+      await withTx(async (client) => {
+        const tx = await lockTransaccion(client, id)
+        if (!tx.reserva_vence_en || new Date(tx.reserva_vence_en).getTime() > Date.now()) {
+          return
+        }
+
+        const pubRes = await client.query<{
+          id: string
+          estado: string
+          inspeccion_sellado_id: string | null
+        }>(
+          `
+            SELECT id, estado, inspeccion_sellado_id
+            FROM marketplace_publicaciones
+            WHERE id = $1
+            FOR UPDATE
+          `,
+          [tx.publicacion_id]
+        )
+        const pub = pubRes.rows[0]
+        // Ya se resolvio de otra forma (venta confirmada, cancelada, etc.):
+        // no revertir un estado que ya avanzo.
+        if (!pub || pub.estado !== 'RESERVADO') {
+          return
+        }
+
+        const estadoNuevo = pub.inspeccion_sellado_id
+          ? 'PUBLICADO_CERTIFICADO'
+          : 'PUBLICADO_PENDIENTE_CERTIFICACION'
+
+        await client.query(
+          `UPDATE marketplace_publicaciones SET estado = $2 WHERE id = $1`,
+          [pub.id, estadoNuevo]
+        )
+        await client.query(
+          `UPDATE escrow_transacciones SET reserva_vence_en = NULL, updated_at = NOW() WHERE id = $1`,
+          [tx.id]
+        )
+        await logEvento(client, {
+          transaccionId: tx.id,
+          tipo: 'RESERVA_VENCIDA',
+          actorRol: 'sistema',
+          metadata: { publicacionId: pub.id, estadoNuevo },
+        })
+
+        revertidas.push(tx.id)
+      })
+    } catch (error) {
+      console.error('[escrow] revertir reserva vencida fallo para', id, error)
+    }
+  }
+
+  return { encontradas: pendientes.rows.length, revertidas: revertidas.length }
 }
 
 // ── Consultas de lectura ────────────────────────────────────────────────────
