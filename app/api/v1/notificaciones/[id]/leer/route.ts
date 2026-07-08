@@ -8,7 +8,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const { id } = await params
     const pool = getPool()
     await pool.query(
-      'UPDATE notificaciones SET leida = true WHERE id = $1 AND usuario_id = $2',
+      'UPDATE notificaciones SET leida = true, leida_en = NOW() WHERE id = $1 AND usuario_id = $2',
       [id, user.id]
     )
     return NextResponse.json({ ok: true })
