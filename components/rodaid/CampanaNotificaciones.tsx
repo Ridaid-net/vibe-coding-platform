@@ -24,11 +24,21 @@ function IconoTipo({ tipo }: { tipo: string }) {
 export function CampanaNotificaciones() {
   const [notifs, setNotifs] = useState<Notif[]>([])
   const [abierto, setAbierto] = useState(false)
+  const [tituloOriginal] = useState(typeof document !== "undefined" ? document.title : "RODAID")
   const [cargando, setCargando] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   const [sesion, setSesion] = useState<ReturnType<typeof getSession>>(null)
   const noLeidas = notifs.filter(n => !n.leida).length
+
+  useEffect(() => {
+    if (typeof document === "undefined") return
+    if (noLeidas > 0) {
+      document.title = `(${noLeidas}) RODAID`
+    } else {
+      document.title = tituloOriginal
+    }
+  }, [noLeidas, tituloOriginal])
 
   useEffect(() => { setSesion(getSession()) }, [])
 
@@ -75,7 +85,7 @@ export function CampanaNotificaciones() {
     <div ref={ref} className="relative">
       <button type="button" onClick={() => { setAbierto(v => !v); if (!abierto) cargar() }}
         className="relative flex size-9 items-center justify-center rounded-full hover:bg-ink/5 transition-colors">
-        <Bell className="size-4.5 text-ink/70" />
+        <Bell className={"size-4.5 text-ink/70 " + (noLeidas > 0 ? "animate-bounce" : "")} />
         {noLeidas > 0 && (
           <span className="absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full bg-[#F47B20] text-[9px] font-bold text-white">
             {noLeidas > 9 ? '9+' : noLeidas}
