@@ -1,4 +1,5 @@
 import { getPool, type DbClient } from '@/lib/marketplace'
+import { getParametroPricing } from '@/src/services/parametros-pricing.service'
 
 /**
  * RODAID — Hito 13: RODAID PAY. Motor de compensaciones.
@@ -29,24 +30,19 @@ import { getPool, type DbClient } from '@/lib/marketplace'
  * resuelve aparte, de modo asincrono respecto al flujo de negocio.
  */
 
-// ── Configuracion del sistema (por entorno, con defaults seguros) ────────────
+// ── Configuracion del sistema (parametros_pricing_cit, Fase 0) ───────────────
 
-/** Tasa CIT oficial (ARS) que se cobra por la verificacion. */
-export function getTasaCitARS(): number {
-  const raw = Number(process.env.RODAID_TASA_CIT_ARS)
-  return Number.isFinite(raw) && raw > 0 ? Math.round(raw * 100) / 100 : 18000
+/** Tasa CIT oficial (ARS) que se cobra por la verificacion (canal MxM). */
+export async function getTasaCitARS(): Promise<number> {
+  return getParametroPricing('tasa_cit_oficial_ars')
 }
 
 /**
  * Parte proporcional de la tasa CIT que le corresponde al Taller Aliado cuando
- * el CIT que validó se emite con exito. Fraccion en [0,1]; por defecto 0.30.
+ * el CIT que validó se emite con exito. Fraccion en [0,1].
  */
-export function getRetribucionAliadoPct(): number {
-  const raw = Number(process.env.RODAID_RETRIBUCION_ALIADO_PCT)
-  if (Number.isFinite(raw) && raw >= 0 && raw <= 1) {
-    return Math.round(raw * 10000) / 10000
-  }
-  return 0.6
+export async function getRetribucionAliadoPct(): Promise<number> {
+  return getParametroPricing('retribucion_aliado_pct_generico')
 }
 
 function round2(n: number): number {
@@ -216,8 +212,8 @@ export async function registrarRetribucionAliado(
     return { registrada: false }
   }
 
-  const pct = getRetribucionAliadoPct()
-  const base = getTasaCitARS()
+  const pct = await getRetribucionAliadoPct()
+  const base = await getTasaCitARS()
   const monto = round2(base * pct)
   if (monto <= 0) {
     return { registrada: false }

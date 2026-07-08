@@ -38,14 +38,3 @@ export async function arsAUsd(montoARS: number): Promise<number> {
   const cotizacion = await getDolarOficialBNA()
   return Math.round((montoARS / cotizacion) * 100) / 100
 }
-
-/**
- * Cuadro tarifario CIT RODAID.
- */
-export const TARIFA_CIT = {
-  precioARS: 18_000,
-  retribucionAliadoPct: 0.6,   // 60% al taller aliado
-  comisionRodaidPct: 0.4,       // 40% a RODAID
-  suscripcionMensualCITs: 1,    // 1 CIT/mes
-  suscripcionAnualCITs: 2,      // 2 CITs/año (valor: 2 x $18.000 = $36.000)
-} as const

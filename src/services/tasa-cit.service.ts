@@ -112,7 +112,7 @@ export interface CrearPagoTasaInput {
  * tasa creada (PENDIENTE) con la URL de checkout para redirigir a la persona.
  */
 export async function crearPagoTasaCit(input: CrearPagoTasaInput) {
-  const monto = getTasaCitARS()
+  const monto = await getTasaCitARS()
   const modo = getModoPagosMxm()
 
   // Si se indico un CIT, validar que exista (relacion estricta con el bien).
