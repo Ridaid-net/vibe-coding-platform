@@ -45,6 +45,8 @@ export function Nav() {
           <span className="h-4 w-px bg-ink/15" />
           {LINKS_APP.map((link) => (<Link key={link.href} href={link.href} className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">{link.label}</Link>))}
           {isAdmin && (<Link href="/admin" className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">Administración</Link>)}
+          {isAdmin && (<Link href="/admin/noticias" className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">Noticias</Link>)}
+          {isAdmin && (<Link href="/admin/gov" className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">Panel Gov</Link>)}
           {(user?.role === "aliado" || user?.role === "inspector") && (<Link href="/taller" className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">Mi Taller</Link>)}
         </nav>
         <div className="flex items-center gap-2">
