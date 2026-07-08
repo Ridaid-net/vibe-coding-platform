@@ -547,6 +547,12 @@ export interface AprobacionResultado {
   /** true si el cross-reference de seguridad bloqueo la bici pese a la aprobacion. */
   bloqueadaPorSeguridad: boolean
   hashSha256: string | null
+  /** Fase 4: transicion de marketplace_publicaciones sellada por esta aprobacion, si habia una publicacion esperando. */
+  marketplaceTransicion: {
+    publicacionId: string
+    estadoAnterior: string
+    estadoNuevo: string
+  } | null
 }
 
 /**
@@ -681,6 +687,57 @@ export async function aprobarInspeccionFisica(opts: {
       [opts.citId]
     )
 
+    // 4. Fase 4 (CIT Completo): si esta bici tiene una publicacion de
+    //    Marketplace esperando esta certificacion, sellarla.
+    //    PUBLICADO_PENDIENTE_CERTIFICACION -> PUBLICADO_CERTIFICADO (nadie
+    //    esperando comprar todavia); RESERVADO -> EJECUTANDO_LOGISTICA (ya hay
+    //    un comprador con la sena puesta financiando esta verificacion).
+    //    Cualquier otro estado (incluida una publicacion inexistente) es un
+    //    no-op: una re-inspeccion de una bici ya certificada/vendida no hace
+    //    nada. FOR UPDATE evita una carrera con un reserve/cancel simultaneo.
+    const publicacionRes = await client.query<{ id: string; estado: string }>(
+      `
+        SELECT id, estado FROM marketplace_publicaciones
+        WHERE cit_id = $1
+          AND estado IN ('PUBLICADO_PENDIENTE_CERTIFICACION', 'RESERVADO')
+        FOR UPDATE
+      `,
+      [cit.cit_id]
+    )
+    const publicacion = publicacionRes.rows[0]
+    let marketplaceTransicion:
+      | { publicacionId: string; estadoAnterior: string; estadoNuevo: string }
+      | null = null
+
+    if (publicacion) {
+      const estadoNuevo =
+        publicacion.estado === 'RESERVADO' ? 'EJECUTANDO_LOGISTICA' : 'PUBLICADO_CERTIFICADO'
+
+      await client.query(
+        `
+          UPDATE marketplace_publicaciones
+          SET estado = $2, inspeccion_sellado_id = $3
+          WHERE id = $1
+        `,
+        [publicacion.id, estadoNuevo, inserted.rows[0].id]
+      )
+
+      marketplaceTransicion = {
+        publicacionId: publicacion.id,
+        estadoAnterior: publicacion.estado,
+        estadoNuevo,
+      }
+
+      // TODO(Fase 6): cuando RESERVADO -> EJECUTANDO_LOGISTICA, este es el
+      // punto para registrar la liquidacion ALIADO_FEE_VERIFICACION
+      // (pagos_liquidaciones) contra la escrow_transaccion que financio esta
+      // verificacion con la sena del comprador (escrow_transacciones.
+      // fee_verificacion_ars, aliado_id, ambos ya congelados en la Fase 3). No
+      // se implementa todavia porque depende de que valor de
+      // escrow_transaccion_estado representa "reservado, esperando
+      // verificacion" -- eso lo define recien la Fase 6 (endpoints de reserva).
+    }
+
     return {
       inspeccionId: inserted.rows[0].id,
       firmaHash,
@@ -691,6 +748,7 @@ export async function aprobarInspeccionFisica(opts: {
       numeroSerie: cit.numero_serie,
       propietarioId: cit.propietario_id,
       codigoCit: cit.codigo_cit,
+      marketplaceTransicion,
     }
   })
 
@@ -785,6 +843,7 @@ export async function aprobarInspeccionFisica(opts: {
     citEstado,
     bloqueadaPorSeguridad: bloqueada,
     hashSha256,
+    marketplaceTransicion: atomico.marketplaceTransicion,
   }
 }
 

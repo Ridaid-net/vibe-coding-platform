@@ -123,6 +123,11 @@ export interface AprobacionRespuesta {
   citEstado: string
   bloqueadaPorSeguridad: boolean
   hashSha256: string | null
+  marketplaceTransicion: {
+    publicacionId: string
+    estadoAnterior: string
+    estadoNuevo: string
+  } | null
 }
 
 export async function aprobarInspeccion(
