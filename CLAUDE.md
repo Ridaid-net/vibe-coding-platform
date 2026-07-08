@@ -50,6 +50,10 @@ This was confirmed empirically (2026-07-08) while building the CIT Completo mark
 
 Practical rule: when a migration adds an enum value that a later migration will read/write/filter on, merge the `ADD VALUE` migration to `main` on its own, confirm its production deploy is `ready`, and only then merge the migration that uses the new value.
 
+### Known gap: the CIT Completo 20-point checklist isn't persisted yet
+
+`components/rodaid/ChecklistCIT.tsx` (built on `lib/puntos-inspeccion.ts`'s `PUNTOS_INSPECCION`/`ChecklistInspeccion`/`calcularResultadoChecklist`) is a fully-built UI for the 20-point inspection checklist, but it's imported and never rendered in `components/rodaid/inspecciones.tsx` — no `<ChecklistCIT>` JSX usage exists anywhere. The approval flow that's actually wired (`aprobarInspeccion()` client helper → `POST /api/v1/inspecciones/[citId]/aprobar` / `POST /api/inspector/cit` → `aprobarInspeccionFisica()` in `inspeccion.service.ts`) only sends/persists a single verdict (`APROBADA`/`DISCREPANCIA`) plus free-text notes, signed as one acta — never point-by-point results. Treat `resultado = 'APROBADA'` as the real, working seal event (atomic, signed, accelerates the CIT pipeline, and — as of Fase 4 — seals a waiting Marketplace listing) — don't assume per-point checklist data exists anywhere in the DB until this gap is closed in its own pass.
+
 ### Auth / admin RBAC
 
 There is no root `middleware.ts`. Admin route protection is enforced at the edge by `netlify/edge-functions/auth-admin.ts`, bound in `netlify.toml` via `[[edge_functions]]` to `path = "/api/v1/admin/*"` — it runs before any redirect or the origin function (defense in depth), in addition to in-route `requireUser`/`requireRole` checks.
