@@ -114,7 +114,7 @@ export function CampanaNotificaciones() {
               notifs.map(n => (
                 <div key={n.id}
                   className={`flex gap-3 px-4 py-3 border-b border-slate-50 hover:bg-slate-50 cursor-pointer transition-colors ${!n.leida ? 'bg-[#2BBCB8]/5' : ''}`}
-                  onClick={() => { marcarLeida(n.id); if (n.url) window.location.href = n.url }}>
+                  onClick={() => marcarLeida(n.id)}>
                   <div className="shrink-0 mt-0.5">
                     <IconoTipo tipo={n.tipo} />
                   </div>
