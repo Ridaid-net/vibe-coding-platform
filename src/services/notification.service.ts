@@ -43,6 +43,8 @@ export type NotificacionEventoTipo =
   | 'marketplace.oferta'
   | 'escrow.fondos_retenidos'
   | 'escrow.verificacion_solicitada'
+  | 'denuncia_tercero.confirmar_propietario'
+  | 'denuncia_tercero.resuelta'
   | 'inspeccion.acta_firmada'
   | 'iot.geovalla_salida'
   | 'iot.mantenimiento'
@@ -157,6 +159,26 @@ function construirMensaje(evento: NotificacionEvento): MensajeNotificacion {
           : 'Un comprador confirmó la seña de una bici reservada. Coordiná la inspección de 20 puntos.',
         url: '/taller',
         tag: 'escrow-verificacion',
+      }
+    }
+    case 'denuncia_tercero.confirmar_propietario': {
+      return {
+        titulo: 'Alguien denunció tu bici como robada',
+        cuerpo: 'Un tercero denunció una de tus bicis como robada. Confirmá si es cierto en tu Garaje Digital.',
+        url: '/garaje',
+        tag: 'denuncia-tercero',
+      }
+    }
+    case 'denuncia_tercero.resuelta': {
+      const resolucion = texto(data, 'resolucion')
+      return {
+        titulo: 'Tu denuncia fue resuelta',
+        cuerpo:
+          resolucion === 'REEMBOLSADO'
+            ? 'Tu denuncia se confirmó: te reembolsamos la retención.'
+            : 'Tu denuncia no pudo confirmarse como legítima: la retención no se reembolsa.',
+        url: '/garaje',
+        tag: 'denuncia-tercero',
       }
     }
     case 'inspeccion.acta_firmada': {

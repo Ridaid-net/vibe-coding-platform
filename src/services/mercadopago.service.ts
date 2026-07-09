@@ -45,6 +45,8 @@ export interface CrearPreferenciaInput {
   precioARS: number
   compradorEmail?: string | null
   compradorNombre?: string | null
+  /** Fase 7 (denuncias): a que ruta notifica MercadoPago. Default: el webhook de escrow. */
+  notificationPath?: string
 }
 
 export interface PreferenciaCreada {
@@ -104,7 +106,7 @@ export async function crearPreferencia(
       pending: `${baseUrl}/checkout/resultado`,
     },
     auto_return: 'approved',
-    notification_url: `${baseUrl}/api/v1/escrow/webhook/mp`,
+    notification_url: `${baseUrl}${input.notificationPath ?? '/api/v1/escrow/webhook/mp'}`,
     external_reference: input.transaccionId,
     expires: true,
     expiration_date_from: desde,
