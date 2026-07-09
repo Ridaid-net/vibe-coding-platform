@@ -24,6 +24,19 @@ const ESTADO_PUB: Record<string, { label: string; clase: string }> = {
   VENDIDA: { label: 'Vendida', clase: 'bg-[#0a7d5a]/12 text-[#0a7d5a]' },
   CANCELADA: { label: 'Cancelada', clase: 'bg-clay/12 text-clay' },
   RECHAZADA: { label: 'Rechazada', clase: 'bg-clay/12 text-clay' },
+  PUBLICADO_PENDIENTE_CERTIFICACION: {
+    label: 'Esperando certificación del Taller',
+    clase: 'bg-amber-100 text-amber-700',
+  },
+  PUBLICADO_CERTIFICADO: {
+    label: 'Certificada — lista para vender',
+    clase: 'bg-lime/25 text-ink',
+  },
+  RESERVADO: { label: 'Reservada', clase: 'bg-amber-100 text-amber-700' },
+  EJECUTANDO_LOGISTICA: {
+    label: 'En logística — esperando el saldo',
+    clase: 'bg-amber-100 text-amber-700',
+  },
 }
 
 const ESTADO_TX: Record<string, { label: string; clase: string }> = {
@@ -42,6 +55,19 @@ const ESTADO_TX: Record<string, { label: string; clase: string }> = {
   },
   DISPUTADA: { label: 'En disputa', clase: 'bg-clay/12 text-clay' },
   CANCELADA: { label: 'Cancelada', clase: 'bg-paper-dim text-slate-warm' },
+  RESERVA_PENDIENTE: {
+    label: 'Esperando la seña del comprador',
+    clase: 'bg-amber-100 text-amber-700',
+  },
+  RESERVADA: {
+    label: 'Seña confirmada — verificación en curso',
+    clase: 'bg-amber-100 text-amber-700',
+  },
+  SALDO_PENDIENTE: {
+    label: 'Esperando el pago del saldo',
+    clase: 'bg-amber-100 text-amber-700',
+  },
+  RESERVA_VENCIDA: { label: 'Reserva vencida', clase: 'bg-clay/12 text-clay' },
 }
 
 function pesos(n: number): string {
