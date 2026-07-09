@@ -56,6 +56,11 @@ export type EscrowEstado =
   | 'COMPLETADA'
   | 'CANCELADA'
   | 'DISPUTADA'
+  // Fase 6 (CIT Completo): flujo de dos pagos, sena -> certificacion, saldo -> venta.
+  | 'RESERVA_PENDIENTE'
+  | 'RESERVADA'
+  | 'SALDO_PENDIENTE'
+  | 'RESERVA_VENCIDA'
 
 // Comision de RODAID por plan. El Plan Libre cobra 2.5%.
 const COMISIONES: Record<string, number> = {
@@ -1068,23 +1073,30 @@ export async function procesarAutoReleases(limite = 100) {
   return { procesadas: pendientes.rows.length, liberadas }
 }
 
-// ── 9. procesarReservasVencidas (Fase 5: timeout de 48hs de la reserva) ─────
+// ── 9. procesarReservasVencidas (Fase 5/6: timeout de 48hs de la reserva) ───
 
 /**
- * Barre las transacciones cuya reserva_vence_en vencio y revierte el estado
- * de la publicacion vinculada:
- *   - si ya tiene un acta de inspeccion sellada (inspeccion_sellado_id no
- *     nulo) -> PUBLICADO_CERTIFICADO (no hace falta re-disparar la
- *     verificacion al proximo comprador; la sena ya cubrio ese trabajo).
- *   - si no -> PUBLICADO_PENDIENTE_CERTIFICACION.
+ * Barre las transacciones cuya reserva_vence_en vencio y revierte tanto la
+ * publicacion como la transaccion de escrow vinculadas. Cubre los DOS puntos
+ * del ciclo donde el comprador puede no confirmar el saldo a tiempo:
+ *   - publicacion todavia en RESERVADO (el Taller nunca llego a sellar el
+ *     checklist dentro de la ventana) -> vuelve a
+ *     PUBLICADO_PENDIENTE_CERTIFICACION.
+ *   - publicacion ya en EJECUTANDO_LOGISTICA (el Taller SI sello a tiempo,
+ *     pero el comprador nunca confirmo el pago despues) -> vuelve a
+ *     PUBLICADO_CERTIFICADO (no hace falta re-disparar la verificacion al
+ *     proximo comprador).
  *
- * El chequeo real de "sigue viva esta reserva" se hace contra el estado de
- * marketplace_publicaciones (debe seguir en 'RESERVADO'), no contra
- * escrow_transacciones.estado: todavia no esta definido que valor de
- * escrow_transaccion_estado representa "reservado, esperando confirmacion de
- * pago" (lo define la Fase 6, que es la que va a poblar reserva_vence_en por
- * primera vez). Hoy esta columna nunca se puebla, asi que esta funcion es un
- * no-op en la practica hasta que la Fase 6 exista.
+ * El lado del escrow distingue si la sena llego a confirmarse: RESERVADA
+ * (plata real retenida, financio el trabajo del Taller si llego a hacerse)
+ * pasa a RESERVA_VENCIDA -- no se reembolsa, a diferencia de CANCELADA.
+ * RESERVA_PENDIENTE (la sena nunca se confirmo) pasa directo a CANCELADA.
+ *
+ * Esta funcion NUNCA toca pagos_liquidaciones: el pago ALIADO_FEE_VERIFICACION
+ * al Taller, si corresponde, ya quedo registrado en aprobarInspeccionFisica
+ * en el momento del sellado -- registrarlo tambien aca duplicaria el pago en
+ * el camino de venta exitosa, o lo dejaria sin registrar en ese mismo camino
+ * si solo se hiciera aca. El sellado es la unica fuente de verdad.
  *
  * TODO(unificar retries): ver la nota en procesarAutoReleases -- esta funcion
  * tiene exactamente la misma falta de backoff/dead-letter.
@@ -1124,28 +1136,43 @@ export async function procesarReservasVencidas(limite = 100) {
         )
         const pub = pubRes.rows[0]
         // Ya se resolvio de otra forma (venta confirmada, cancelada, etc.):
-        // no revertir un estado que ya avanzo.
-        if (!pub || pub.estado !== 'RESERVADO') {
+        // no revertir un estado que ya avanzo. Cubre AMBOS puntos del ciclo
+        // donde el comprador puede no confirmar el saldo a tiempo: antes del
+        // sellado (RESERVADO) y despues (EJECUTANDO_LOGISTICA, cuando el
+        // Taller ya sello el checklist dentro de la ventana pero el
+        // comprador nunca completo el pago).
+        if (!pub || (pub.estado !== 'RESERVADO' && pub.estado !== 'EJECUTANDO_LOGISTICA')) {
           return
         }
 
-        const estadoNuevo = pub.inspeccion_sellado_id
+        const yaSellada = pub.inspeccion_sellado_id !== null
+        const estadoPublicacionNuevo = yaSellada
           ? 'PUBLICADO_CERTIFICADO'
           : 'PUBLICADO_PENDIENTE_CERTIFICACION'
+        // Si la sena ya se habia confirmado (RESERVADA), la plata queda
+        // retenida por el trabajo de verificacion ya hecho -- no se
+        // reembolsa (RESERVA_VENCIDA, distinto de CANCELADA). Si nunca se
+        // confirmo (RESERVA_PENDIENTE), no hay plata real retenida: cancela
+        // sin mas tramite. El pago al Taller (ALIADO_FEE_VERIFICACION), si
+        // corresponde, ya quedo registrado en aprobarInspeccionFisica al
+        // sellar -- esta funcion no lo toca en ningun caso.
+        const estadoEscrowNuevo = tx.estado === 'RESERVADA' ? 'RESERVA_VENCIDA' : 'CANCELADA'
 
         await client.query(
           `UPDATE marketplace_publicaciones SET estado = $2 WHERE id = $1`,
-          [pub.id, estadoNuevo]
+          [pub.id, estadoPublicacionNuevo]
         )
         await client.query(
-          `UPDATE escrow_transacciones SET reserva_vence_en = NULL, updated_at = NOW() WHERE id = $1`,
-          [tx.id]
+          `UPDATE escrow_transacciones SET estado = $2, reserva_vence_en = NULL, updated_at = NOW() WHERE id = $1`,
+          [tx.id, estadoEscrowNuevo]
         )
         await logEvento(client, {
           transaccionId: tx.id,
           tipo: 'RESERVA_VENCIDA',
+          estadoAnterior: tx.estado,
+          estadoNuevo: estadoEscrowNuevo,
           actorRol: 'sistema',
-          metadata: { publicacionId: pub.id, estadoNuevo },
+          metadata: { publicacionId: pub.id, estadoPublicacionNuevo },
         })
 
         revertidas.push(tx.id)

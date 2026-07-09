@@ -136,6 +136,63 @@ export async function registrarLiquidacionVendedor(
   return id
 }
 
+// ── Fee de Verificacion del CIT Completo (Fase 6, al sellar el checklist) ────
+
+export interface LiquidacionAliadoFeeVerificacionInput {
+  escrowTransaccionId: string
+  aliadoId: string
+  monto: number
+}
+
+/**
+ * Registra la deuda de RODAID hacia el Taller Aliado por el Fee de
+ * Verificacion Tecnica del CIT Completo. Se llama desde
+ * aprobarInspeccionFisica (inspeccion.service.ts), en el momento exacto en
+ * que el Taller sella el checklist de 20 puntos -- NUNCA desde
+ * procesarReservasVencidas (escrow.service.ts), sin importar si la reserva
+ * despues se concreta en venta o vence: el sellado es la unica fuente de
+ * verdad de "el Taller hizo el trabajo", asi que es el unico lugar que
+ * registra este pago. El monto ya viene congelado desde la reserva
+ * (escrow_transacciones.fee_verificacion_ars) -- esta funcion no recalcula
+ * nada. Idempotente por el mismo indice unico que el resto de las
+ * liquidaciones.
+ */
+export async function registrarLiquidacionAliadoFeeVerificacion(
+  client: DbClient,
+  input: LiquidacionAliadoFeeVerificacionInput
+): Promise<string | null> {
+  const res = await client.query<{ id: string }>(
+    `
+      INSERT INTO pagos_liquidaciones
+        (tipo, estado, beneficiario_id, beneficiario_tipo, origen_tipo, origen_id,
+         transaccion_id, monto, metadata)
+      VALUES ('ALIADO_FEE_VERIFICACION', 'PENDIENTE', $1, 'aliado', 'ESCROW', $2,
+              $2, $3, $4::jsonb)
+      ON CONFLICT (origen_tipo, origen_id, tipo, beneficiario_id) DO NOTHING
+      RETURNING id
+    `,
+    [
+      input.aliadoId,
+      input.escrowTransaccionId,
+      round2(input.monto),
+      JSON.stringify({ concepto: 'fee_verificacion_cit_completo' }),
+    ]
+  )
+  const id = res.rows[0]?.id ?? null
+  if (id) {
+    await registrarPagoLog(client, {
+      evento: 'ALIADO_FEE_VERIFICACION_REGISTRADA',
+      origenTipo: 'ESCROW',
+      origenId: input.escrowTransaccionId,
+      monto: round2(input.monto),
+      beneficiarioId: input.aliadoId,
+      actorRol: 'sistema',
+      metadata: { concepto: 'fee_verificacion_cit_completo' },
+    })
+  }
+  return id
+}
+
 // ── Retribucion al Taller Aliado (al validarse un CIT) ────────────────────────
 
 interface AliadoRetribucion {
