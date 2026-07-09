@@ -15,19 +15,6 @@ export const runtime = 'nodejs'
 interface Body {
   nombre?: unknown
   email?: unknown
-  rol?: unknown
-}
-
-const ROLES_DEMO: ReadonlySet<string> = new Set([
-  'ciclista',
-  'inspector',
-  'admin',
-  'aliado',
-])
-
-/** Wallet de demo (formato EVM) para ejercitar el panel de inspecciones. */
-function walletDemo(): string {
-  return `0x${randomBytes(20).toString('hex')}`
 }
 
 /**
@@ -42,16 +29,27 @@ function walletDemo(): string {
  * devuelve tokens validos. Asi el `propietario_id` / `vendedor_id` que produce
  * este usuario referencia siempre una fila real y respeta las claves foraneas.
  *
- * Queda deshabilitado en modo LIVE de MercadoPago: con dinero real solo se
- * permite la autenticacion definitiva (registro / login).
+ * Deshabilitado en produccion real (CONTEXT === 'production', la senal que
+ * inyecta Netlify, no falsificable por el caller) y en modo LIVE de
+ * MercadoPago: con dinero real solo se permite la autenticacion definitiva
+ * (registro / login).
+ *
+ * SEGURIDAD: este endpoint NO tiene autenticacion. Hasta el fix de 2026-07-08
+ * el rol se tomaba de `body.rol` sin ninguna restriccion — cualquiera en
+ * internet podia pedir `{"rol":"admin"}` y obtener un AccessToken real con
+ * privilegios de admin (confirmado explotable en produccion). El rol queda
+ * hardcodeado a 'ciclista', sin excepcion, sin importar que mande el body.
+ * Efecto colateral aceptado: ensureRoleSession() (lib/session.ts), que usaban
+ * los paneles de inspector/admin para auto-elevarse en preview/dev, ya no
+ * puede elevar el rol via este endpoint en ningun entorno.
  */
 export async function POST(req: Request) {
   try {
-    if (getModo() === 'LIVE') {
+    if (getModo() === 'LIVE' || process.env.CONTEXT === 'production') {
       throw new ApiError(
         403,
         'DEMO_DESHABILITADO',
-        'La sesion de prueba no esta disponible en modo LIVE.'
+        'La sesion de prueba no esta disponible en produccion.'
       )
     }
 
@@ -61,14 +59,10 @@ export async function POST(req: Request) {
       optionalText(body.email)?.toLowerCase() ??
       `demo-${randomUUID().slice(0, 12)}@rodaid.test`
 
-    // Rol de demo (solo fuera de LIVE): permite ejercitar el panel de
-    // inspecciones (Hito 11) con una cuenta inspector/aliado/admin de prueba.
-    const rolPedido = optionalText(body.rol)?.toLowerCase()
-    const rol: UsuarioRol = (
-      rolPedido && ROLES_DEMO.has(rolPedido) ? rolPedido : 'ciclista'
-    ) as UsuarioRol
-    // Los roles de inspeccion reciben una wallet de demo para poder firmar.
-    const wallet = rol === 'inspector' || rol === 'admin' ? walletDemo() : null
+    // SEGURIDAD: nunca aceptar el rol del caller (ver nota arriba). Hardcodeado
+    // sin excepcion, sin importar que pida el body.
+    const rol: UsuarioRol = 'ciclista'
+    const wallet: string | null = null
 
     // Contrasena aleatoria (no se devuelve): la cuenta demo opera por tokens.
     const passwordHash = await hashPassword(randomBytes(24).toString('base64url'))
