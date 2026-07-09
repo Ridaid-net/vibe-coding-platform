@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { ApiError, getPool, type DbClient } from '@/lib/marketplace'
 import {
+  buscarPagosPorExternalReference,
   consultarPago,
   crearPreferencia,
   emitirReembolso,
@@ -16,6 +17,11 @@ import {
   notificarCompraCompletada,
   notificarVentaConfirmada,
 } from '@/src/services/notif.service'
+import {
+  resolverAliadoPorBicicleta,
+  contarTalleresAliadosActivos,
+} from '@/src/services/aliados.service'
+import { calcularEconomiaTransaccionCIT } from '@/src/services/pricing-cit.service'
 
 /**
  * Dispara, fuera de la transaccion (best-effort), las notificaciones de cierre de una
@@ -47,6 +53,35 @@ async function notificarOperacionCompletada(
  *   abrirDisputa()             -> DISPUTADA  (fondos en hold)
  *   resolverDisputa(admin)     -> COMPLETADA (vendedor) | CANCELADA (comprador)
  *   procesarAutoReleases()     -> COMPLETADA (5 dias sin accion del comprador)
+ *
+ *   Fase 6 (CIT Completo) — flujo de DOS pagos secuenciales, sena -> saldo,
+ *   O de un pago unico si la bici ya esta certificada (ver
+ *   iniciarReservaCitCompleto):
+ *   iniciarReservaCitCompleto()  -> RESERVA_PENDIENTE (sena, publicacion RESERVADO)
+ *                                   o SALDO_PENDIENTE directo (bici ya certificada,
+ *                                   publicacion EJECUTANDO_LOGISTICA, sin sena)
+ *   webhookPago(sena aprobada)   -> RESERVADA (financia la verificacion del Taller)
+ *   aprobarInspeccionFisica()    -> (inspeccion.service.ts) publicacion EJECUTANDO_LOGISTICA
+ *   confirmarPagoCitCompleto()   -> SALDO_PENDIENTE (saldo: precio + logistica)
+ *   webhookPago(saldo aprobado)  -> FONDOS_RETENIDOS (reserva_vence_en se limpia aca)
+ *
+ *   TODO(cierre CIT Completo): NO EXISTE todavia el endpoint que confirma la
+ *   venta/entrega para este flujo. Una transaccion de CIT Completo que llega a
+ *   FONDOS_RETENIDOS via SALDO_PENDIENTE se queda ATASCADA ahi para siempre:
+ *   nadie cobra nunca -- ni el vendedor (registrarLiquidacionVendedor nunca se
+ *   llama), ni el Taller Aliado por logistica/exito (no existen todavia
+ *   registrarLiquidacionAliadoFeeLogistica/Exito, a diferencia del fee de
+ *   verificacion que SI se registra en aprobarInspeccionFisica). Los
+ *   endpoints genericos confirmarEnvio/confirmarEntrega NO son la solucion:
+ *   representan el envio postal del flujo generico, no la logistica que
+ *   coordina el Taller en CIT Completo, y de todas formas solo liquidarian al
+ *   vendedor, no al Taller. Falta construir ese cierre como pieza propia.
+ *
+ *   Auditoria de integridad de dinero (misma fecha): procesarReservasVencidas()
+ *   reconcilia contra MercadoPago (buscarPagosPorExternalReference) ANTES de
+ *   revertir cualquier reserva con un pago PENDIENTE -- un webhook perdido o
+ *   tardio ya no alcanza para cancelar una reserva realmente pagada. Ver el
+ *   comentario de esa funcion para el detalle completo.
  */
 
 export type EscrowEstado =
@@ -95,6 +130,15 @@ export interface TransaccionRow {
   expira_en: string | null
   created_at: string
   updated_at: string
+  // Fase 6 (CIT Completo): snapshot congelado de fees, ver pricing-cit.service.ts
+  aliado_id: string | null
+  disparo_verificacion: boolean
+  fee_verificacion_ars: string
+  fee_logistica_cobrado_comprador_ars: string
+  fee_logistica_pagado_taller_ars: string
+  fee_exito_total_ars: string
+  fee_exito_rodaid_ars: string
+  fee_exito_taller_ars: string
 }
 
 export interface PagoRow {
@@ -152,9 +196,18 @@ export function mapTransaccion(row: TransaccionRow) {
     envioConfirmadoEn: row.envio_confirmado_en,
     entregaConfirmadaEn: row.entrega_confirmada_en,
     autoReleaseEn: row.auto_release_en,
+    reservaVenceEn: row.reserva_vence_en,
     expiraEn: row.expira_en,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    aliadoId: row.aliado_id,
+    disparoVerificacion: row.disparo_verificacion,
+    feeVerificacionARS: Number(row.fee_verificacion_ars),
+    feeLogisticaCobradoCompradorARS: Number(row.fee_logistica_cobrado_comprador_ars),
+    feeLogisticaPagadoTallerARS: Number(row.fee_logistica_pagado_taller_ars),
+    feeExitoTotalARS: Number(row.fee_exito_total_ars),
+    feeExitoRodaidARS: Number(row.fee_exito_rodaid_ars),
+    feeExitoTallerARS: Number(row.fee_exito_taller_ars),
   }
 }
 
@@ -238,6 +291,10 @@ async function logEvento(
 
 function gatewayLabel(modo: MercadoPagoModo): string {
   return modo === 'STUB' ? 'stub' : 'mercadopago'
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100
 }
 
 /** Libera los fondos al vendedor y marca la publicacion como VENDIDA. */
@@ -524,6 +581,13 @@ export interface ProcesarPagoInput {
 
 export type AccionWebhook = 'APROBADO' | 'RECHAZADO' | 'IGNORADO'
 
+/** Transicion de escrow que produce un pago APROBADO, segun el estado ACTUAL de la fila (nunca el payload). */
+const TRANSICIONES_APROBADO: Partial<Record<EscrowEstado, EscrowEstado>> = {
+  DEPOSITO_PENDIENTE: 'FONDOS_RETENIDOS',
+  RESERVA_PENDIENTE: 'RESERVADA',
+  SALDO_PENDIENTE: 'FONDOS_RETENIDOS',
+}
+
 /**
  * Procesa una notificacion de pago: re-consulta el estado real a MercadoPago
  * (nunca confia en el payload) y transiciona el escrow. Idempotente.
@@ -556,13 +620,25 @@ export async function webhookPago(
         return { accion: 'IGNORADO', transaccionId }
       }
 
-      // Los fondos ya estan retenidos (por otro pago): no re-transicionar.
-      if (tx.estado !== 'DEPOSITO_PENDIENTE') {
+      const estadoNuevo = TRANSICIONES_APROBADO[tx.estado]
+      // Los fondos ya estan en otro estado (retenidos por otro pago, reserva
+      // vencida, disputa, etc.): no re-transicionar.
+      if (!estadoNuevo) {
+        // Un pago aprobado que llega para una fila ya CANCELADA/RESERVA_VENCIDA
+        // es plata real que quedo sin reconciliar (webhook tardio + barrido que
+        // ya actuo, carrera residual incluso con la reconciliacion de
+        // procesarReservasVencidas). Nunca debe pasar en silencio.
+        if (tx.estado === 'CANCELADA' || tx.estado === 'RESERVA_VENCIDA') {
+          console.error(
+            `[escrow] pago APROBADO de MercadoPago llego para una transaccion ya ${tx.estado} -- posible plata sin reconciliar.`,
+            { transaccionId, paymentId: input.paymentId, monto: pago.monto, estado: tx.estado }
+          )
+        }
         return { accion: 'IGNORADO', transaccionId }
       }
 
-      // Reclamar la fila PENDIENTE; si un intento previo la consumio (rechazo y
-      // reintento con binary_mode:false), registrar una fila nueva para el pago.
+      // Reclamar la fila PENDIENTE (sena o saldo, segun cual este vigente); si
+      // un intento previo la consumio, registrar una fila nueva para el pago.
       const actualizado = await client.query(
         `
           UPDATE mp_pagos
@@ -599,25 +675,65 @@ export async function webhookPago(
         )
       }
 
+      if (tx.estado === 'DEPOSITO_PENDIENTE') {
+        await client.query(
+          `
+            UPDATE escrow_transacciones
+            SET estado = 'FONDOS_RETENIDOS', deposito_confirmado_en = NOW(), updated_at = NOW()
+            WHERE id = $1
+          `,
+          [transaccionId]
+        )
+        await logEvento(client, {
+          transaccionId,
+          tipo: 'DEPOSITO_CONFIRMADO',
+          estadoAnterior: tx.estado,
+          estadoNuevo,
+          actorRol: 'gateway',
+          metadata: { paymentId: input.paymentId, monto: pago.monto },
+        })
+        return { accion: 'APROBADO', transaccionId, vendedorId: tx.vendedor_id }
+      }
+
+      if (tx.estado === 'RESERVA_PENDIENTE') {
+        // Fase 6: la sena se confirmo -- financia la verificacion del Taller.
+        await client.query(
+          `UPDATE escrow_transacciones SET estado = 'RESERVADA', updated_at = NOW() WHERE id = $1`,
+          [transaccionId]
+        )
+        await logEvento(client, {
+          transaccionId,
+          tipo: 'RESERVA_CONFIRMADA',
+          estadoAnterior: tx.estado,
+          estadoNuevo,
+          actorRol: 'gateway',
+          metadata: { paymentId: input.paymentId, monto: pago.monto },
+        })
+        return { accion: 'APROBADO', transaccionId, aliadoId: tx.aliado_id }
+      }
+
+      // tx.estado === 'SALDO_PENDIENTE'
+      // TODO(cierre CIT Completo): ver el TODO en el comentario de la maquina
+      // de estados al inicio del archivo -- este UPDATE deja la transaccion en
+      // FONDOS_RETENIDOS pero no hay ningun endpoint que la libere todavia.
+      // reserva_vence_en se limpia ACA: una vez cobrado el saldo completo, el
+      // reloj de procesarReservasVencidas() debe dejar de correr para esta
+      // fila -- si no, el barrido la vuelve a encontrar (pub.estado sigue en
+      // EJECUTANDO_LOGISTICA, nadie lo cambia despues de esto) y la degrada a
+      // CANCELADA pese a estar totalmente pagada.
       await client.query(
-        `
-          UPDATE escrow_transacciones
-          SET estado = 'FONDOS_RETENIDOS', deposito_confirmado_en = NOW(), updated_at = NOW()
-          WHERE id = $1
-        `,
+        `UPDATE escrow_transacciones SET estado = 'FONDOS_RETENIDOS', reserva_vence_en = NULL, updated_at = NOW() WHERE id = $1`,
         [transaccionId]
       )
-
       await logEvento(client, {
         transaccionId,
-        tipo: 'DEPOSITO_CONFIRMADO',
+        tipo: 'SALDO_CONFIRMADO',
         estadoAnterior: tx.estado,
-        estadoNuevo: 'FONDOS_RETENIDOS',
+        estadoNuevo,
         actorRol: 'gateway',
         metadata: { paymentId: input.paymentId, monto: pago.monto },
       })
-
-      return { accion: 'APROBADO', transaccionId, vendedorId: tx.vendedor_id }
+      return { accion: 'APROBADO', transaccionId }
     }
 
     if (pago.status === 'rejected' || pago.status === 'cancelled') {
@@ -644,6 +760,7 @@ export async function webhookPago(
     accion: AccionWebhook
     transaccionId: string | null
     vendedorId?: string
+    aliadoId?: string | null
   }
 
   // Hito 10: fondos retenidos -> avisar al vendedor (best-effort, fuera de la tx).
@@ -655,7 +772,429 @@ export async function webhookPago(
     })
   }
 
+  // Fase 6: sena confirmada -> avisar al Taller Aliado que hay una verificacion esperando.
+  if (resultado.accion === 'APROBADO' && resultado.aliadoId) {
+    const aliadoUsuario = await getPool().query<{ usuario_id: string | null }>(
+      `SELECT usuario_id FROM aliados WHERE id = $1`,
+      [resultado.aliadoId]
+    )
+    const usuarioId = aliadoUsuario.rows[0]?.usuario_id ?? null
+    if (usuarioId) {
+      await emitirEvento({
+        tipo: 'escrow.verificacion_solicitada',
+        usuarioId,
+        data: { transaccionId: resultado.transaccionId },
+      })
+    }
+  }
+
   return { accion: resultado.accion, transaccionId: resultado.transaccionId }
+}
+
+// ── 2b. iniciarReservaCitCompleto (Fase 6: reserva del comprador) ───────────
+
+export interface IniciarReservaCitCompletoInput {
+  publicacionId: string
+  compradorId: string
+  compradorEmail?: string | null
+  compradorNombre?: string | null
+}
+
+/**
+ * Primer paso del flujo de CIT Completo: reservar. Solo aplica a publicaciones
+ * en el ciclo de CIT Completo (PUBLICADO_PENDIENTE_CERTIFICACION o
+ * PUBLICADO_CERTIFICADO) -- una publicacion 'ACTIVA' generica sigue usando
+ * iniciarCompra()/comprar, nunca este flujo.
+ *
+ * Opcion A (confirmada): si la bici no tiene un Taller Aliado vinculado via
+ * aliado_servicios, bloquea con 422 SIN_TALLER_VINCULADO -- no hay asignacion
+ * dinamica todavia (ver resolverAliadoPorBicicleta en aliados.service.ts).
+ *
+ * Fase 3: PUBLICADO_CERTIFICADO ya paso por una inspeccion APROBADA (de una
+ * reserva anterior vencida, o de una certificacion directa). Un segundo
+ * comprador NO dispara ni paga una nueva verificacion -- el Taller ya cobro
+ * el fee_verificacion_ars esa unica vez (registrarLiquidacionAliadoFeeVerificacion,
+ * en aprobarInspeccionFisica). Por eso esta reserva salta directo a
+ * EJECUTANDO_LOGISTICA (nada que inspeccionar) y cobra el saldo completo
+ * (precio + logistica) en un solo pago (concepto 'saldo'), sin pasar por
+ * RESERVA_PENDIENTE/RESERVADA -- confirmarPagoCitCompleto no aplica a este
+ * camino, nunca va a encontrar una fila RESERVADA para el.
+ *
+ * marketplace_publicaciones transiciona ACA, al crear la preferencia -- NO
+ * espera a que el pago se confirme. Mismo patron anti-doble-reserva que
+ * iniciarCompra() (que pausa la publicacion de igual forma): si el pago nunca
+ * llega, procesarReservasVencidas() revierte la publicacion a los 48hs.
+ */
+export async function iniciarReservaCitCompleto(input: IniciarReservaCitCompletoInput) {
+  const pool = getPool()
+
+  const pre = await pool.query<{
+    id: string
+    vendedor_id: string
+    estado: string
+    titulo: string
+    descripcion: string
+    precio_ars: string
+    bicicleta_id: string
+  }>(
+    `
+      SELECT id, vendedor_id, estado, titulo, descripcion, precio_ars, bicicleta_id
+      FROM marketplace_publicaciones
+      WHERE id = $1
+    `,
+    [input.publicacionId]
+  )
+
+  const pub = pre.rows[0]
+  if (!pub) {
+    throw new ApiError(404, 'PUBLICACION_NOT_FOUND', 'La publicacion no existe.')
+  }
+  if (
+    pub.estado !== 'PUBLICADO_PENDIENTE_CERTIFICACION' &&
+    pub.estado !== 'PUBLICADO_CERTIFICADO'
+  ) {
+    throw new ApiError(
+      409,
+      'PUBLICACION_NO_DISPONIBLE',
+      'La publicacion no esta disponible para reservar.'
+    )
+  }
+  if (pub.vendedor_id === input.compradorId) {
+    throw new ApiError(422, 'COMPRADOR_ES_VENDEDOR', 'No podes reservar tu propia publicacion.')
+  }
+
+  // El Taller sigue siendo necesario en ambos casos: si hay que verificar,
+  // ejecuta la inspeccion; si la bici ya esta certificada, es quien cobra
+  // logistica/exito igual (resolverAliadoPorBicicleta es "el vinculo mas
+  // reciente", no necesariamente el que certifico originalmente).
+  const aliadoId = await resolverAliadoPorBicicleta(pub.bicicleta_id)
+  if (!aliadoId) {
+    const activos = await contarTalleresAliadosActivos()
+    console.warn(
+      `[escrow] /reservar bloqueado por SIN_TALLER_VINCULADO (publicacion ${pub.id}). Talleres Aliados activos: ${activos}.`
+    )
+    throw new ApiError(
+      422,
+      'SIN_TALLER_VINCULADO',
+      'Esta bicicleta no tiene un Taller Aliado vinculado. No se puede reservar todavia.'
+    )
+  }
+
+  const economia = await calcularEconomiaTransaccionCIT(Number(pub.precio_ars))
+  const yaCertificada = pub.estado === 'PUBLICADO_CERTIFICADO'
+
+  const plan = yaCertificada
+    ? {
+        estadoEscrow: 'SALDO_PENDIENTE' as const,
+        estadoPublicacion: 'EJECUTANDO_LOGISTICA' as const,
+        concepto: 'saldo' as const,
+        montoARS: round2(
+          economia.valorVentaARS + economia.ejecucion.feeLogisticaCobradoCompradorARS
+        ),
+        titulo: `Saldo — ${pub.titulo}`,
+        descripcion:
+          'Precio de la bici + logistica de entrega coordinada por el Taller Aliado (bici ya certificada).',
+        feeVerificacionARS: 0,
+        feeLogisticaCobradoCompradorARS: economia.ejecucion.feeLogisticaCobradoCompradorARS,
+        feeLogisticaPagadoTallerARS: economia.ejecucion.feeLogisticaPagadoTallerARS,
+        feeExitoTotalARS: economia.ejecucion.feeExitoTotalARS,
+        feeExitoRodaidARS: economia.ejecucion.feeExitoRodaidARS,
+        feeExitoTallerARS: economia.ejecucion.feeExitoTallerARS,
+        comisionRodaid: economia.ejecucion.feeExitoRodaidARS,
+        montoVendedor: round2(economia.valorVentaARS - economia.ejecucion.feeExitoTotalARS),
+      }
+    : {
+        estadoEscrow: 'RESERVA_PENDIENTE' as const,
+        estadoPublicacion: 'RESERVADO' as const,
+        concepto: 'sena' as const,
+        montoARS: economia.certificacion.precioPublicadoARS,
+        titulo: `Sena de verificacion — ${pub.titulo}`,
+        descripcion: 'Financia la certificacion tecnica de 20 puntos del Taller Aliado.',
+        feeVerificacionARS: economia.certificacion.feeVerificacionARS,
+        feeLogisticaCobradoCompradorARS: 0,
+        feeLogisticaPagadoTallerARS: 0,
+        feeExitoTotalARS: 0,
+        feeExitoRodaidARS: 0,
+        feeExitoTallerARS: 0,
+        comisionRodaid: economia.certificacion.margenRodaidARS,
+        montoVendedor: 0,
+      }
+
+  const transaccionId = randomUUID()
+
+  const preferencia = await crearPreferencia({
+    transaccionId,
+    titulo: plan.titulo,
+    descripcion: plan.descripcion,
+    precioARS: plan.montoARS,
+    compradorEmail: input.compradorEmail,
+    compradorNombre: input.compradorNombre,
+  })
+  const gateway = gatewayLabel(preferencia.gateway)
+
+  try {
+    const transaccion = await withTx(async (client) => {
+      const locked = await client.query<{ estado: string }>(
+        `SELECT estado FROM marketplace_publicaciones WHERE id = $1 FOR UPDATE`,
+        [input.publicacionId]
+      )
+      // Re-verifica bajo lock el MISMO estado detectado antes de llamar a MP
+      // (evita una carrera con otra reserva o con una re-inspeccion concurrente).
+      if (locked.rows[0]?.estado !== pub.estado) {
+        throw new ApiError(
+          409,
+          'PUBLICACION_NO_DISPONIBLE',
+          'La publicacion ya no esta disponible para reservar.'
+        )
+      }
+
+      const txRes = await client.query<TransaccionRow>(
+        `
+          INSERT INTO escrow_transacciones (
+            id, publicacion_id, comprador_id, vendedor_id, estado, plan,
+            precio_ars, comision_rodaid, monto_vendedor, gateway,
+            preference_id, init_point, expira_en, reserva_vence_en,
+            aliado_id, disparo_verificacion, fee_verificacion_ars,
+            fee_logistica_cobrado_comprador_ars, fee_logistica_pagado_taller_ars,
+            fee_exito_total_ars, fee_exito_rodaid_ars, fee_exito_taller_ars
+          )
+          VALUES ($1, $2, $3, $4, $5, 'LIBRE',
+                  $6, $7, $8, $9, $10, $11, $12, NOW() + INTERVAL '48 hours',
+                  $13, $14, $15, $16, $17, $18, $19, $20)
+          RETURNING *
+        `,
+        [
+          transaccionId,
+          input.publicacionId,
+          input.compradorId,
+          pub.vendedor_id,
+          plan.estadoEscrow,
+          Number(pub.precio_ars),
+          plan.comisionRodaid,
+          plan.montoVendedor,
+          gateway,
+          preferencia.preferenceId,
+          preferencia.initPoint,
+          preferencia.expiraEn,
+          aliadoId,
+          !yaCertificada,
+          plan.feeVerificacionARS,
+          plan.feeLogisticaCobradoCompradorARS,
+          plan.feeLogisticaPagadoTallerARS,
+          plan.feeExitoTotalARS,
+          plan.feeExitoRodaidARS,
+          plan.feeExitoTallerARS,
+        ]
+      )
+
+      await client.query(
+        `UPDATE marketplace_publicaciones SET estado = $2 WHERE id = $1`,
+        [input.publicacionId, plan.estadoPublicacion]
+      )
+
+      await client.query(
+        `
+          INSERT INTO mp_pagos (transaccion_id, preference_id, estado, monto, gateway, concepto)
+          VALUES ($1, $2, 'PENDIENTE', $3, $4, $5)
+        `,
+        [transaccionId, preferencia.preferenceId, plan.montoARS, gateway, plan.concepto]
+      )
+
+      await logEvento(client, {
+        transaccionId,
+        tipo: yaCertificada ? 'SALDO_INICIADO_SIN_VERIFICACION' : 'RESERVA_INICIADA',
+        estadoNuevo: plan.estadoEscrow,
+        actorId: input.compradorId,
+        actorRol: 'comprador',
+        metadata: {
+          preferenceId: preferencia.preferenceId,
+          gateway,
+          aliadoId,
+          disparoVerificacion: !yaCertificada,
+        },
+      })
+
+      return txRes.rows[0]
+    })
+
+    return {
+      transaccion: mapTransaccion(transaccion),
+      pago: {
+        preferenceId: preferencia.preferenceId,
+        initPoint: preferencia.initPoint,
+        sandboxPoint: preferencia.sandboxPoint,
+        gateway: preferencia.gateway,
+        expiraEn: preferencia.expiraEn,
+        montoARS: plan.montoARS,
+        concepto: plan.concepto,
+      },
+    }
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new ApiError(
+        409,
+        'PUBLICACION_NO_DISPONIBLE',
+        'Ya existe una reserva en curso para esta publicacion.'
+      )
+    }
+    throw error
+  }
+}
+
+// ── 2c. confirmarPagoCitCompleto (Fase 6: saldo, precio + logistica) ────────
+
+export interface ConfirmarPagoCitCompletoInput {
+  publicacionId: string
+  compradorId: string
+  compradorEmail?: string | null
+  compradorNombre?: string | null
+}
+
+/**
+ * Segundo pago del flujo de CIT Completo: el saldo. Solo se puede iniciar
+ * cuando el Taller ya sello la verificacion (publicacion EJECUTANDO_LOGISTICA)
+ * -- si el Taller todavia no inspecciono, 409 VERIFICACION_PENDIENTE. No
+ * aplica al camino de bici-ya-certificada (iniciarReservaCitCompleto ya cobro
+ * el saldo completo en un solo pago para ese caso).
+ *
+ * El comprador paga precio de venta + logistica-a-costo-mas-comision-pasarela
+ * (feeLogisticaCobradoCompradorARS); el fee de exito NO se le cobra aparte al
+ * comprador -- se descuenta de lo que recibe el vendedor (ver
+ * pricing-cit.service.ts). Los 5 montos de ejecucion se congelan aca mismo.
+ */
+export async function confirmarPagoCitCompleto(input: ConfirmarPagoCitCompletoInput) {
+  const pool = getPool()
+
+  const pubRes = await pool.query<{ id: string; estado: string; titulo: string }>(
+    `SELECT id, estado, titulo FROM marketplace_publicaciones WHERE id = $1`,
+    [input.publicacionId]
+  )
+  const pub = pubRes.rows[0]
+  if (!pub) {
+    throw new ApiError(404, 'PUBLICACION_NOT_FOUND', 'La publicacion no existe.')
+  }
+  if (pub.estado !== 'EJECUTANDO_LOGISTICA') {
+    throw new ApiError(
+      409,
+      'VERIFICACION_PENDIENTE',
+      'Todavia no se completo la verificacion tecnica del Taller Aliado.'
+    )
+  }
+
+  const txRes = await pool.query<TransaccionRow>(
+    `SELECT * FROM escrow_transacciones WHERE publicacion_id = $1 AND estado = 'RESERVADA'`,
+    [input.publicacionId]
+  )
+  const tx = txRes.rows[0]
+  if (!tx) {
+    throw new ApiError(
+      404,
+      'TRANSACCION_NOT_FOUND',
+      'No hay una reserva con sena confirmada esperando el saldo para esta publicacion.'
+    )
+  }
+  if (tx.comprador_id !== input.compradorId) {
+    throw new ApiError(403, 'NOT_BUYER', 'Solo el comprador de la reserva puede confirmar el saldo.')
+  }
+
+  const economia = await calcularEconomiaTransaccionCIT(Number(tx.precio_ars))
+  const saldoARS = round2(economia.valorVentaARS + economia.ejecucion.feeLogisticaCobradoCompradorARS)
+
+  const preferencia = await crearPreferencia({
+    transaccionId: tx.id,
+    titulo: `Saldo — ${pub.titulo}`,
+    descripcion: 'Precio de la bici + logistica de entrega coordinada por el Taller Aliado.',
+    precioARS: saldoARS,
+    compradorEmail: input.compradorEmail,
+    compradorNombre: input.compradorNombre,
+  })
+  const gateway = gatewayLabel(preferencia.gateway)
+
+  const transaccion = await withTx(async (client) => {
+    const locked = await lockTransaccion(client, tx.id)
+    if (locked.estado !== 'RESERVADA') {
+      throw new ApiError(409, 'ESTADO_INVALIDO', 'La reserva ya no esta en un estado valido para el saldo.')
+    }
+    if (locked.comprador_id !== input.compradorId) {
+      throw new ApiError(403, 'NOT_BUYER', 'Solo el comprador de la reserva puede confirmar el saldo.')
+    }
+
+    const pubLocked = await client.query<{ estado: string }>(
+      `SELECT estado FROM marketplace_publicaciones WHERE id = $1 FOR UPDATE`,
+      [input.publicacionId]
+    )
+    if (pubLocked.rows[0]?.estado !== 'EJECUTANDO_LOGISTICA') {
+      throw new ApiError(
+        409,
+        'VERIFICACION_PENDIENTE',
+        'Todavia no se completo la verificacion tecnica del Taller Aliado.'
+      )
+    }
+
+    const updated = await client.query<TransaccionRow>(
+      `
+        UPDATE escrow_transacciones
+        SET estado = 'SALDO_PENDIENTE',
+            preference_id = $2,
+            init_point = $3,
+            fee_logistica_cobrado_comprador_ars = $4,
+            fee_logistica_pagado_taller_ars = $5,
+            fee_exito_total_ars = $6,
+            fee_exito_rodaid_ars = $7,
+            fee_exito_taller_ars = $8,
+            comision_rodaid = $9,
+            monto_vendedor = $10,
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING *
+      `,
+      [
+        tx.id,
+        preferencia.preferenceId,
+        preferencia.initPoint,
+        economia.ejecucion.feeLogisticaCobradoCompradorARS,
+        economia.ejecucion.feeLogisticaPagadoTallerARS,
+        economia.ejecucion.feeExitoTotalARS,
+        economia.ejecucion.feeExitoRodaidARS,
+        economia.ejecucion.feeExitoTallerARS,
+        round2(Number(locked.comision_rodaid) + economia.ejecucion.feeExitoRodaidARS),
+        round2(economia.valorVentaARS - economia.ejecucion.feeExitoTotalARS),
+      ]
+    )
+
+    await client.query(
+      `
+        INSERT INTO mp_pagos (transaccion_id, preference_id, estado, monto, gateway, concepto)
+        VALUES ($1, $2, 'PENDIENTE', $3, $4, 'saldo')
+      `,
+      [tx.id, preferencia.preferenceId, saldoARS, gateway]
+    )
+
+    await logEvento(client, {
+      transaccionId: tx.id,
+      tipo: 'SALDO_INICIADO',
+      estadoAnterior: 'RESERVADA',
+      estadoNuevo: 'SALDO_PENDIENTE',
+      actorId: input.compradorId,
+      actorRol: 'comprador',
+      metadata: { preferenceId: preferencia.preferenceId, saldoARS },
+    })
+
+    return updated.rows[0]
+  })
+
+  return {
+    transaccion: mapTransaccion(transaccion),
+    pago: {
+      preferenceId: preferencia.preferenceId,
+      initPoint: preferencia.initPoint,
+      sandboxPoint: preferencia.sandboxPoint,
+      gateway: preferencia.gateway,
+      expiraEn: preferencia.expiraEn,
+      montoARS: saldoARS,
+      concepto: 'saldo' as const,
+    },
+  }
 }
 
 // ── 3. confirmarEnvio (vendedor) ────────────────────────────────────────────
@@ -1098,6 +1637,20 @@ export async function procesarAutoReleases(limite = 100) {
  * el camino de venta exitosa, o lo dejaria sin registrar en ese mismo camino
  * si solo se hiciera aca. El sellado es la unica fuente de verdad.
  *
+ * El SQL filtra ademas por estado IN (RESERVA_PENDIENTE, RESERVADA,
+ * SALDO_PENDIENTE) -- no solo por el timestamp -- para que una fila que ya
+ * llego a un estado terminal (FONDOS_RETENIDOS, CANCELADA, etc.) nunca vuelva
+ * a aparecer en el barrido aunque reserva_vence_en haya quedado sin limpiar
+ * por algun camino futuro. Mismo patron defensivo que procesarAutoReleases.
+ *
+ * Reconciliacion contra MercadoPago (auditoria de integridad de dinero): antes
+ * de revertir una fila con un pago mp_pagos todavia PENDIENTE, se busca contra
+ * la API real de MercadoPago (buscarPagosPorExternalReference) si ese pago ya
+ * se aprobo -- un webhook perdido o tardio no alcanza para cancelar una
+ * reserva que en realidad ya esta pagada. Si la busqueda misma falla (error de
+ * red/API), la fila NO se revierte ese barrido -- se prefiere reintentar en la
+ * proxima corrida antes que cancelar una reserva que podria estar pagada.
+ *
  * TODO(unificar retries): ver la nota en procesarAutoReleases -- esta funcion
  * tiene exactamente la misma falta de backoff/dead-letter.
  */
@@ -1106,6 +1659,7 @@ export async function procesarReservasVencidas(limite = 100) {
     `
       SELECT id FROM escrow_transacciones
       WHERE reserva_vence_en IS NOT NULL AND reserva_vence_en <= NOW()
+        AND estado IN ('RESERVA_PENDIENTE', 'RESERVADA', 'SALDO_PENDIENTE')
       ORDER BY reserva_vence_en ASC
       LIMIT $1
     `,
@@ -1113,8 +1667,48 @@ export async function procesarReservasVencidas(limite = 100) {
   )
 
   const revertidas: string[] = []
+  const reconciliadas: string[] = []
   for (const { id } of pendientes.rows) {
     try {
+      // Reconciliar contra MercadoPago ANTES de revertir: un webhook perdido o
+      // tardio no debe alcanzar para cancelar una reserva que ya esta pagada.
+      const pendienteMp = await getPool().query<{ id: string }>(
+        `SELECT id FROM mp_pagos WHERE transaccion_id = $1 AND estado = 'PENDIENTE' LIMIT 1`,
+        [id]
+      )
+
+      if (pendienteMp.rows[0]) {
+        const conocidosRes = await getPool().query<{ payment_id: string }>(
+          `SELECT payment_id FROM mp_pagos WHERE transaccion_id = $1 AND payment_id IS NOT NULL`,
+          [id]
+        )
+        const conocidos = new Set(
+          conocidosRes.rows.map((r: { payment_id: string }) => r.payment_id)
+        )
+
+        let aprobadoNuevo: string | null = null
+        try {
+          const pagos = await buscarPagosPorExternalReference(id)
+          aprobadoNuevo =
+            pagos.find((p) => p.status === 'approved' && !conocidos.has(p.paymentId))?.paymentId ?? null
+        } catch (mpError) {
+          // No se pudo confirmar contra MercadoPago: NO revertir esta fila
+          // este barrido -- mejor reintentar en la proxima corrida que
+          // cancelar una reserva que podria estar realmente pagada.
+          console.error('[escrow] no se pudo reconciliar contra MercadoPago para', id, mpError)
+          continue
+        }
+
+        if (aprobadoNuevo) {
+          // MercadoPago ya lo aprobo -- el webhook se perdio o llego tarde.
+          // Procesarlo como pago normal (webhookPago abre su propia
+          // transaccion/lock), NO cancelar la reserva.
+          await webhookPago({ paymentId: aprobadoNuevo, externalReferenceHint: id })
+          reconciliadas.push(id)
+          continue
+        }
+      }
+
       await withTx(async (client) => {
         const tx = await lockTransaccion(client, id)
         if (!tx.reserva_vence_en || new Date(tx.reserva_vence_en).getTime() > Date.now()) {
@@ -1182,7 +1776,11 @@ export async function procesarReservasVencidas(limite = 100) {
     }
   }
 
-  return { encontradas: pendientes.rows.length, revertidas: revertidas.length }
+  return {
+    encontradas: pendientes.rows.length,
+    revertidas: revertidas.length,
+    reconciliadas: reconciliadas.length,
+  }
 }
 
 // ── Consultas de lectura ────────────────────────────────────────────────────
