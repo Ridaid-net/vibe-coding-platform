@@ -314,3 +314,58 @@ async function withTx<T>(fn: (client: DbClient) => Promise<T>): Promise<T> {
     client.release()
   }
 }
+
+// ── Resolucion de Taller Aliado para CIT Completo (Fase 6) ──────────────────
+
+/**
+ * Resuelve el Taller Aliado vinculado a una bici via aliado_servicios: el
+ * vinculo mas reciente gana, sin priorizar tipo_servicio (venta vs
+ * mantenimiento) -- lo que importa para verificar el estado ACTUAL de la
+ * bici es quien tuvo contacto mas reciente con ella, no quien la vendio
+ * originalmente. Distinto a proposito del criterio de
+ * resolverAliadoParaRetribucion (compensaciones.service.ts), que resuelve un
+ * caso de uso diferente (retribucion por la validacion inicial del CIT).
+ *
+ * Si hubo un conflicto entre el usuario y un taller, la forma de evitar que
+ * se le vuelva a asignar es desvincularlo via aliado_servicios -- no hace
+ * falta logica nueva para eso, ya funciona asi (esta funcion simplemente no
+ * encuentra mas ese vinculo).
+ *
+ * TODO(seleccion manual de taller): en el futuro, el vendedor deberia poder
+ * elegir explicitamente entre sus talleres vinculados al publicar o pedir la
+ * certificacion (no en /reservar, que es una accion del comprador). Hasta
+ * que esa pantalla exista, /reservar sigue usando este default automatico.
+ *
+ * No hay ningun mecanismo de asignacion dinamica (por geocerca/disponibilidad)
+ * todavia -- si no hay vinculo, devuelve null y el caller decide que hacer
+ * (hoy: /reservar bloquea con SIN_TALLER_VINCULADO).
+ *
+ * TODO: cuando la cantidad de Talleres Aliados activos llegue a 20, migrar a
+ * asignacion automatica (por geocerca u otro criterio) -- antes de eso, el
+ * volumen no justifica la complejidad y el riesgo de asignar mal. Ver
+ * contarTalleresAliadosActivos() para detectar ese punto.
+ */
+export async function resolverAliadoPorBicicleta(
+  bicicletaId: string
+): Promise<string | null> {
+  const res = await getPool().query<{ aliado_id: string }>(
+    `
+      SELECT s.aliado_id FROM aliado_servicios s
+      JOIN aliados a ON a.id = s.aliado_id
+      WHERE s.bicicleta_id = $1 AND a.estado = 'aprobado'
+      ORDER BY s.created_at DESC
+      LIMIT 1
+    `,
+    [bicicletaId]
+  )
+  return res.rows[0]?.aliado_id ?? null
+}
+
+/** Ver TODO de resolverAliadoPorBicicleta. COUNT simple, sin uso activo todavia
+ * mas alla de loguear la tendencia cuando /reservar bloquea por falta de taller. */
+export async function contarTalleresAliadosActivos(): Promise<number> {
+  const res = await getPool().query<{ count: string }>(
+    `SELECT count(*) FROM aliados WHERE estado = 'aprobado'`
+  )
+  return Number(res.rows[0]?.count ?? 0)
+}

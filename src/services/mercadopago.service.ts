@@ -298,6 +298,51 @@ export function validarFirmaWebhook(params: {
 
 export class MercadoPagoError extends Error {}
 
+/**
+ * Busca todos los pagos asociados a un external_reference (el id de la
+ * transaccion de escrow). Fase 6: una transaccion de CIT Completo puede tener
+ * hasta dos preferencias (sena y saldo) con el MISMO external_reference, asi
+ * que devuelve la lista completa -- el llamador decide cual es "nuevo" (no
+ * conocido todavia) respecto a lo que ya tiene registrado en mp_pagos.
+ */
+export async function buscarPagosPorExternalReference(
+  externalReference: string
+): Promise<PagoMP[]> {
+  if (getModo() === 'STUB') {
+    return []
+  }
+
+  const res = await mpFetch(
+    `/v1/payments/search?external_reference=${encodeURIComponent(externalReference)}&sort=date_created&criteria=desc`,
+    { method: 'GET' }
+  )
+
+  if (!res.ok) {
+    const detalle = await safeText(res)
+    throw new MercadoPagoError(
+      `No se pudo buscar pagos por external_reference ${externalReference} (${res.status}): ${detalle}`
+    )
+  }
+
+  const data = (await res.json()) as {
+    results?: Array<{
+      id: number | string
+      status: string
+      status_detail?: string
+      transaction_amount?: number
+      external_reference?: string
+    }>
+  }
+
+  return (data.results ?? []).map((p) => ({
+    paymentId: String(p.id),
+    status: p.status,
+    statusDetail: p.status_detail ?? null,
+    monto: typeof p.transaction_amount === 'number' ? p.transaction_amount : null,
+    externalReference: p.external_reference ?? null,
+  }))
+}
+
 async function mpFetch(path: string, init: RequestInit): Promise<Response> {
   const token = getAccessToken()
   if (!token) {

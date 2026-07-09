@@ -42,6 +42,7 @@ export type NotificacionEventoTipo =
   | 'denuncia.activa'
   | 'marketplace.oferta'
   | 'escrow.fondos_retenidos'
+  | 'escrow.verificacion_solicitada'
   | 'inspeccion.acta_firmada'
   | 'iot.geovalla_salida'
   | 'iot.mantenimiento'
@@ -145,6 +146,17 @@ function construirMensaje(evento: NotificacionEvento): MensajeNotificacion {
           : 'El pago quedó retenido en custodia. Coordiná el envío para liberar los fondos.',
         url: '/garaje',
         tag: 'escrow',
+      }
+    }
+    case 'escrow.verificacion_solicitada': {
+      const titulo = texto(data, 'publicacionTitulo')
+      return {
+        titulo: 'Nueva verificación de CIT Completo',
+        cuerpo: titulo
+          ? `Un comprador confirmó la seña de "${titulo}". Coordiná la inspección de 20 puntos.`
+          : 'Un comprador confirmó la seña de una bici reservada. Coordiná la inspección de 20 puntos.',
+        url: '/taller',
+        tag: 'escrow-verificacion',
       }
     }
     case 'inspeccion.acta_firmada': {
