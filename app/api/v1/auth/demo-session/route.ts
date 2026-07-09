@@ -18,6 +18,27 @@ interface Body {
 }
 
 /**
+ * Hosts reales de este sitio (confirmados via `netlify api getSite`):
+ * dominio propio + alias + subdominio default de Netlify + alias de rama
+ * main. Netlify rechaza en el borde (404, antes de llegar a esta funcion)
+ * cualquier request cuyo header Host no matchee un dominio configurado para
+ * el sitio -- verificado empiricamente: un Host falsificado con SNI real de
+ * rodaid.net igual da 404 de Netlify, nunca llega a este codigo. Por eso,
+ * si una request llega hasta aca, su Host ya tuvo que ser uno de estos.
+ */
+const PRODUCTION_HOSTS: ReadonlySet<string> = new Set([
+  'rodaid.net',
+  'www.betarodaid.net',
+  'rodaid.netlify.app',
+  'main--rodaid.netlify.app',
+])
+
+function esHostDeProduccion(req: Request): boolean {
+  const host = req.headers.get('host')?.toLowerCase().split(':')[0] ?? ''
+  return PRODUCTION_HOSTS.has(host)
+}
+
+/**
  * POST /api/v1/auth/demo-session
  *
  * Conveniencia para ejercitar el checkout de RODAID PAY en los entornos de
@@ -29,8 +50,8 @@ interface Body {
  * devuelve tokens validos. Asi el `propietario_id` / `vendedor_id` que produce
  * este usuario referencia siempre una fila real y respeta las claves foraneas.
  *
- * Deshabilitado en produccion real (CONTEXT === 'production', la senal que
- * inyecta Netlify, no falsificable por el caller) y en modo LIVE de
+ * Deshabilitado en produccion real (el Host de la request matchea uno de los
+ * dominios reales del sitio, ver PRODUCTION_HOSTS) y en modo LIVE de
  * MercadoPago: con dinero real solo se permite la autenticacion definitiva
  * (registro / login).
  *
@@ -42,10 +63,16 @@ interface Body {
  * Efecto colateral aceptado: ensureRoleSession() (lib/session.ts), que usaban
  * los paneles de inspector/admin para auto-elevarse en preview/dev, ya no
  * puede elevar el rol via este endpoint en ningun entorno.
+ *
+ * NOTA: se probo primero con `process.env.CONTEXT === 'production'`, pero esa
+ * variable de build-time de Netlify no se propaga al runtime de esta ruta de
+ * Next.js (App Router via @netlify/plugin-nextjs) -- confirmado explotable en
+ * produccion pese al chequeo (devolvia 200, no 403). El chequeo por Host es
+ * el que efectivamente corta el request antes de llegar aca.
  */
 export async function POST(req: Request) {
   try {
-    if (getModo() === 'LIVE' || process.env.CONTEXT === 'production') {
+    if (getModo() === 'LIVE' || esHostDeProduccion(req)) {
       throw new ApiError(
         403,
         'DEMO_DESHABILITADO',
