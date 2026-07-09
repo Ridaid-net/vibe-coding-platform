@@ -1045,6 +1045,26 @@ export async function listarCITs(filtros: {
   return res.rows.map(mapCit)
 }
 
+/**
+ * RODAID — Sistema de tarifas de denuncia de robo (Fase 7): ¿este usuario
+ * tiene al menos un CIT activo y vigente? Determina si su denuncia de robo es
+ * gratuita (ya contribuyo al sistema) o paga (cuenta gratis, nunca certifico).
+ */
+export async function tieneCitActivo(usuarioId: string): Promise<boolean> {
+  const res = await getPool().query<{ existe: boolean }>(
+    `
+      SELECT EXISTS (
+        SELECT 1 FROM cits
+        WHERE ciclista_id = $1
+          AND estado = 'activo'
+          AND fecha_vencimiento > NOW()
+      ) AS existe
+    `,
+    [usuarioId]
+  )
+  return res.rows[0]?.existe ?? false
+}
+
 export async function listarEventos(citId: string) {
   const res = await getPool().query<EventoRow>(
     `SELECT * FROM cit_eventos WHERE cit_id = $1 ORDER BY created_at ASC`,

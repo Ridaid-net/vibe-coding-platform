@@ -1,6 +1,6 @@
 import { getStore } from '@netlify/blobs'
 import { SignJWT, jwtVerify } from 'jose'
-import { ApiError, getAuthSecret, getPool } from '@/lib/marketplace'
+import { ApiError, getAuthSecret, getPool, type DbClient } from '@/lib/marketplace'
 import { sha256Hex } from '@/src/services/firma.service'
 import {
   cifrarBytesDenuncia,
@@ -14,6 +14,9 @@ import {
 } from '@/src/services/ministerio.service'
 import { emitirEvento } from '@/src/services/notification.service'
 import { obtenerTextoDocumento } from '@/src/services/pdf-texto.service'
+import { tieneCitActivo } from '@/src/services/cit.service'
+import { getParametroPricing } from '@/src/services/parametros-pricing.service'
+import { consultarPago, crearPreferencia } from '@/src/services/mercadopago.service'
 
 /**
  * RODAID — Hito 18: Denuncia Ciudadana con Validacion de Documento Oficial (MPF).
@@ -34,6 +37,19 @@ import { obtenerTextoDocumento } from '@/src/services/pdf-texto.service'
  *   5) TESTIGO VERIFICADO: el proceso esta restringido a usuarios con identidad
  *      gubernamental (MxM); el sistema cruza los datos del usuario con el PDF.
  *   6) AUDITORIA: la bitacora guarda el HASH del PDF (no alteracion post-carga).
+ *
+ * Fase 7 (sistema de tarifas de denuncia de robo, casos 1/2 -- dueño denuncia
+ * su propia bici): la denuncia es GRATIS si el usuario tiene un CIT activo
+ * (ya contribuyo al sistema), o cuesta lo mismo que CIT Express si nunca
+ * certifico (incentivo deliberado: certificar desde el principio sale igual
+ * y queda para siempre, en vez de un gasto puntual). El fee solo se evalua
+ * cuando la denuncia efectivamente VALIDA (activar=true) -- si el PDF no
+ * pasa la validacion de estructura/titular, queda EN_REVISION sin cobrar
+ * nada. Si hay que cobrar, la denuncia queda en PENDIENTE_PAGO: el PDF ya se
+ * valido y guardo (un solo submit del usuario), pero el bloqueo del CIT/
+ * Marketplace, el marcado en BFA y la notificacion al Ministerio (steps que
+ * antes corrian siempre al final de registrarDenuncia) se difieren hasta que
+ * webhookPagoDenuncia() confirme el pago -- ver activarDenuncia().
  */
 
 // Bucket CIFRADO de las denuncias del MPF (Netlify Blobs). El contenido se
@@ -53,6 +69,14 @@ export type DenunciaEstado =
   | 'DENUNCIA_JUDICIAL_ACTIVA'
   | 'EN_REVISION'
   | 'ANULADA'
+  | 'PENDIENTE_PAGO'
+
+export type DenunciaFeeMotivo = 'CIT_ACTIVO_GRATIS' | 'SIN_CIT_PAGO'
+
+export interface DenunciaFeeResultado {
+  montoARS: number
+  motivo: DenunciaFeeMotivo
+}
 
 export interface TitularVerificado {
   nombre: string | null
@@ -91,6 +115,15 @@ export interface RegistrarDenunciaResultado {
   fechaDocumento: string | null
   bfa: { estado: string; txHash: string | null } | null
   ministerioNotificado: boolean
+  fee: DenunciaFeeResultado
+  /** Presente solo si estado === 'PENDIENTE_PAGO' (caso 2: sin CIT activo). */
+  pago: {
+    preferenceId: string
+    initPoint: string
+    sandboxPoint: string | null
+    gateway: string
+    montoARS: number
+  } | null
 }
 
 // ── Normalizacion para el cruce de datos ───────────────────────────────────────
@@ -211,6 +244,56 @@ export function validarEstructuraDenuncia(
     fuenteTexto: extraccion.fuente,
     motivos,
   }
+}
+
+// ── Fee de la denuncia (Fase 7) ─────────────────────────────────────────────────
+
+/**
+ * Caso 1 (CIT activo): gratis -- ya contribuyo al sistema, la denuncia es un
+ * servicio incluido. Caso 2 (cuenta gratis, sin CIT nunca): cuesta lo mismo
+ * que CIT Express (leido en vivo -- no un valor congelado en un import).
+ */
+async function calcularFeeDenunciaPropia(usuarioId: string): Promise<DenunciaFeeResultado> {
+  if (await tieneCitActivo(usuarioId)) {
+    return { montoARS: 0, motivo: 'CIT_ACTIVO_GRATIS' }
+  }
+  const montoARS = await getParametroPricing('cit_express_precio_ars')
+  return { montoARS, motivo: 'SIN_CIT_PAGO' }
+}
+
+// ── Helper de transaccion (para el webhook de pago) ─────────────────────────────
+
+async function withTx<T>(fn: (client: DbClient) => Promise<T>): Promise<T> {
+  const client = await getPool().connect()
+  try {
+    await client.query('BEGIN')
+    const result = await fn(client)
+    await client.query('COMMIT')
+    return result
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+interface DenunciaPagoRow {
+  id: string
+  estado: DenunciaEstado
+  fee_payment_id: string | null
+}
+
+async function lockDenunciaPago(client: DbClient, denunciaId: string): Promise<DenunciaPagoRow> {
+  const res = await client.query<DenunciaPagoRow>(
+    `SELECT id, estado, fee_payment_id FROM denuncias_mpf WHERE id = $1 FOR UPDATE`,
+    [denunciaId]
+  )
+  const row = res.rows[0]
+  if (!row) {
+    throw new ApiError(404, 'DENUNCIA_NOT_FOUND', 'No se encontró la denuncia.')
+  }
+  return row
 }
 
 // ── Link seguro al PDF (token firmado, vida acotada) ───────────────────────────
@@ -386,9 +469,11 @@ interface BiciDenunciaRow {
 /**
  * Registra una denuncia ciudadana respaldada por el PDF del MPF. Valida la
  * identidad gubernamental del testigo, cruza los datos con el documento, lo
- * guarda CIFRADO, y —si valida— bloquea el CIT/Marketplace, marca la incidencia
- * en la BFA y notifica al Ministerio con el link seguro al PDF. Siempre asienta
- * el hash del PDF en la auditoria inmutable.
+ * guarda CIFRADO, y —si valida— calcula el fee (Fase 7): si el usuario tiene
+ * CIT activo, activa de inmediato (bloqueo del CIT/Marketplace, incidencia en
+ * la BFA y notificacion al Ministerio); si no, la denuncia queda PENDIENTE_PAGO
+ * y esa activacion se difiere hasta que webhookPagoDenuncia() confirme el
+ * cobro. Siempre asienta el hash del PDF en la auditoria inmutable.
  */
 export async function registrarDenuncia(args: {
   userId: string
@@ -462,17 +547,17 @@ export async function registrarDenuncia(args: {
 
   const serial = normalizarSerie(bici.numero_serie)
 
-  // Si ya hay una denuncia judicial activa para esta bici, no se duplica.
+  // Si ya hay una denuncia activa (o esperando su pago) para esta bici, no se duplica.
   const yaActiva = await pool.query<{ id: string }>(
     `SELECT id FROM denuncias_mpf
-     WHERE bicicleta_id = $1 AND estado = 'DENUNCIA_JUDICIAL_ACTIVA' LIMIT 1`,
+     WHERE bicicleta_id = $1 AND estado IN ('DENUNCIA_JUDICIAL_ACTIVA', 'PENDIENTE_PAGO') LIMIT 1`,
     [bicicletaId]
   )
   if (yaActiva.rows[0]) {
     throw new DenunciaError(
       409,
       'DENUNCIA_YA_ACTIVA',
-      'Esta bicicleta ya tiene una denuncia judicial activa.'
+      'Esta bicicleta ya tiene una denuncia judicial activa o pendiente de pago.'
     )
   }
 
@@ -481,12 +566,22 @@ export async function registrarDenuncia(args: {
   const validacion = validarEstructuraDenuncia(extraccion, titularInfo.titular)
 
   // Decision: solo se BLOQUEA si la estructura es valida Y el titular coincide.
-  // Si no, la denuncia queda EN_REVISION (no se bloquea automaticamente).
+  // Si no, la denuncia queda EN_REVISION (no se bloquea automaticamente, y no
+  // se evalua ningun fee -- no hay nada que cobrar por una carga que no activa).
   const activar =
     validacion.estructuraValida &&
     validacion.titularCoincide &&
     !validacion.ilegible
-  const estado: DenunciaEstado = activar ? 'DENUNCIA_JUDICIAL_ACTIVA' : 'EN_REVISION'
+
+  const fee: DenunciaFeeResultado = activar
+    ? await calcularFeeDenunciaPropia(userId)
+    : { montoARS: 0, motivo: 'CIT_ACTIVO_GRATIS' }
+
+  const estado: DenunciaEstado = !activar
+    ? 'EN_REVISION'
+    : fee.montoARS === 0
+      ? 'DENUNCIA_JUDICIAL_ACTIVA'
+      : 'PENDIENTE_PAGO'
 
   // 5. Guardar el PDF CIFRADO en el bucket.
   const blobKey = `denuncias/${bicicletaId}/${pdfHash}.pdf.enc`
@@ -501,14 +596,15 @@ export async function registrarDenuncia(args: {
     )
   }
 
-  // 6. Persistir la denuncia + auditoria de CARGA (con el hash del PDF).
+  // 6. Persistir la denuncia (con el fee ya congelado) + auditoria de CARGA.
   const insert = await pool.query<{ id: string }>(
     `
       INSERT INTO denuncias_mpf
         (bicicleta_id, cit_id, usuario_id, serial_normalizado, estado,
          numero_expediente, fecha_documento, estructura_valida, titular_coincide,
-         validacion, pdf_blob_key, pdf_sha256, pdf_bytes, metadata)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14::jsonb)
+         validacion, pdf_blob_key, pdf_sha256, pdf_bytes, metadata,
+         fee_ars, fee_motivo)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14::jsonb, $15, $16)
       RETURNING id
     `,
     [
@@ -526,6 +622,8 @@ export async function registrarDenuncia(args: {
       pdfHash,
       bytes.byteLength,
       JSON.stringify({ fuenteTexto: validacion.fuenteTexto, usoOcr: extraccion.usoOcr }),
+      fee.montoARS,
+      fee.motivo,
     ]
   )
   const denunciaId = insert.rows[0].id
@@ -544,10 +642,12 @@ export async function registrarDenuncia(args: {
       estructuraValida: validacion.estructuraValida,
       titularCoincide: validacion.titularCoincide,
       fuenteTexto: validacion.fuenteTexto,
+      feeArs: fee.montoARS,
+      feeMotivo: fee.motivo,
     },
   })
 
-  // 7. Si no se activa, queda en revision: no se bloquea nada.
+  // 7. Si no se activa, queda en revision: no se bloquea nada, no se cobra nada.
   if (!activar) {
     await auditarDenuncia({
       denunciaId,
@@ -568,72 +668,58 @@ export async function registrarDenuncia(args: {
       fechaDocumento: validacion.fechaDocumento,
       bfa: null,
       ministerioNotificado: false,
+      fee,
+      pago: null,
     }
   }
 
-  // 8. BLOQUEO DE ESTADO: desactivar el CIT (-> bloqueado) y bloquear Marketplace.
-  await aplicarBloqueo(bicicletaId, denunciaId, validacion.expediente)
-
-  // 9. Marcar la incidencia en la BFA (lock del NFT del CIT).
-  const bfa = await fijarDenunciaBFA(bici.numero_serie, true).catch((err) => {
-    console.error('[denuncia] no se pudo marcar la incidencia en la BFA', err)
-    return null
-  })
-  const bfaEstado = bfa?.ok ? 'incidencia' : 'pendiente'
-  await pool
-    .query(
-      `UPDATE denuncias_mpf SET bfa_estado = $2, bfa_tx_hash = $3 WHERE id = $1`,
-      [denunciaId, bfaEstado, bfa?.txHash ?? null]
+  // Caso 2 (sin CIT activo): generar la preferencia de pago y devolver SIN
+  // activar todavia -- el bloqueo/BFA/notificacion corren recien cuando
+  // webhookPagoDenuncia() confirme el cobro (ver activarDenuncia() mas abajo).
+  if (fee.montoARS > 0) {
+    const preferencia = await crearPreferencia({
+      transaccionId: denunciaId,
+      titulo: `Denuncia de robo — ${bici.numero_serie}`,
+      descripcion: 'Tarifa de denuncia de robo (cuenta sin CIT activo).',
+      precioARS: fee.montoARS,
+      notificationPath: '/api/v1/denuncias/webhook/mp',
+    })
+    await pool.query(
+      `UPDATE denuncias_mpf SET fee_preference_id = $2, fee_init_point = $3 WHERE id = $1`,
+      [denunciaId, preferencia.preferenceId, preferencia.initPoint]
     )
-    .catch(() => undefined)
+    return {
+      denunciaId,
+      estado: 'PENDIENTE_PAGO',
+      bloqueada: false,
+      validacion,
+      pdfHash,
+      expediente: validacion.expediente,
+      fechaDocumento: validacion.fechaDocumento,
+      bfa: null,
+      ministerioNotificado: false,
+      fee,
+      pago: {
+        preferenceId: preferencia.preferenceId,
+        initPoint: preferencia.initPoint,
+        sandboxPoint: preferencia.sandboxPoint,
+        gateway: preferencia.gateway,
+        montoARS: fee.montoARS,
+      },
+    }
+  }
 
-  // El veredicto de seguridad cambio: invalidar la cache del cross-reference.
-  await invalidarCache(serial).catch(() => undefined)
-
-  // 10. Notificacion institucional (Hito 12) con el LINK SEGURO al PDF cifrado.
-  const documentoUrl = await urlDocumentoSeguro(denunciaId)
-  const aviso = await notificarDenunciaJudicial({
+  // Caso 1 (CIT activo, gratis): activar de inmediato, igual que el flujo original.
+  const activado = await activarDenuncia({
+    denunciaId,
+    bicicletaId,
+    userId,
+    numeroSerieOriginal: bici.numero_serie,
     serial,
     expediente: validacion.expediente,
     fechaDocumento: validacion.fechaDocumento,
-    documentoUrl,
-    documentoHash: pdfHash,
-    denunciaId,
-  }).catch((err) => {
-    console.error('[denuncia] no se pudo notificar al Ministerio', err)
-    return { enviado: false, modo: 'SIMULADO' as const }
-  })
-
-  await auditarDenuncia({
-    denunciaId,
-    bicicletaId,
-    serial,
-    usuarioId: userId,
-    evento: 'BLOQUEO',
     pdfHash,
-    detalle: {
-      expediente: validacion.expediente,
-      bfa: bfaEstado,
-      bfaTxHash: bfa?.txHash ?? null,
-      ministerioModo: aviso.modo,
-    },
   })
-  await auditarDenuncia({
-    denunciaId,
-    bicicletaId,
-    serial,
-    usuarioId: userId,
-    evento: 'NOTIFICACION_MINISTERIO',
-    pdfHash,
-    detalle: { enviado: aviso.enviado, modo: aviso.modo, tokenized: true },
-  })
-
-  // Avisar al propietario por el bus de notificaciones (Hito 10). Best-effort.
-  await emitirEvento({
-    tipo: 'denuncia.activa',
-    usuarioId: userId,
-    data: { expediente: validacion.expediente ?? '', serial },
-  }).catch(() => undefined)
 
   return {
     denunciaId,
@@ -643,9 +729,101 @@ export async function registrarDenuncia(args: {
     pdfHash,
     expediente: validacion.expediente,
     fechaDocumento: validacion.fechaDocumento,
-    bfa: { estado: bfaEstado, txHash: bfa?.txHash ?? null },
-    ministerioNotificado: aviso.enviado,
+    bfa: { estado: activado.bfaEstado, txHash: activado.bfaTxHash },
+    ministerioNotificado: activado.ministerioNotificado,
+    fee,
+    pago: null,
   }
+}
+
+/**
+ * Ejecuta el bloqueo final de la denuncia -- comun a los dos caminos de
+ * activacion (caso 1: corre de inmediato desde registrarDenuncia; caso 2:
+ * corre desde webhookPagoDenuncia una vez confirmado el pago). Desactiva el
+ * CIT (-> bloqueado), pausa el Marketplace, marca la incidencia en la BFA,
+ * invalida la cache del cross-reference y notifica al Ministerio con el link
+ * seguro al PDF. NO toca el campo `estado` de denuncias_mpf -- eso ya lo dejo
+ * resuelto quien la llama (el INSERT para el caso 1, el UPDATE del webhook
+ * para el caso 2), para que el cambio de estado y la confirmacion del pago
+ * sean atomicos en el caso 2.
+ */
+async function activarDenuncia(opts: {
+  denunciaId: string
+  bicicletaId: string
+  userId: string
+  numeroSerieOriginal: string
+  serial: string
+  expediente: string | null
+  fechaDocumento: string | null
+  pdfHash: string
+}): Promise<{ bfaEstado: string; bfaTxHash: string | null; ministerioNotificado: boolean }> {
+  const pool = getPool()
+
+  // BLOQUEO DE ESTADO: desactivar el CIT (-> 'bloqueado') y bloquear Marketplace.
+  await aplicarBloqueo(opts.bicicletaId, opts.denunciaId, opts.expediente)
+
+  // Marcar la incidencia en la BFA (lock del NFT del CIT).
+  const bfa = await fijarDenunciaBFA(opts.numeroSerieOriginal, true).catch((err) => {
+    console.error('[denuncia] no se pudo marcar la incidencia en la BFA', err)
+    return null
+  })
+  const bfaEstado = bfa?.ok ? 'incidencia' : 'pendiente'
+  await pool
+    .query(
+      `UPDATE denuncias_mpf SET bfa_estado = $2, bfa_tx_hash = $3 WHERE id = $1`,
+      [opts.denunciaId, bfaEstado, bfa?.txHash ?? null]
+    )
+    .catch(() => undefined)
+
+  // El veredicto de seguridad cambio: invalidar la cache del cross-reference.
+  await invalidarCache(opts.serial).catch(() => undefined)
+
+  // Notificacion institucional (Hito 12) con el LINK SEGURO al PDF cifrado.
+  const documentoUrl = await urlDocumentoSeguro(opts.denunciaId)
+  const aviso = await notificarDenunciaJudicial({
+    serial: opts.serial,
+    expediente: opts.expediente,
+    fechaDocumento: opts.fechaDocumento,
+    documentoUrl,
+    documentoHash: opts.pdfHash,
+    denunciaId: opts.denunciaId,
+  }).catch((err) => {
+    console.error('[denuncia] no se pudo notificar al Ministerio', err)
+    return { enviado: false, modo: 'SIMULADO' as const }
+  })
+
+  await auditarDenuncia({
+    denunciaId: opts.denunciaId,
+    bicicletaId: opts.bicicletaId,
+    serial: opts.serial,
+    usuarioId: opts.userId,
+    evento: 'BLOQUEO',
+    pdfHash: opts.pdfHash,
+    detalle: {
+      expediente: opts.expediente,
+      bfa: bfaEstado,
+      bfaTxHash: bfa?.txHash ?? null,
+      ministerioModo: aviso.modo,
+    },
+  })
+  await auditarDenuncia({
+    denunciaId: opts.denunciaId,
+    bicicletaId: opts.bicicletaId,
+    serial: opts.serial,
+    usuarioId: opts.userId,
+    evento: 'NOTIFICACION_MINISTERIO',
+    pdfHash: opts.pdfHash,
+    detalle: { enviado: aviso.enviado, modo: aviso.modo, tokenized: true },
+  })
+
+  // Avisar al propietario por el bus de notificaciones (Hito 10). Best-effort.
+  await emitirEvento({
+    tipo: 'denuncia.activa',
+    usuarioId: opts.userId,
+    data: { expediente: opts.expediente ?? '', serial: opts.serial },
+  }).catch(() => undefined)
+
+  return { bfaEstado, bfaTxHash: bfa?.txHash ?? null, ministerioNotificado: aviso.enviado }
 }
 
 /**
@@ -706,6 +884,113 @@ async function aplicarBloqueo(
   }
 }
 
+// ── Webhook de pago (Fase 7, caso 2) ────────────────────────────────────────────
+
+export interface ProcesarPagoDenunciaInput {
+  paymentId: string
+  externalReferenceHint?: string | null
+}
+
+export type AccionWebhookDenuncia = 'APROBADO' | 'RECHAZADO' | 'IGNORADO'
+
+/**
+ * Procesa el webhook de MercadoPago del fee de denuncia (caso 2: cuenta sin
+ * CIT activo). Re-consulta el estado real a MercadoPago (nunca el payload) y,
+ * si esta approved, confirma el pago y la transicion a DENUNCIA_JUDICIAL_ACTIVA
+ * de forma atomica -- y fuera de la transaccion, dispara activarDenuncia()
+ * (bloqueo + BFA + notificacion al Ministerio, los mismos efectos que corren
+ * de inmediato para el caso 1). Idempotente por payment_id.
+ */
+export async function webhookPagoDenuncia(
+  input: ProcesarPagoDenunciaInput
+): Promise<{ accion: AccionWebhookDenuncia; denunciaId: string | null }> {
+  const pago = await consultarPago(input.paymentId)
+  const denunciaId = pago.externalReference ?? input.externalReferenceHint ?? null
+  if (!denunciaId) {
+    return { accion: 'IGNORADO', denunciaId: null }
+  }
+
+  const accion = await withTx(async (client) => {
+    const row = await lockDenunciaPago(client, denunciaId)
+
+    if (pago.status === 'approved') {
+      if (row.estado !== 'PENDIENTE_PAGO') {
+        return 'IGNORADO' as const
+      }
+      if (row.fee_payment_id === input.paymentId) {
+        return 'IGNORADO' as const
+      }
+      await client.query(
+        `
+          UPDATE denuncias_mpf
+          SET estado = 'DENUNCIA_JUDICIAL_ACTIVA',
+              fee_payment_id = $2,
+              fee_pagado_en = NOW(),
+              updated_at = NOW()
+          WHERE id = $1
+        `,
+        [denunciaId, input.paymentId]
+      )
+      return 'APROBADO' as const
+    }
+
+    if (pago.status === 'rejected' || pago.status === 'cancelled') {
+      // Se queda en PENDIENTE_PAGO -- binary_mode:false permite reintentar.
+      return 'RECHAZADO' as const
+    }
+
+    return 'IGNORADO' as const
+  })
+
+  if (accion === 'APROBADO') {
+    const detalleRes = await getPool().query<{
+      bicicleta_id: string
+      usuario_id: string
+      serial_normalizado: string
+      numero_expediente: string | null
+      fecha_documento: string | null
+      pdf_sha256: string
+    }>(
+      `
+        SELECT bicicleta_id, usuario_id, serial_normalizado, numero_expediente,
+               fecha_documento, pdf_sha256
+        FROM denuncias_mpf WHERE id = $1
+      `,
+      [denunciaId]
+    )
+    const detalle = detalleRes.rows[0]
+    if (detalle) {
+      const biciRes = await getPool().query<{ numero_serie: string }>(
+        `SELECT numero_serie FROM bicicletas WHERE id = $1`,
+        [detalle.bicicleta_id]
+      )
+      await activarDenuncia({
+        denunciaId,
+        bicicletaId: detalle.bicicleta_id,
+        userId: detalle.usuario_id,
+        numeroSerieOriginal: biciRes.rows[0]?.numero_serie ?? detalle.serial_normalizado,
+        serial: detalle.serial_normalizado,
+        expediente: detalle.numero_expediente,
+        fechaDocumento: detalle.fecha_documento,
+        pdfHash: detalle.pdf_sha256,
+      }).catch((err) => {
+        // activarDenuncia() solo puede llegar a este catch si aplicarBloqueo()
+        // fallo -- todo lo demas que hace (BFA, cache, Ministerio, evento) ya
+        // atrapa sus propios errores internamente. O sea: el pago ya se
+        // confirmo y el estado ya quedo en DENUNCIA_JUDICIAL_ACTIVA, pero el
+        // CIT/Marketplace de esta bici puede NO haber quedado bloqueado de
+        // verdad. Esto nunca debe pasar en silencio -- requiere revision manual.
+        console.error(
+          `[denuncia] CRITICO: pago confirmado pero aplicarBloqueo() fallo -- el CIT/Marketplace de la bici puede NO estar bloqueado pese a estado=DENUNCIA_JUDICIAL_ACTIVA. Revision manual inmediata.`,
+          { denunciaId, bicicletaId: detalle.bicicleta_id, error: err }
+        )
+      })
+    }
+  }
+
+  return { accion, denunciaId }
+}
+
 // ── Consulta de estado para la UI ──────────────────────────────────────────────
 
 export interface DenunciaResumen {
@@ -718,6 +1003,10 @@ export interface DenunciaResumen {
   pdfHash: string
   creadoEn: string
   motivos: string[]
+  feeArs: number
+  feeMotivo: DenunciaFeeMotivo
+  /** Presente solo si estado === 'PENDIENTE_PAGO'. */
+  pagoPendiente: { preferenceId: string; initPoint: string; montoARS: number } | null
 }
 
 interface DenunciaRow {
@@ -730,6 +1019,10 @@ interface DenunciaRow {
   pdf_sha256: string
   validacion: ValidacionDenuncia | null
   creado_en: string
+  fee_ars: string
+  fee_motivo: DenunciaFeeMotivo
+  fee_preference_id: string | null
+  fee_init_point: string | null
 }
 
 /** Devuelve la denuncia mas reciente de una bici del usuario (o null). */
@@ -741,7 +1034,7 @@ export async function obtenerDenunciaDeBici(
     `
       SELECT d.id, d.estado, d.numero_expediente, d.fecha_documento,
              d.estructura_valida, d.titular_coincide, d.pdf_sha256, d.validacion,
-             d.creado_en
+             d.creado_en, d.fee_ars, d.fee_motivo, d.fee_preference_id, d.fee_init_point
       FROM denuncias_mpf d
       JOIN bicicletas b ON b.id = d.bicicleta_id
       WHERE d.bicicleta_id = $1 AND b.propietario_id = $2
@@ -762,6 +1055,16 @@ export async function obtenerDenunciaDeBici(
     pdfHash: row.pdf_sha256,
     creadoEn: row.creado_en,
     motivos: row.validacion?.motivos ?? [],
+    feeArs: Number(row.fee_ars),
+    feeMotivo: row.fee_motivo,
+    pagoPendiente:
+      row.estado === 'PENDIENTE_PAGO' && row.fee_preference_id && row.fee_init_point
+        ? {
+            preferenceId: row.fee_preference_id,
+            initPoint: row.fee_init_point,
+            montoARS: Number(row.fee_ars),
+          }
+        : null,
   }
 }
 
