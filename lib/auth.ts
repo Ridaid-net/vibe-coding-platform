@@ -26,7 +26,7 @@ import {
   timingSafeEqual,
   type ScryptOptions,
 } from 'node:crypto'
-import { ApiError, getAuthSecret, getPool } from '@/lib/marketplace'
+import { ApiError, getAuthSecret, getPool, type DbClient } from '@/lib/marketplace'
 
 /** Promesa sobre `crypto.scrypt` con opciones (la firma promisificada por
  * defecto no incluye el parametro `options`). */
@@ -179,6 +179,54 @@ async function verifyAccess(token: string): Promise<JWTPayload> {
   return payload
 }
 
+// ---------------------------------------------------------------------------
+// Watermark de invalidacion forzada de sesion (robo de dispositivo)
+// ---------------------------------------------------------------------------
+
+/**
+ * TTL corto del cache en memoria de `sesion_invalidada_desde`: requireAuth()
+ * corre en CADA request autenticado, y este es el unico chequeo de la funcion
+ * que toca la base (el AccessToken es stateless a proposito). Cachear evita
+ * pagar un roundtrip por request; 30s es la ventana maxima de exposicion tras
+ * invalidar sesiones de un usuario (antes: hasta 15 minutos, la vida entera
+ * del AccessToken).
+ */
+const SESION_WATERMARK_CACHE_TTL_MS = 30_000
+const sesionWatermarkCache = new Map<string, { valor: Date | null; ts: number }>()
+
+async function getSesionInvalidadaDesde(usuarioId: string): Promise<Date | null> {
+  const cached = sesionWatermarkCache.get(usuarioId)
+  if (cached && Date.now() - cached.ts < SESION_WATERMARK_CACHE_TTL_MS) {
+    return cached.valor
+  }
+  try {
+    const res = await getPool().query<{ sesion_invalidada_desde: string | null }>(
+      `SELECT sesion_invalidada_desde FROM usuarios WHERE id = $1`,
+      [usuarioId]
+    )
+    const valor = res.rows[0]?.sesion_invalidada_desde
+      ? new Date(res.rows[0].sesion_invalidada_desde)
+      : null
+    sesionWatermarkCache.set(usuarioId, { valor, ts: Date.now() })
+    return valor
+  } catch (error) {
+    // DECISION DE SEGURIDAD DELIBERADA (inversa a clasificarNivelCIT en CIT
+    // Express): este chequeo corre en CADA request autenticado de la
+    // plataforma entera. Fallar cerrado ante un error de infraestructura (la
+    // base con un hiccup, timeout, etc.) tumbaria el login de TODO el sistema
+    // por una causa ajena a la seguridad. Fallar abierto (tratar como "sin
+    // watermark") tiene un costo acotado: un AccessToken ya emitido sigue
+    // funcionando durante el outage, ni mejor ni peor que el comportamiento
+    // sin esta feature. No se cachea el fallo: la proxima request reintenta
+    // la consulta en vez de congelar "sin watermark" por los 30s del TTL.
+    console.error(
+      '[auth] no se pudo verificar sesion_invalidada_desde (fail-open)',
+      error
+    )
+    return null
+  }
+}
+
 /**
  * Middleware de proteccion de endpoints privados. Exige un AccessToken valido y
  * devuelve el usuario autenticado (id, rol, email) leido del token.
@@ -194,6 +242,16 @@ export async function requireAuth(req: Request): Promise<AuthUser> {
     if (typeof id !== 'string' || id.length === 0) {
       throw new ApiError(401, 'INVALID_TOKEN', 'Token de usuario invalido.')
     }
+
+    const invalidadaDesde = await getSesionInvalidadaDesde(id)
+    if (invalidadaDesde && (payload.iat ?? 0) * 1000 < invalidadaDesde.getTime()) {
+      throw new ApiError(
+        401,
+        'SESION_INVALIDADA',
+        'La sesion fue invalidada. Inicia sesion nuevamente.'
+      )
+    }
+
     return {
       id,
       rol: normalizeRol(payload.rol),
@@ -398,6 +456,63 @@ export async function revokeSession(refreshToken: string): Promise<void> {
      WHERE refresh_token_hash = $1 AND revocado_en IS NULL`,
     [sha256Hex(refreshToken)]
   )
+}
+
+async function withTx<T>(fn: (client: DbClient) => Promise<T>): Promise<T> {
+  const client = await getPool().connect()
+  try {
+    await client.query('BEGIN')
+    const result = await fn(client)
+    await client.query('COMMIT')
+    return result
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+/**
+ * Invalidacion forzada de sesion (robo de dispositivo): setea el watermark
+ * `sesion_invalidada_desde` (requireAuth rechaza cualquier AccessToken
+ * emitido antes de esta marca, ver mas arriba) y revoca en el mismo golpe
+ * todos los RefreshToken vivos del usuario, para que ni siquiera pueda sacar
+ * un AccessToken nuevo. Pensada para que un admin la dispare apenas se
+ * reporta un dispositivo robado, sin depender del propio usuario.
+ *
+ * `invalidadoPor` es `string | null` a proposito: cuando se dispara con el
+ * token de sistema (x-admin-token) no hay un usuario admin real detras, asi
+ * que va NULL — el caller debe dejar constancia de ese caso en `motivo` (no
+ * hay un usuario "sistema" sembrado en la tabla para no complicar el FK ni
+ * las queries que listan usuarios reales).
+ */
+export async function invalidarSesionesUsuario(input: {
+  usuarioId: string
+  invalidadoPor: string | null
+  motivo?: string | null
+}): Promise<void> {
+  await withTx(async (client) => {
+    await client.query(
+      `
+        UPDATE usuarios
+        SET sesion_invalidada_desde = NOW(),
+            sesion_invalidada_por = $2,
+            sesion_invalidada_motivo = $3
+        WHERE id = $1
+      `,
+      [input.usuarioId, input.invalidadoPor, input.motivo ?? null]
+    )
+    await client.query(
+      `UPDATE sesiones SET revocado_en = NOW()
+       WHERE usuario_id = $1 AND revocado_en IS NULL`,
+      [input.usuarioId]
+    )
+  })
+  // Invalida el cache en memoria de este proceso: no esperar el TTL de 30s
+  // para que ESTA instancia deje de confiar en un valor viejo (otras
+  // instancias tibias igual lo ven al vencer su propio TTL).
+  sesionWatermarkCache.delete(input.usuarioId)
 }
 
 // ---------------------------------------------------------------------------
