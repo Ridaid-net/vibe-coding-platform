@@ -7,6 +7,7 @@ import {
 } from '@/src/services/validation.service'
 import { anclarCITEnSegundoPlano } from '@/src/services/blockchain.service'
 import { emitirEvento } from '@/src/services/notification.service'
+import { registrarLiquidacionAliadoFeeVerificacion } from '@/src/services/compensaciones.service'
 import { enviarEmail } from '@/lib/email'
 import {
   firmarActa,
@@ -728,14 +729,37 @@ export async function aprobarInspeccionFisica(opts: {
         estadoNuevo,
       }
 
-      // TODO(Fase 6): cuando RESERVADO -> EJECUTANDO_LOGISTICA, este es el
-      // punto para registrar la liquidacion ALIADO_FEE_VERIFICACION
-      // (pagos_liquidaciones) contra la escrow_transaccion que financio esta
-      // verificacion con la sena del comprador (escrow_transacciones.
-      // fee_verificacion_ars, aliado_id, ambos ya congelados en la Fase 3). No
-      // se implementa todavia porque depende de que valor de
-      // escrow_transaccion_estado representa "reservado, esperando
-      // verificacion" -- eso lo define recien la Fase 6 (endpoints de reserva).
+      // Fase 6: si esta reserva tiene una sena confirmada financiando la
+      // verificacion, el sellado es el momento (y el UNICO momento, ver
+      // registrarLiquidacionAliadoFeeVerificacion) en que se le debe el Fee
+      // de Verificacion al Taller Aliado -- sin importar si la venta despues
+      // se concreta o la reserva vence. Best-effort respecto al flujo
+      // principal: si por algun motivo no hay una escrow_transaccion
+      // RESERVADA (no deberia pasar si el orden del flujo se respeto), no se
+      // bloquea la aprobacion de la inspeccion por esto.
+      if (publicacion.estado === 'RESERVADO') {
+        const escrowRes = await client.query<{
+          id: string
+          aliado_id: string | null
+          fee_verificacion_ars: string
+        }>(
+          `
+            SELECT id, aliado_id, fee_verificacion_ars
+            FROM escrow_transacciones
+            WHERE publicacion_id = $1 AND estado = 'RESERVADA'
+            FOR UPDATE
+          `,
+          [publicacion.id]
+        )
+        const escrow = escrowRes.rows[0]
+        if (escrow?.aliado_id && Number(escrow.fee_verificacion_ars) > 0) {
+          await registrarLiquidacionAliadoFeeVerificacion(client, {
+            escrowTransaccionId: escrow.id,
+            aliadoId: escrow.aliado_id,
+            monto: Number(escrow.fee_verificacion_ars),
+          })
+        }
+      }
     }
 
     return {
