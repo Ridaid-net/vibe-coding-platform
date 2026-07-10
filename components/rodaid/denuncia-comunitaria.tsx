@@ -38,7 +38,8 @@ export function DenunciaComunitaria() {
               </Link>
             </div>
             <p className="mt-4 text-xs text-paper/35">
-              Requiere cuenta RODAID verificada. Costo del tramite: $4.500 ARS (25% del valor del CIT). Precio en USD segun cotizacion oficial BNA del dia.
+              Requiere cuenta RODAID verificada. Es gratis si tu bici ya tiene un CIT activo;
+              si no, te mostramos el costo exacto antes de confirmar la denuncia.
             </p>
           </div>
           <div className="rounded-2xl border border-paper/10 bg-paper/5 p-6">

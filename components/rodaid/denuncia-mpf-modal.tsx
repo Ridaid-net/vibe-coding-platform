@@ -25,19 +25,38 @@ import { etiquetaActivo, type ActivoGaraje } from '@/lib/garaje-digital'
  *
  * Al reportar el robo/hurto, el usuario adjunta OBLIGATORIAMENTE el PDF de la
  * denuncia realizada ante el MPF. El backend valida que el documento contenga el
- * expediente, la fecha y los datos del titular (verificados por MxM). Si valida,
- * la bici pasa a DENUNCIA_JUDICIAL_ACTIVA (se desactiva el CIT, se bloquea el
- * Marketplace y se avisa al Ministerio de Seguridad con un link seguro al PDF);
- * si no, la denuncia queda en revisión, sin bloquear automáticamente.
+ * expediente, la fecha y los datos del titular (verificados por MxM). Si valida:
+ *   - con CIT activo (Fase 7, caso 1): la bici pasa a DENUNCIA_JUDICIAL_ACTIVA de
+ *     inmediato (se desactiva el CIT, se bloquea el Marketplace y se avisa al
+ *     Ministerio de Seguridad con un link seguro al PDF), gratis.
+ *   - sin CIT activo (Fase 7, caso 2): queda PENDIENTE_PAGO -- el bloqueo recien
+ *     se activa cuando se confirma el pago de la tarifa (mismo precio que un CIT
+ *     Express) via MercadoPago.
+ * Si no valida, la denuncia queda en revisión, sin bloquear automáticamente.
  *
  * Restringido a usuarios con identidad gubernamental (MxM): el testigo verificado.
  */
 interface RegistrarResultado {
-  estado: 'DENUNCIA_JUDICIAL_ACTIVA' | 'EN_REVISION' | 'ANULADA'
+  estado: 'DENUNCIA_JUDICIAL_ACTIVA' | 'EN_REVISION' | 'ANULADA' | 'PENDIENTE_PAGO'
   bloqueada: boolean
   expediente: string | null
   fechaDocumento: string | null
   validacion?: { motivos?: string[] }
+  pago?: {
+    preferenceId: string
+    initPoint: string
+    sandboxPoint: string | null
+    gateway: string
+    montoARS: number
+  } | null
+}
+
+function pesos(n: number): string {
+  return n.toLocaleString('es-AR', {
+    style: 'currency',
+    currency: 'ARS',
+    maximumFractionDigits: 0,
+  })
 }
 
 export function DenunciaMpfModal({
@@ -91,6 +110,11 @@ export function DenunciaMpfModal({
           description: data.expediente
             ? `Bloqueamos tu bici y avisamos al Ministerio (expediente ${data.expediente}).`
             : 'Bloqueamos tu bici y avisamos al Ministerio de Seguridad.',
+        })
+      } else if (data.estado === 'PENDIENTE_PAGO') {
+        toast.info('Falta pagar la tarifa de denuncia', {
+          description:
+            'Como no tenés un CIT activo, hay que confirmar el pago antes de activar el bloqueo.',
         })
       } else {
         toast.info('Denuncia en revisión', {
@@ -205,7 +229,18 @@ function ResultadoDenuncia({
   onCerrar: () => void
 }) {
   const activa = resultado.estado === 'DENUNCIA_JUDICIAL_ACTIVA'
+  const pendientePago = resultado.estado === 'PENDIENTE_PAGO'
   const motivos = resultado.validacion?.motivos ?? []
+
+  const pagar = () => {
+    if (!resultado.pago) return
+    const url =
+      resultado.pago.gateway === 'SANDBOX' && resultado.pago.sandboxPoint
+        ? resultado.pago.sandboxPoint
+        : resultado.pago.initPoint
+    window.location.href = url
+  }
+
   return (
     <div className="space-y-4">
       <div
@@ -219,12 +254,20 @@ function ResultadoDenuncia({
           ) : (
             <FileWarning className="size-4" />
           )}
-          {activa ? 'Denuncia judicial activa' : 'Denuncia en revisión'}
+          {activa
+            ? 'Denuncia judicial activa'
+            : pendientePago
+              ? 'Falta pagar la tarifa de denuncia'
+              : 'Denuncia en revisión'}
         </p>
         <p className="mt-1 text-xs">
           {activa
             ? 'Bloqueamos tu bici y compartimos la documentación con el Ministerio de Seguridad en tiempo real.'
-            : 'No pudimos validar automáticamente el documento. Tu bici no se bloqueó; un equipo de RODAID revisará la denuncia.'}
+            : pendientePago
+              ? `Validamos tu documento, pero como no tenés un CIT activo hay que pagar ${
+                  resultado.pago ? pesos(resultado.pago.montoARS) : 'la tarifa'
+                } para activar el bloqueo — el mismo precio que un CIT Express.`
+              : 'No pudimos validar automáticamente el documento. Tu bici no se bloqueó; un equipo de RODAID revisará la denuncia.'}
         </p>
         {resultado.expediente && (
           <p className="mt-2 font-mono text-xs">
@@ -234,7 +277,7 @@ function ResultadoDenuncia({
         )}
       </div>
 
-      {!activa && motivos.length > 0 && (
+      {!activa && !pendientePago && motivos.length > 0 && (
         <ul className="space-y-1.5 text-xs text-slate-warm">
           {motivos.map((m, i) => (
             <li key={i} className="flex items-start gap-2">
@@ -245,13 +288,48 @@ function ResultadoDenuncia({
         </ul>
       )}
 
-      <button
-        type="button"
-        onClick={onCerrar}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-ink px-5 py-3 text-sm font-semibold text-paper transition-colors hover:bg-ink-soft"
-      >
-        Entendido
-      </button>
+      {pendientePago && resultado.pago ? (
+        // TODO(retomar pago con retorno persistente): "Pagar ahora" es hoy la
+        // UNICA salida clara de este estado -- no ofrecemos un boton de
+        // "pagar mas tarde" porque no existe todavia ninguna pantalla donde
+        // el usuario pueda volver despues y retomar un pago pendiente (el
+        // backend ya expone GET /api/v1/bicicletas/:id/denuncia con
+        // pagoPendiente, pero ningun componente del frontend lo consume hoy
+        // -- ver lib/garaje-digital.ts). Cerrar este modal sin pagar (via la
+        // X, ESC o click afuera del Dialog) sigue siendo posible -- eso lo
+        // maneja el Dialog de shadcn/Radix por defecto y no lo bloqueamos
+        // aca -- pero no lo OFRECEMOS como un boton que prometa un regreso
+        // que no existe. Resolver esto de verdad es parte natural del
+        // trabajo grande del lado comprador (auditoria de frontend, item 4:
+        // pantallas de "mis compras"/estado persistente), no un banner
+        // aislado aca.
+        <>
+          <button
+            type="button"
+            onClick={pagar}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-clay px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-clay/90"
+          >
+            <ShieldAlert className="size-4" />
+            Pagar {pesos(resultado.pago.montoARS)} y activar la denuncia
+          </button>
+          <a
+            href="https://wa.me/5492617542335"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block text-center text-xs text-slate-warm underline hover:text-ink"
+          >
+            ¿No podés pagar ahora? Escribinos por WhatsApp
+          </a>
+        </>
+      ) : (
+        <button
+          type="button"
+          onClick={onCerrar}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-ink px-5 py-3 text-sm font-semibold text-paper transition-colors hover:bg-ink-soft"
+        >
+          Entendido
+        </button>
+      )}
     </div>
   )
 }
