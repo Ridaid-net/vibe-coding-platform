@@ -160,7 +160,7 @@ function SobreContent() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
             { titulo: 'Compradores', color: 'border-l-sky-500', items: ['Historial tecnico verificado antes de comprar','Pago retenido en escrow hasta confirmar entrega','Mediacion tecnica en disputas (3 niveles)','Verificacion publica del CIT sin cuenta'] },
-            { titulo: 'Vendedores', color: 'border-l-green-500', items: ['Precio diferencial por bici certificada','Menor friccion de venta — identidad demostrada','Publicacion restringida a bicis con CIT activo','El taller aliado cobra verificacion y logistica, y comparte el exito de cada venta'] },
+            { titulo: 'Vendedores', color: 'border-l-green-500', items: ['Precio diferencial por bici certificada','Menor friccion de venta — identidad demostrada','Publicacion restringida a bicis con CIT activo','El taller aliado cobra verificacion y embalaje, y comparte el exito de cada venta'] },
             { titulo: 'Talleres aliados', color: 'border-l-orange-500', items: ['Nueva fuente de ingresos por cada CIT Completo verificado en el taller ($28.500 ARS)','Panel Inspector con 20 puntos de inspeccion','Red de referencia — clientes buscan CIT','Alertas de mantenimiento predictivo (Strava)'] },
           ].map(s => (
             <div key={s.titulo} className={`rounded-2xl border border-ink/10 bg-white p-5 border-l-4 ${s.color}`}>
