@@ -46,41 +46,93 @@ function SobreContent() {
         </section>
       <section>
         <p className="text-xs font-semibold uppercase tracking-widest text-slate-warm mb-4">Que es el CIT</p>
-        <div className="rounded-2xl border border-ink/10 bg-white p-6">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-            <div className="sm:col-span-2">
-              <h2 className="font-display text-xl font-semibold text-ink mb-3">Cedula de Identidad Tecnica de la Bicicleta</h2>
-              <p className="text-sm text-slate-warm leading-relaxed mb-4">El CIT es el certificado digital que acredita la identidad y el estado tecnico de una bicicleta. Funciona como la cedula verde de un auto: identifica al rodado de forma unica, registra su historial de inspeccion y vincula al titular verificado. Cada CIT es generado por un taller aliado RODAID luego de una inspeccion tecnica de 20 puntos, y su huella SHA-256 queda anclada de forma inmutable en la Blockchain Federal Argentina (BFA).</p>
-              <p className="text-sm text-slate-warm leading-relaxed">Una vez emitido, el CIT es publicamente verificable por cualquier persona — sin necesidad de cuenta — escaneando el codigo QR o ingresando el numero de serie en rodaid.net/verificar. Esto permite que compradores, vendedores, talleres y fuerzas de seguridad puedan confirmar la identidad del rodado en tiempo real.</p>
-            </div>
-            <div className="space-y-4">
+
+        <div className="rounded-2xl border border-ink/10 bg-white p-6 mb-6">
+          <h2 className="font-display text-xl font-semibold text-ink mb-3">Cedula de Identidad Tecnica de la Bicicleta</h2>
+          <p className="text-sm text-slate-warm leading-relaxed mb-2">
+            El CIT es el certificado digital que acredita la identidad y el estado tecnico de una bicicleta.
+            Funciona como la cedula verde de un auto: identifica al rodado de forma unica, registra su historial
+            de inspeccion y vincula al titular verificado. Su huella queda anclada de forma inmutable en la
+            Blockchain Federal Argentina (BFA), y es publicamente verificable por cualquier persona — sin
+            necesidad de cuenta — escaneando el codigo QR o ingresando el numero de serie en rodaid.net/verificar.
+          </p>
+          <p className="text-sm text-slate-warm leading-relaxed">
+            RODAID tiene dos niveles de CIT, segun lo que necesites.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <div className="rounded-2xl border border-ink/10 bg-white p-6 flex flex-col">
+            <img
+              src="/cit-express.png"
+              alt="Calcomania RODAID EXPRESS"
+              className="w-full h-40 object-contain rounded-xl bg-slate-50 mb-4"
+            />
+            <span className="text-xs font-semibold uppercase tracking-wide text-[#2BBCB8] mb-1">CIT Express</span>
+            <h3 className="font-display text-lg font-semibold text-ink mb-2">Para circular tranquilo</h3>
+            <p className="text-sm text-slate-warm leading-relaxed mb-4">
+              Identidad basica y rapida: verificamos que el numero de serie sea legitimo y que la bici no
+              figure como robada. Ideal para el uso diario.
+            </p>
+            <div className="mt-auto space-y-3">
               <div className="rounded-xl bg-slate-50 p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-warm mb-1">Vigencia</p>
-                <p className="text-2xl font-semibold text-ink">12 meses</p>
-                <p className="text-xs text-slate-warm mt-1">Renovable anualmente en cualquier taller aliado</p>
+                <p className="text-lg font-semibold text-ink">12 meses</p>
+                <p className="text-xs text-slate-warm mt-1">Renovable en cualquier taller aliado</p>
               </div>
               <div className="rounded-xl bg-slate-50 p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-warm mb-1">Valor del tramite</p>
-                <p className="text-2xl font-semibold text-ink">18.000</p>
-                <p className="text-xs text-slate-warm mt-1">ARS · U segun cotizacion BNA del dia</p>
+                <p className="text-lg font-semibold text-ink">$5.100 ARS</p>
               </div>
+              <p className="text-sm text-slate-warm">
+                <span className="font-semibold text-ink">Para vos: </span>
+                documentacion real de que tu bici es tuya, verificable al instante por cualquier persona —
+                incluidas las fuerzas de seguridad.
+              </p>
             </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 pt-6 border-t border-ink/8">
-            <div>
-              <p className="text-sm font-semibold text-ink mb-2">Para el comprador</p>
-              <p className="text-sm text-slate-warm">Certeza de que la bicicleta no es robada, que el numero de serie coincide con el cuadro y que el estado tecnico fue auditado por un profesional. Elimina el principal riesgo de la compra de bicicletas usadas.</p>
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-ink mb-2">Para el vendedor</p>
-              <p className="text-sm text-slate-warm">El CIT activo aumenta el valor de venta del rodado porque elimina la desconfianza del comprador. Una bici con CIT vigente se vende mas rapido y a mejor precio que una sin certificacion.</p>
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-ink mb-2">Valor al rodado</p>
-              <p className="text-sm text-slate-warm">El CIT transforma una bicicleta usada en un activo con identidad verificada. El historial de inspecciones queda registrado en la blockchain de forma permanente, agregando transparencia y trazabilidad a toda la vida util del rodado.</p>
+
+          <div className="rounded-2xl border border-ink/10 bg-white p-6 flex flex-col">
+            <img
+              src="/cit-completo.png"
+              alt="Calcomania RODAID TRANSFERENCIAS"
+              className="w-full h-40 object-contain rounded-xl bg-slate-50 mb-4"
+            />
+            <span className="text-xs font-semibold uppercase tracking-wide text-[#F47B20] mb-1">CIT Completo</span>
+            <h3 className="font-display text-lg font-semibold text-ink mb-2">Para vender con confianza</h3>
+            <p className="text-sm text-slate-warm leading-relaxed mb-4">
+              Certificacion tecnica completa: inspeccion de 20 puntos realizada por un Taller Aliado RODAID,
+              con firma digital y anclaje en blockchain. Es el certificado que habilita la publicacion en el
+              Marketplace y el Garaje Digital de RODAID.
+            </p>
+            <div className="mt-auto space-y-3">
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-warm mb-1">Vigencia</p>
+                <p className="text-lg font-semibold text-ink">Hasta la transferencia</p>
+                <p className="text-xs text-slate-warm mt-1">Se emite un CIT nuevo al cambiar de titular</p>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-warm mb-1">Valor del tramite</p>
+                <p className="text-lg font-semibold text-ink">$28.500 ARS</p>
+              </div>
+              <p className="text-sm text-slate-warm">
+                <span className="font-semibold text-ink">Para el comprador: </span>
+                certeza de que la bicicleta no es robada, que el numero de serie coincide con el cuadro, y que
+                el estado tecnico fue auditado por un profesional.
+              </p>
+              <p className="text-sm text-slate-warm">
+                <span className="font-semibold text-ink">Para el vendedor: </span>
+                una bici con CIT Completo vigente se vende mas rapido y a mejor precio — elimina la principal
+                desconfianza del comprador.
+              </p>
             </div>
           </div>
         </div>
+
+        <p className="text-xs text-slate-warm/70 mt-4 text-center sm:text-left">
+          Los precios se ajustan periodicamente. El valor exacto y vigente se muestra siempre antes de
+          confirmar cualquier tramite.
+        </p>
       </section>
 
       <section>
@@ -109,7 +161,7 @@ function SobreContent() {
           {[
             { titulo: 'Compradores', color: 'border-l-sky-500', items: ['Historial tecnico verificado antes de comprar','Pago retenido en escrow hasta confirmar entrega','Mediacion tecnica en disputas (3 niveles)','Verificacion publica del CIT sin cuenta'] },
             { titulo: 'Vendedores', color: 'border-l-green-500', items: ['Precio diferencial por bici certificada','Menor friccion de venta — identidad demostrada','Publicacion restringida a bicis con CIT activo','60% de la tarifa CIT va al taller aliado'] },
-            { titulo: 'Talleres aliados', color: 'border-l-orange-500', items: ['Nueva fuente de ingresos por CIT ($18.000 ARS)','Panel Inspector con 20 puntos de inspeccion','Red de referencia — clientes buscan CIT','Alertas de mantenimiento predictivo (Strava)'] },
+            { titulo: 'Talleres aliados', color: 'border-l-orange-500', items: ['Nueva fuente de ingresos por cada CIT Completo verificado en el taller ($28.500 ARS)','Panel Inspector con 20 puntos de inspeccion','Red de referencia — clientes buscan CIT','Alertas de mantenimiento predictivo (Strava)'] },
           ].map(s => (
             <div key={s.titulo} className={`rounded-2xl border border-ink/10 bg-white p-5 border-l-4 ${s.color}`}>
               <p className="font-semibold text-ink mb-3">{s.titulo}</p>
@@ -149,7 +201,7 @@ function SobreContent() {
         <p className="text-xs font-semibold uppercase tracking-widest text-slate-warm mb-4">Alcances del marketplace</p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { val: '$18.000', lbl: 'ARS por CIT emitido' },
+            { val: '$28.500', lbl: 'ARS por CIT Completo emitido' },
             { val: '60 / 40', lbl: 'Split aliado / RODAID' },
             { val: '19.008', lbl: 'Dispositivos Android compatibles' },
             { val: 'BFA', lbl: 'Blockchain Federal Argentina' },
