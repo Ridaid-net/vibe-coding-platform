@@ -25,21 +25,30 @@ export default function GovDashboardPage() {
   const [tenantActivo, setTenantActivo] = useState(TENANTS[0])
   const [metricas, setMetricas] = useState<Metricas | null>(null)
   const [cargando, setCargando] = useState(false)
+  const [errorToken, setErrorToken] = useState(false)
   const [webhooks, setWebhooks] = useState<{ id: string; url: string; eventos: string[]; activo: boolean }[]>([])
 
   const cargar = useCallback(async (slug: string) => {
     setCargando(true)
+    setErrorToken(false)
     try {
       const headers = {
         'X-Gov-Token': GOV_TOKEN || '',
         'X-Tenant-ID': slug
       }
       const [mRes, wRes] = await Promise.all([
-        fetch('/api/v1/gov/metricas', { headers }).then(r => r.json()),
-        fetch('/api/v1/gov/webhook', { headers }).then(r => r.json()),
+        fetch('/api/v1/gov/metricas', { headers }),
+        fetch('/api/v1/gov/webhook', { headers }),
       ])
-      setMetricas(mRes.metricas ?? null)
-      setWebhooks(wRes.webhooks ?? [])
+      if (mRes.status === 401 || wRes.status === 401) {
+        setErrorToken(true)
+        setMetricas(null)
+        setWebhooks([])
+        return
+      }
+      const [mData, wData] = await Promise.all([mRes.json(), wRes.json()])
+      setMetricas(mData.metricas ?? null)
+      setWebhooks(wData.webhooks ?? [])
     } catch { /* silencioso */ }
     finally { setCargando(false) }
   }, [])
@@ -76,6 +85,17 @@ export default function GovDashboardPage() {
         {cargando ? (
           <div className="flex items-center gap-2 text-sm text-slate-warm py-12 justify-center">
             <RefreshCw className="size-4 animate-spin" /> Cargando métricas...
+          </div>
+        ) : errorToken ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-8 text-center">
+            <AlertTriangle className="mx-auto size-6 text-red-500" />
+            <p className="mt-3 text-sm font-semibold text-red-700">
+              No se pudo autenticar con la API gubernamental.
+            </p>
+            <p className="mt-1 text-xs text-red-600">
+              NEXT_PUBLIC_GOV_TOKEN (frontend) y GOV_API_TOKEN (backend) no coinciden.
+              Revisá la configuración de variables de entorno antes de reintentar.
+            </p>
           </div>
         ) : metricas ? (
           <div className="space-y-6">
