@@ -14,7 +14,7 @@ const TENANTS = [
   { slug: 'municipio_rivadavia', label: 'Municipio Rivadavia', color: '#16a34a' },
 ]
 
-type Seccion = 'metricas' | 'verificar' | 'certificado' | 'historial' | 'estadisticas'
+type Seccion = 'metricas' | 'verificar' | 'certificado' | 'historial' | 'estadisticas' | 'denunciar' | 'recuperar'
 
 const SECCIONES: { id: Seccion; label: string }[] = [
   { id: 'metricas', label: 'Métricas' },
@@ -22,6 +22,8 @@ const SECCIONES: { id: Seccion; label: string }[] = [
   { id: 'certificado', label: 'Certificado' },
   { id: 'historial', label: 'Historial' },
   { id: 'estadisticas', label: 'Estadísticas' },
+  { id: 'denunciar', label: 'Denunciar' },
+  { id: 'recuperar', label: 'Recuperar' },
 ]
 
 interface Metricas {
@@ -198,6 +200,8 @@ export default function GovDashboardPage() {
         {seccion === 'certificado' && <CertificadoPanel tenantSlug={tenantActivo.slug} />}
         {seccion === 'historial' && <HistorialPanel tenantSlug={tenantActivo.slug} />}
         {seccion === 'estadisticas' && <EstadisticasPanel tenantSlug={tenantActivo.slug} />}
+        {seccion === 'denunciar' && <DenunciarPanel tenantSlug={tenantActivo.slug} />}
+        {seccion === 'recuperar' && <RecuperarPanel tenantSlug={tenantActivo.slug} />}
       </main>
       <Footer />
     </div>
@@ -810,6 +814,427 @@ function EstadisticasPanel({ tenantSlug }: { tenantSlug: string }) {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+// ── Denunciar (GOV_DENUNCIAR) ─────────────────────────────────────────────────
+
+type PasoDenuncia = 'formulario' | 'confirmar' | 'resultado'
+
+interface DenunciarResultado {
+  ok: boolean
+  message?: string
+  denuncia?: {
+    id: string | null
+    bicicleta: { id: string; numero_serie: string; marca: string | null; modelo: string | null }
+    estado: string
+    numero_expediente: string | null
+    registrado_en: string
+    tenant: string
+    mensaje: string
+  }
+}
+
+function DenunciarPanel({ tenantSlug }: { tenantSlug: string }) {
+  const [paso, setPaso] = useState<PasoDenuncia>('formulario')
+  const [numeroSerie, setNumeroSerie] = useState('')
+  const [numeroExpediente, setNumeroExpediente] = useState('')
+  const [motivo, setMotivo] = useState('')
+  const [organismo, setOrganismo] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [errorToken, setErrorToken] = useState(false)
+  const [errorMensaje, setErrorMensaje] = useState<string | null>(null)
+  const [resultado, setResultado] = useState<DenunciarResultado | null>(null)
+
+  const continuar = () => {
+    if (!numeroSerie.trim()) return
+    setErrorMensaje(null)
+    setPaso('confirmar')
+  }
+
+  const confirmar = async () => {
+    setEnviando(true)
+    setErrorToken(false)
+    setErrorMensaje(null)
+    try {
+      const res = await fetch('/api/v1/gov/denunciar', {
+        method: 'POST',
+        headers: {
+          'X-Gov-Token': GOV_TOKEN || '',
+          'X-Tenant-ID': tenantSlug,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          numero_serie: numeroSerie.trim(),
+          numero_expediente: numeroExpediente.trim() || undefined,
+          motivo: motivo.trim() || undefined,
+          organismo_denunciante: organismo.trim() || undefined,
+        }),
+      })
+      if (res.status === 401) {
+        setErrorToken(true)
+        setPaso('formulario')
+        return
+      }
+      const data = (await res.json()) as DenunciarResultado
+      if (!res.ok || !data.ok) {
+        setErrorMensaje(data.message ?? 'No se pudo registrar la denuncia.')
+        setPaso('formulario')
+        return
+      }
+      setResultado(data)
+      setPaso('resultado')
+    } catch {
+      setErrorMensaje('No pudimos registrar la denuncia. Revisá tu conexión e intentá de nuevo.')
+      setPaso('formulario')
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  const reiniciar = () => {
+    setPaso('formulario')
+    setNumeroSerie('')
+    setNumeroExpediente('')
+    setMotivo('')
+    setOrganismo('')
+    setResultado(null)
+    setErrorMensaje(null)
+  }
+
+  if (paso === 'resultado' && resultado?.denuncia) {
+    const yaExistia = resultado.denuncia.id === null
+    return (
+      <div className="space-y-4">
+        <div className={`rounded-2xl border px-5 py-5 ${yaExistia ? 'border-amber-200 bg-amber-50' : 'border-red-200 bg-red-50'}`}>
+          <p className={`flex items-center gap-2 text-sm font-semibold ${yaExistia ? 'text-amber-700' : 'text-red-700'}`}>
+            <AlertTriangle className="size-4" />
+            {yaExistia ? 'Esta bicicleta ya tenía una denuncia judicial activa' : 'Denuncia judicial activa registrada'}
+          </p>
+          <p className={`mt-1 text-xs ${yaExistia ? 'text-amber-700' : 'text-red-700'}`}>
+            {yaExistia
+              ? 'No se creó una nueva denuncia — la que ya existía sigue vigente, sin cambios.'
+              : resultado.denuncia.mensaje}
+          </p>
+          {resultado.denuncia.numero_expediente && (
+            <p className="mt-2 font-mono text-xs">
+              Expediente: {resultado.denuncia.numero_expediente} · {new Date(resultado.denuncia.registrado_en).toLocaleString('es-AR')}
+            </p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={reiniciar}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#0F1E35] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#0F1E35]/90"
+        >
+          Denunciar otra bici
+        </button>
+      </div>
+    )
+  }
+
+  if (paso === 'confirmar') {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-ink/10 bg-white p-5">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-warm">Vas a denunciar</p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <CampoDato label="Número de serie" valor={numeroSerie.trim()} />
+            <CampoDato label="Expediente" valor={numeroExpediente.trim() || '-'} />
+            <CampoDato label="Organismo" valor={organismo.trim() || tenantSlug} />
+          </div>
+          {motivo.trim() && (
+            <div className="mt-3 rounded-xl bg-slate-50 px-4 py-2.5 text-sm text-slate-700">{motivo.trim()}</div>
+          )}
+        </div>
+
+        <div className="flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3.5 text-sm text-red-700">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <span>
+            Esta acción bloquea la bici en <strong>toda la red RODAID</strong>: ningún taller podrá emitir
+            un nuevo CIT para este rodado hasta que se recupere.
+          </span>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setPaso('formulario')}
+            disabled={enviando}
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Volver
+          </button>
+          <button
+            type="button"
+            onClick={confirmar}
+            disabled={enviando}
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-red-600 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {enviando ? <RefreshCw className="size-4 animate-spin" /> : <AlertTriangle className="size-4" />}
+            Confirmar denuncia
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {errorToken && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-center">
+          <p className="text-sm font-semibold text-red-700">No se pudo autenticar con la API gubernamental.</p>
+        </div>
+      )}
+      {errorMensaje && (
+        <div className="rounded-2xl border border-ink/10 bg-white px-5 py-4 text-center">
+          <p className="text-sm text-slate-warm">{errorMensaje}</p>
+        </div>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <input
+          type="text"
+          value={numeroSerie}
+          onChange={(e) => setNumeroSerie(e.target.value)}
+          placeholder="Número de serie *"
+          className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:border-[#0F1E35] focus:outline-none"
+        />
+        <input
+          type="text"
+          value={numeroExpediente}
+          onChange={(e) => setNumeroExpediente(e.target.value)}
+          placeholder="Número de expediente (opcional)"
+          className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:border-[#0F1E35] focus:outline-none"
+        />
+        <input
+          type="text"
+          value={organismo}
+          onChange={(e) => setOrganismo(e.target.value)}
+          placeholder={`Organismo denunciante (opcional, default: ${tenantSlug})`}
+          className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:border-[#0F1E35] focus:outline-none sm:col-span-2"
+        />
+        <textarea
+          value={motivo}
+          onChange={(e) => setMotivo(e.target.value)}
+          placeholder="Motivo (opcional)"
+          rows={2}
+          className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:border-[#0F1E35] focus:outline-none sm:col-span-2"
+        />
+      </div>
+
+      <button
+        type="button"
+        onClick={continuar}
+        disabled={!numeroSerie.trim()}
+        className="inline-flex items-center gap-2 rounded-full bg-[#0F1E35] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#0F1E35]/90 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Continuar
+      </button>
+    </div>
+  )
+}
+
+// ── Recuperar (GOV_RECUPERAR) ─────────────────────────────────────────────────
+
+type PasoRecuperar = 'formulario' | 'confirmar' | 'resultado'
+
+interface RecuperarResultado {
+  ok: boolean
+  message?: string
+  recuperacion?: {
+    bicicleta: { id: string; numero_serie: string; marca: string | null; modelo: string | null }
+    estado_anterior: string
+    estado_nuevo: string
+    recuperado_en: string
+    tenant: string
+    mensaje: string
+  }
+}
+
+function RecuperarPanel({ tenantSlug }: { tenantSlug: string }) {
+  const [paso, setPaso] = useState<PasoRecuperar>('formulario')
+  const [numeroSerie, setNumeroSerie] = useState('')
+  const [numeroExpediente, setNumeroExpediente] = useState('')
+  const [motivoRecuperacion, setMotivoRecuperacion] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [errorToken, setErrorToken] = useState(false)
+  const [errorMensaje, setErrorMensaje] = useState<string | null>(null)
+  const [resultado, setResultado] = useState<RecuperarResultado | null>(null)
+
+  const continuar = () => {
+    if (!numeroSerie.trim()) return
+    setErrorMensaje(null)
+    setPaso('confirmar')
+  }
+
+  const confirmar = async () => {
+    setEnviando(true)
+    setErrorToken(false)
+    setErrorMensaje(null)
+    try {
+      const res = await fetch('/api/v1/gov/recuperar', {
+        method: 'POST',
+        headers: {
+          'X-Gov-Token': GOV_TOKEN || '',
+          'X-Tenant-ID': tenantSlug,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          numero_serie: numeroSerie.trim(),
+          numero_expediente: numeroExpediente.trim() || undefined,
+          motivo_recuperacion: motivoRecuperacion.trim() || undefined,
+        }),
+      })
+      if (res.status === 401) {
+        setErrorToken(true)
+        setPaso('formulario')
+        return
+      }
+      const data = (await res.json()) as RecuperarResultado
+      if (!res.ok || !data.ok) {
+        // Los dos 404 posibles (bici no encontrada / sin denuncia activa) ya
+        // traen su propio message distinto -- lo mostramos tal cual, sin
+        // generalizarlo a un "no encontrado" generico.
+        setErrorMensaje(data.message ?? 'No se pudo procesar la recuperación.')
+        setPaso('formulario')
+        return
+      }
+      setResultado(data)
+      setPaso('resultado')
+    } catch {
+      setErrorMensaje('No pudimos procesar la recuperación. Revisá tu conexión e intentá de nuevo.')
+      setPaso('formulario')
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  const reiniciar = () => {
+    setPaso('formulario')
+    setNumeroSerie('')
+    setNumeroExpediente('')
+    setMotivoRecuperacion('')
+    setResultado(null)
+    setErrorMensaje(null)
+  }
+
+  if (paso === 'resultado' && resultado?.recuperacion) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-green-200 bg-green-50 px-5 py-5">
+          <p className="flex items-center gap-2 text-sm font-semibold text-green-700">
+            <CheckCircle className="size-4" />
+            Bicicleta recuperada
+          </p>
+          <p className="mt-1 text-xs text-green-700">{resultado.recuperacion.mensaje}</p>
+          <p className="mt-2 text-xs text-slate-warm">
+            {resultado.recuperacion.estado_anterior} → {resultado.recuperacion.estado_nuevo} ·{' '}
+            {new Date(resultado.recuperacion.recuperado_en).toLocaleString('es-AR')}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={reiniciar}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#0F1E35] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#0F1E35]/90"
+        >
+          Recuperar otra bici
+        </button>
+      </div>
+    )
+  }
+
+  if (paso === 'confirmar') {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-ink/10 bg-white p-5">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-warm">Vas a recuperar</p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <CampoDato label="Número de serie" valor={numeroSerie.trim()} />
+            <CampoDato label="Expediente" valor={numeroExpediente.trim() || '-'} />
+          </div>
+          {motivoRecuperacion.trim() && (
+            <div className="mt-3 rounded-xl bg-slate-50 px-4 py-2.5 text-sm text-slate-700">{motivoRecuperacion.trim()}</div>
+          )}
+        </div>
+
+        <div className="flex items-start gap-2 rounded-2xl border border-green-200 bg-green-50 px-4 py-3.5 text-sm text-green-700">
+          <CheckCircle className="mt-0.5 size-4 shrink-0" />
+          <span>
+            Esta acción anula la denuncia activa y desbloquea la bici en toda la red RODAID: los talleres
+            aliados podrán volver a emitirle un CIT.
+          </span>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setPaso('formulario')}
+            disabled={enviando}
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Volver
+          </button>
+          <button
+            type="button"
+            onClick={confirmar}
+            disabled={enviando}
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-green-600 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {enviando ? <RefreshCw className="size-4 animate-spin" /> : <CheckCircle className="size-4" />}
+            Confirmar recuperación
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {errorToken && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-center">
+          <p className="text-sm font-semibold text-red-700">No se pudo autenticar con la API gubernamental.</p>
+        </div>
+      )}
+      {errorMensaje && (
+        <div className="rounded-2xl border border-ink/10 bg-white px-5 py-4 text-center">
+          <p className="text-sm text-slate-warm">{errorMensaje}</p>
+        </div>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <input
+          type="text"
+          value={numeroSerie}
+          onChange={(e) => setNumeroSerie(e.target.value)}
+          placeholder="Número de serie *"
+          className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:border-[#0F1E35] focus:outline-none"
+        />
+        <input
+          type="text"
+          value={numeroExpediente}
+          onChange={(e) => setNumeroExpediente(e.target.value)}
+          placeholder="Número de expediente (opcional)"
+          className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:border-[#0F1E35] focus:outline-none"
+        />
+        <textarea
+          value={motivoRecuperacion}
+          onChange={(e) => setMotivoRecuperacion(e.target.value)}
+          placeholder="Motivo de la recuperación (opcional)"
+          rows={2}
+          className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:border-[#0F1E35] focus:outline-none sm:col-span-2"
+        />
+      </div>
+
+      <button
+        type="button"
+        onClick={continuar}
+        disabled={!numeroSerie.trim()}
+        className="inline-flex items-center gap-2 rounded-full bg-[#0F1E35] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#0F1E35]/90 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Continuar
+      </button>
     </div>
   )
 }
