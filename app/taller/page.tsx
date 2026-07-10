@@ -24,7 +24,7 @@ export default function TallerPage() {
         if (data?.cits) {
           const total = data.cits.length
           const pendientes = data.cits.filter((c: {estado: string}) => c.estado === 'pendiente').length
-          const ingresos = total * 10800
+          const ingresos = total * 33000
           setStats({ cits: total, pendientes, ingresos })
         }
       })
@@ -57,7 +57,7 @@ export default function TallerPage() {
           {[
             { icono: ShieldCheck, label: 'CITs emitidos', valor: stats.cits, color: '#2BBCB8', bg: 'bg-teal-50' },
             { icono: Clock, label: 'Pendientes', valor: stats.pendientes, color: '#F47B20', bg: 'bg-orange-50' },
-            { icono: DollarSign, label: 'Ingresos ARS', valor: `$${stats.ingresos.toLocaleString('es-AR')}`, color: '#0F1E35', bg: 'bg-slate-50' },
+            { icono: DollarSign, label: 'Ingresos garantizados (ARS)', valor: `$${stats.ingresos.toLocaleString('es-AR')}`, color: '#0F1E35', bg: 'bg-slate-50' },
           ].map((s, i) => (
             <div key={i} className="rounded-2xl border border-ink/10 bg-white p-5">
               <div className={`flex size-10 items-center justify-center rounded-xl ${s.bg} mb-3`}>
@@ -75,8 +75,8 @@ export default function TallerPage() {
             <Award className="size-6 text-white" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-white">Retribución por CIT: $10.800 ARS</p>
-            <p className="text-xs text-white/60">Recibís el 60% de cada CIT emitido. Los pagos se procesan mensualmente via RODAID PAY.</p>
+            <p className="text-sm font-semibold text-white">Retribución por CIT: $33.000 ARS garantizados</p>
+            <p className="text-xs text-white/60">$18.000 por la verificación + $15.000 por el embalaje — el 100% es tuyo. Si la bici se vende, sumás además el 50% del fee de éxito (2% del valor de venta). Los pagos se procesan mensualmente via RODAID PAY.</p>
           </div>
         </div>
 
