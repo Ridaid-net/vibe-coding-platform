@@ -14,12 +14,14 @@ const TENANTS = [
   { slug: 'municipio_rivadavia', label: 'Municipio Rivadavia', color: '#16a34a' },
 ]
 
-type Seccion = 'metricas' | 'verificar' | 'certificado'
+type Seccion = 'metricas' | 'verificar' | 'certificado' | 'historial' | 'estadisticas'
 
 const SECCIONES: { id: Seccion; label: string }[] = [
   { id: 'metricas', label: 'Métricas' },
   { id: 'verificar', label: 'Verificar' },
   { id: 'certificado', label: 'Certificado' },
+  { id: 'historial', label: 'Historial' },
+  { id: 'estadisticas', label: 'Estadísticas' },
 ]
 
 interface Metricas {
@@ -194,6 +196,8 @@ export default function GovDashboardPage() {
 
         {seccion === 'verificar' && <VerificarPanel tenantSlug={tenantActivo.slug} />}
         {seccion === 'certificado' && <CertificadoPanel tenantSlug={tenantActivo.slug} />}
+        {seccion === 'historial' && <HistorialPanel tenantSlug={tenantActivo.slug} />}
+        {seccion === 'estadisticas' && <EstadisticasPanel tenantSlug={tenantActivo.slug} />}
       </main>
       <Footer />
     </div>
@@ -437,6 +441,375 @@ function CertificadoPanel({ tenantSlug }: { tenantSlug: string }) {
           </p>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Historial (GOV_HISTORIAL) ─────────────────────────────────────────────────
+
+interface HistorialResultado {
+  bicicleta: {
+    id: string
+    numero_serie: string
+    marca: string | null
+    modelo: string | null
+    anio: number | null
+    tipo: string | null
+    color: string | null
+    created_at: string
+  }
+  cits: {
+    codigo_cit: string
+    estado: string
+    created_at: string
+    fecha_vencimiento: string | null
+    hash_sha256: string | null
+  }[]
+  denuncias: {
+    estado: string
+    numero_expediente: string | null
+    creado_en: string
+    actualizado_en: string
+    metadata: Record<string, unknown> | null
+  }[]
+  consultas_organismo: {
+    accion: string
+    created_at: string
+    metadata: Record<string, unknown> | null
+  }[]
+}
+
+function HistorialPanel({ tenantSlug }: { tenantSlug: string }) {
+  const [query, setQuery] = useState('')
+  const [buscando, setBuscando] = useState(false)
+  const [errorToken, setErrorToken] = useState(false)
+  const [errorMensaje, setErrorMensaje] = useState<string | null>(null)
+  const [resultado, setResultado] = useState<HistorialResultado | null>(null)
+
+  const buscar = async () => {
+    const serie = query.trim()
+    if (!serie || buscando) return
+    setBuscando(true)
+    setErrorToken(false)
+    setErrorMensaje(null)
+    setResultado(null)
+    try {
+      const headers = { 'X-Gov-Token': GOV_TOKEN || '', 'X-Tenant-ID': tenantSlug }
+      const res = await fetch(`/api/v1/gov/historial?serie=${encodeURIComponent(serie)}`, { headers })
+      if (res.status === 401) {
+        setErrorToken(true)
+        return
+      }
+      const data = await res.json()
+      if (!res.ok) {
+        setErrorMensaje(data.message ?? 'No se pudo consultar el historial.')
+        return
+      }
+      setResultado(data.historial as HistorialResultado)
+    } catch {
+      setErrorMensaje('No pudimos consultar el historial. Revisá tu conexión e intentá de nuevo.')
+    } finally {
+      setBuscando(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') buscar() }}
+          placeholder="Número de serie de la bicicleta"
+          className="min-w-[220px] flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:border-[#0F1E35] focus:outline-none"
+        />
+        <button
+          type="button"
+          onClick={buscar}
+          disabled={buscando || !query.trim()}
+          className="inline-flex items-center gap-2 rounded-full bg-[#0F1E35] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#0F1E35]/90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {buscando ? <RefreshCw className="size-4 animate-spin" /> : <Search className="size-4" />}
+          Buscar
+        </button>
+      </div>
+
+      {errorToken && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-center">
+          <p className="text-sm font-semibold text-red-700">No se pudo autenticar con la API gubernamental.</p>
+        </div>
+      )}
+
+      {errorMensaje && (
+        <div className="rounded-2xl border border-ink/10 bg-white px-5 py-8 text-center">
+          <p className="text-sm text-slate-warm">{errorMensaje}</p>
+        </div>
+      )}
+
+      {resultado && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-ink/10 bg-white p-5">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-warm">
+              Bicicleta · registrada el {new Date(resultado.bicicleta.created_at).toLocaleDateString('es-AR')}
+            </p>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <CampoDato label="Número de serie" valor={resultado.bicicleta.numero_serie} />
+              <CampoDato label="Marca" valor={resultado.bicicleta.marca ?? '-'} />
+              <CampoDato label="Modelo" valor={resultado.bicicleta.modelo ?? '-'} />
+              <CampoDato label="Año" valor={resultado.bicicleta.anio?.toString() ?? '-'} />
+              <CampoDato label="Tipo" valor={resultado.bicicleta.tipo ?? '-'} />
+              <CampoDato label="Color" valor={resultado.bicicleta.color ?? '-'} />
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-ink/10 bg-white p-5">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-warm">
+              CITs emitidos ({resultado.cits.length})
+            </p>
+            {resultado.cits.length === 0 ? (
+              <p className="text-sm text-slate-warm">Esta bicicleta nunca tuvo un CIT emitido.</p>
+            ) : (
+              <div className="space-y-2">
+                {resultado.cits.map((c, i) => (
+                  <div key={i} className="rounded-xl bg-slate-50 px-4 py-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-[#0F1E35]">{c.codigo_cit}</span>
+                      <span className="text-xs text-slate-warm">{c.estado?.toUpperCase()}</span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-3 text-[11px] text-slate-warm/70">
+                      <span>Emitido: {new Date(c.created_at).toLocaleDateString('es-AR')}</span>
+                      {c.fecha_vencimiento && (
+                        <span>Vence: {new Date(c.fecha_vencimiento).toLocaleDateString('es-AR')}</span>
+                      )}
+                    </div>
+                    {c.hash_sha256 && (
+                      <div className="mt-1.5 break-all font-mono text-[10px] text-slate-500">{c.hash_sha256}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-ink/10 bg-white p-5">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-warm">
+              Denuncias ({resultado.denuncias.length})
+            </p>
+            {resultado.denuncias.length === 0 ? (
+              <p className="text-sm text-slate-warm">Sin denuncias registradas.</p>
+            ) : (
+              <div className="space-y-2">
+                {resultado.denuncias.map((d, i) => (
+                  <div key={i} className="rounded-xl bg-slate-50 px-4 py-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className={`text-xs font-semibold ${d.estado === 'DENUNCIA_JUDICIAL_ACTIVA' ? 'text-red-600' : 'text-[#0F1E35]'}`}>
+                        {d.estado}
+                      </span>
+                      {d.numero_expediente && (
+                        <span className="text-xs text-slate-warm">Exp. {d.numero_expediente}</span>
+                      )}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-3 text-[11px] text-slate-warm/70">
+                      <span>Creada: {new Date(d.creado_en).toLocaleString('es-AR')}</span>
+                      <span>Actualizada: {new Date(d.actualizado_en).toLocaleString('es-AR')}</span>
+                    </div>
+                    {d.metadata && Object.keys(d.metadata).length > 0 && (
+                      <div className="mt-1.5 break-all font-mono text-[10px] text-slate-500">
+                        {JSON.stringify(d.metadata)}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-ink/10 bg-white p-5">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-warm">
+              Consultas de este organismo sobre esta serie ({resultado.consultas_organismo.length})
+            </p>
+            {resultado.consultas_organismo.length === 0 ? (
+              <p className="text-sm text-slate-warm">Este organismo no consultó antes esta serie.</p>
+            ) : (
+              <div className="space-y-2">
+                {resultado.consultas_organismo.map((c, i) => (
+                  <div key={i} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-2">
+                    <span className="text-xs font-semibold text-[#0F1E35]">{c.accion}</span>
+                    <span className="text-[10px] text-slate-warm/60">{new Date(c.created_at).toLocaleString('es-AR')}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Estadisticas (GOV_ESTADISTICAS) ──────────────────────────────────────────
+
+const TENANTS_ESTADISTICAS = ['ministerio_seguridad', 'rodaid']
+
+interface EstadisticasResultado {
+  resumen: {
+    total_bicicletas: number
+    cits: Record<string, number>
+    denuncias: Record<string, number>
+  }
+  actividad_organismos: { slug: string; nombre: string; consultas_24h: number }[]
+  eventos_recientes: { accion: string; created_at: string; tenant: string; metadata: Record<string, unknown> }[]
+  tendencia_semanal: { dia: string; consultas: number }[]
+}
+
+function EstadisticasPanel({ tenantSlug }: { tenantSlug: string }) {
+  const permitido = TENANTS_ESTADISTICAS.includes(tenantSlug)
+  const [cargando, setCargando] = useState(false)
+  const [errorToken, setErrorToken] = useState(false)
+  const [data, setData] = useState<EstadisticasResultado | null>(null)
+
+  const cargar = useCallback(async () => {
+    if (!permitido) return
+    setCargando(true)
+    setErrorToken(false)
+    setData(null)
+    try {
+      const headers = { 'X-Gov-Token': GOV_TOKEN || '', 'X-Tenant-ID': tenantSlug }
+      const res = await fetch('/api/v1/gov/estadisticas', { headers })
+      if (res.status === 401) {
+        setErrorToken(true)
+        return
+      }
+      const json = await res.json()
+      if (res.ok) setData(json.estadisticas)
+    } catch { /* silencioso */ }
+    finally { setCargando(false) }
+  }, [tenantSlug, permitido])
+
+  // Todos los hooks se llaman incondicionalmente, ANTES de cualquier return
+  // temprano -- los early returns de abajo (permitido/cargando/errorToken/data)
+  // van despues, como exige las Rules of Hooks.
+  useEffect(() => { cargar() }, [cargar])
+
+  if (!permitido) {
+    return (
+      <div className="rounded-2xl border border-ink/10 bg-white px-5 py-8 text-center">
+        <p className="text-sm text-slate-warm">
+          Las estadísticas agregadas solo están disponibles para el Ministerio de Seguridad.
+          Cambiá el organismo activo arriba para verlas.
+        </p>
+      </div>
+    )
+  }
+
+  if (cargando) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-slate-warm py-12 justify-center">
+        <RefreshCw className="size-4 animate-spin" /> Cargando estadísticas...
+      </div>
+    )
+  }
+
+  if (errorToken) {
+    return (
+      <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-8 text-center">
+        <AlertTriangle className="mx-auto size-6 text-red-500" />
+        <p className="mt-3 text-sm font-semibold text-red-700">No se pudo autenticar con la API gubernamental.</p>
+      </div>
+    )
+  }
+
+  if (!data) {
+    return <p className="text-sm text-slate-warm text-center py-12">No se pudieron cargar las estadísticas.</p>
+  }
+
+  const tendenciaMax = Math.max(...data.tendencia_semanal.map((d) => d.consultas), 1)
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="rounded-2xl border border-ink/10 bg-white p-5">
+          <Shield className="mb-3 size-5" style={{ color: '#0F1E35' }} />
+          <p className="text-2xl font-bold text-[#0F1E35]">{data.resumen.total_bicicletas}</p>
+          <p className="mt-1 text-xs text-slate-warm">Bicicletas en red</p>
+        </div>
+        {Object.entries(data.resumen.cits).map(([estado, total]) => (
+          <div key={`cit-${estado}`} className="rounded-2xl border border-ink/10 bg-white p-5">
+            <CheckCircle className="mb-3 size-5 text-[#2BBCB8]" />
+            <p className="text-2xl font-bold text-[#0F1E35]">{total}</p>
+            <p className="mt-1 text-xs text-slate-warm">CITs · {estado}</p>
+          </div>
+        ))}
+        {Object.entries(data.resumen.denuncias).map(([estado, total]) => (
+          <div key={`denuncia-${estado}`} className="rounded-2xl border border-ink/10 bg-white p-5">
+            <AlertTriangle className="mb-3 size-5 text-[#F47B20]" />
+            <p className="text-2xl font-bold text-[#0F1E35]">{total}</p>
+            <p className="mt-1 text-xs text-slate-warm">Denuncias · {estado}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-2xl border border-ink/10 bg-white p-5">
+        <h2 className="mb-4 font-display text-base font-semibold text-[#0F1E35]">
+          <Building2 className="mr-2 inline size-4 text-[#2BBCB8]" />
+          Actividad por organismo (últimas 24hs)
+        </h2>
+        <div className="space-y-2">
+          {data.actividad_organismos.map((o) => (
+            <div key={o.slug} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-2">
+              <span className="text-xs font-semibold text-[#0F1E35]">{o.nombre}</span>
+              <span className="text-xs text-slate-warm">{o.consultas_24h} consultas</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-ink/10 bg-white p-5">
+        <h2 className="mb-4 font-display text-base font-semibold text-[#0F1E35]">
+          <Activity className="mr-2 inline size-4 text-[#7c3aed]" />
+          Eventos recientes (últimas 48hs)
+        </h2>
+        {data.eventos_recientes.length === 0 ? (
+          <p className="text-sm text-slate-warm">Sin eventos en las últimas 48hs.</p>
+        ) : (
+          <div className="space-y-2">
+            {data.eventos_recientes.map((e, i) => (
+              <div key={i} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-2">
+                <div>
+                  <span className="text-xs font-semibold text-[#0F1E35]">{e.accion}</span>
+                  <span className="ml-2 text-[11px] text-slate-warm">{e.tenant}</span>
+                </div>
+                <span className="text-[10px] text-slate-warm/60">{new Date(e.created_at).toLocaleString('es-AR')}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-ink/10 bg-white p-5">
+        <h2 className="mb-4 font-display text-base font-semibold text-[#0F1E35]">
+          <Activity className="mr-2 inline size-4 text-[#16a34a]" />
+          Tendencia semanal
+        </h2>
+        {data.tendencia_semanal.length === 0 ? (
+          <p className="text-sm text-slate-warm">Sin datos de la última semana.</p>
+        ) : (
+          <div className="space-y-2">
+            {data.tendencia_semanal.map((d, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <span className="w-20 shrink-0 text-[11px] text-slate-warm">
+                  {new Date(d.dia).toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric' })}
+                </span>
+                <div className="h-2 flex-1 rounded-full bg-slate-100">
+                  <div className="h-2 rounded-full bg-[#0F1E35]" style={{ width: `${(d.consultas / tendenciaMax) * 100}%` }} />
+                </div>
+                <span className="w-8 shrink-0 text-right text-[11px] font-semibold text-[#0F1E35]">{d.consultas}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
