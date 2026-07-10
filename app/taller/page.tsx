@@ -1,10 +1,10 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { getSession } from '@/lib/session'
+import { getSession, clearSession } from '@/lib/session'
 import { Nav } from '@/components/rodaid/nav'
 import { Footer } from '@/components/rodaid/footer'
 import { Inspecciones } from '@/components/rodaid/inspecciones'
-import { ShieldCheck, DollarSign, Clock, Award } from 'lucide-react'
+import { ShieldCheck, DollarSign, Clock, Award, LogOut } from 'lucide-react'
 import { authedFetch } from '@/lib/session'
 
 export default function TallerPage() {
@@ -37,10 +37,19 @@ export default function TallerPage() {
       <main className="mx-auto max-w-4xl px-5 py-10 sm:px-8">
 
         {/* Header */}
-        <div className="mb-8">
-          <span className="text-xs font-semibold uppercase tracking-widest text-[#F47B20]">RODAID · Portal Aliado</span>
-          <h1 className="mt-2 font-display text-3xl font-bold text-[#0F1E35]">Panel del Taller Aliado</h1>
-          <p className="mt-2 text-sm text-slate-warm">Emití CITs, gestioná inspecciones y seguí tus ingresos.</p>
+        <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <span className="text-xs font-semibold uppercase tracking-widest text-[#F47B20]">RODAID · Portal Aliado</span>
+            <h1 className="mt-2 font-display text-3xl font-bold text-[#0F1E35]">Panel del Taller Aliado</h1>
+            <p className="mt-2 text-sm text-slate-warm">Emití CITs, gestioná inspecciones y seguí tus ingresos.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => { clearSession(); window.location.href = "/" }}
+            className="inline-flex items-center gap-1.5 rounded-full border border-clay/30 bg-clay/5 px-3 py-1.5 text-xs font-semibold text-clay transition-colors hover:bg-clay/10"
+          >
+            <LogOut className="size-3.5" /> Cerrar sesión
+          </button>
         </div>
 
         {/* Stats */}
