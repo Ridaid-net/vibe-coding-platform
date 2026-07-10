@@ -15,6 +15,7 @@ import {
   KeyRound,
   Loader2,
   Lock,
+  LogOut,
   RefreshCw,
   ScrollText,
   Server,
@@ -26,6 +27,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { clearSession } from '@/lib/session'
 import {
   accionarApiKey,
   accionarDenuncia,
@@ -290,7 +292,16 @@ function Panel({ rol, onLogout }: { rol: AdminRol | null; onLogout: () => void }
             onClick={onLogout}
             className="inline-flex items-center gap-1.5 rounded-full border border-ink/15 bg-white px-3 py-1.5 text-xs font-semibold text-ink transition-colors hover:border-ink/40"
           >
-            <Lock className="size-3.5" /> Cerrar MFA
+            <Lock className="size-3.5" /> Re-verificar MFA
+          </button>
+          <button
+            onClick={() => {
+              clearSession()
+              window.location.href = '/'
+            }}
+            className="inline-flex items-center gap-1.5 rounded-full border border-clay/30 bg-clay/5 px-3 py-1.5 text-xs font-semibold text-clay transition-colors hover:bg-clay/10"
+          >
+            <LogOut className="size-3.5" /> Cerrar sesión
           </button>
         </div>
       </div>
