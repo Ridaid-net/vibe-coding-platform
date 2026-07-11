@@ -4,6 +4,7 @@ import { getSession, clearSession } from '@/lib/session'
 import { Nav } from '@/components/rodaid/nav'
 import { Footer } from '@/components/rodaid/footer'
 import { Inspecciones } from '@/components/rodaid/inspecciones'
+import { PublicarServicioTaller } from '@/components/rodaid/PublicarServicioTaller'
 import { ShieldCheck, DollarSign, Clock, Award, LogOut } from 'lucide-react'
 import { authedFetch } from '@/lib/session'
 
@@ -18,7 +19,7 @@ export default function TallerPage() {
   const [stats, setStats] = useState({ cits: 0, pendientes: 0, ingresos: 0 })
 
   useEffect(() => {
-    authedFetch('/api/v1/inspector/cit')
+    authedFetch('/api/inspector/cit')
       .then(r => r.json())
       .then(data => {
         if (data?.cits) {
@@ -79,6 +80,8 @@ export default function TallerPage() {
             <p className="text-xs text-white/60">$18.000 por la verificación + $15.000 por el embalaje — el 100% es tuyo. Si la bici se vende, sumás además el 50% del fee de éxito (2% del valor de venta). Los pagos se procesan mensualmente via RODAID PAY.</p>
           </div>
         </div>
+
+        <PublicarServicioTaller />
 
         {/* Panel de inspecciones */}
         <Inspecciones />
