@@ -109,7 +109,7 @@ export default function NoticiaPage() {
         </div>
       )}
 
-      <p className="mt-6 text-base leading-relaxed text-slate-warm">
+      <p className="mt-6 whitespace-pre-line text-base leading-relaxed text-slate-warm">
         {noticia.resumen}
       </p>
 

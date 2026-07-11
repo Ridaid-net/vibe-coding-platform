@@ -1,32 +1,19 @@
 'use client'
-import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Newspaper, ExternalLink, ChevronRight, Play, RefreshCw } from 'lucide-react'
+import { Newspaper, ExternalLink, RefreshCw } from 'lucide-react'
 import { useNoticias } from '@/lib/noticias'
-
-const TIPO_CONFIG = {
-  noticia: { label: 'Novedad', color: 'bg-[#2BBCB8]/10 text-[#2BBCB8]' },
-  prensa: { label: 'Prensa', color: 'bg-[#F47B20]/10 text-[#F47B20]' },
-  evento: { label: 'Evento', color: 'bg-purple-100 text-purple-600' },
-}
+import { NoticiaCard } from './noticia-card'
 
 export function NoticiasPrensaWidget() {
   const { noticias, cargando, error, reintentar } = useNoticias()
-  const [activa, setActiva] = useState(0)
-
-  useEffect(() => {
-    if (noticias.length <= 1) return
-    const interval = setInterval(() => {
-      setActiva(prev => (prev + 1) % noticias.length)
-    }, 6000)
-    return () => clearInterval(interval)
-  }, [noticias.length])
 
   if (cargando) return (
     <div className="rounded-3xl border border-ink/10 bg-white p-6 animate-pulse h-full">
       <div className="h-5 w-40 rounded bg-slate-100 mb-4" />
-      <div className="h-32 rounded-xl bg-slate-50 mb-3" />
-      <div className="h-4 w-3/4 rounded bg-slate-100" />
+      <div className="flex gap-4">
+        <div className="h-40 w-64 shrink-0 rounded-xl bg-slate-50" />
+        <div className="h-40 w-64 shrink-0 rounded-xl bg-slate-50" />
+      </div>
     </div>
   )
 
@@ -49,8 +36,6 @@ export function NoticiasPrensaWidget() {
     </div>
   )
 
-  const noticia = noticias[activa]
-
   return (
     <div className="rounded-3xl border border-ink/10 bg-white p-6 flex flex-col h-full">
       <div className="flex items-center justify-between mb-4">
@@ -60,47 +45,16 @@ export function NoticiasPrensaWidget() {
           </div>
           <span className="font-display text-sm font-semibold text-[#0F1E35]">Noticias y Prensa</span>
         </div>
-        <a href="/sobre" className="text-xs text-[#2BBCB8] hover:underline flex items-center gap-1">
+        <Link href="/prensa" className="text-xs text-[#2BBCB8] hover:underline flex items-center gap-1">
           Ver todo <ExternalLink className="size-3" />
-        </a>
-      </div>
-
-      <div className="flex-1 flex flex-col">
-        {noticia.imagen_url && (
-          <div className="relative rounded-xl overflow-hidden bg-slate-100 mb-4 aspect-video">
-            <img src={noticia.imagen_url} alt={noticia.titulo}
-              className="w-full h-full object-cover" loading="lazy" />
-            {noticia.video_url && (
-              <span className="absolute inset-0 flex items-center justify-center bg-black/20">
-                <span className="flex size-9 items-center justify-center rounded-full bg-white/90">
-                  <Play className="size-3.5 text-ink fill-ink" />
-                </span>
-              </span>
-            )}
-          </div>
-        )}
-        <div className="flex items-center gap-2 mb-2">
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${TIPO_CONFIG[noticia.tipo].color}`}>
-            {TIPO_CONFIG[noticia.tipo].label}
-          </span>
-          <span className="text-[10px] text-slate-warm">{noticia.fuente}</span>
-        </div>
-        <h4 className="font-display text-sm font-bold text-[#0F1E35] leading-snug mb-2">{noticia.titulo}</h4>
-        <p className="text-xs text-slate-warm leading-relaxed flex-1 line-clamp-3">{noticia.resumen}</p>
-        <Link href={`/noticias/${noticia.id}`}
-          className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[#2BBCB8] hover:underline">
-          Leer más <ChevronRight className="size-3" />
         </Link>
       </div>
 
-      {noticias.length > 1 && (
-        <div className="flex items-center justify-center gap-1.5 mt-4">
-          {noticias.map((_, i) => (
-            <button key={i} type="button" onClick={() => setActiva(i)}
-              className={`rounded-full transition-all ${i === activa ? 'w-4 h-1.5 bg-[#0F1E35]' : 'w-1.5 h-1.5 bg-slate-200 hover:bg-slate-300'}`} />
-          ))}
-        </div>
-      )}
+      <div className="flex gap-4 overflow-x-auto pb-1 -mx-1 px-1 snap-x snap-mandatory">
+        {noticias.map(n => (
+          <NoticiaCard key={n.id} noticia={n} className="w-64 shrink-0 snap-start" />
+        ))}
+      </div>
     </div>
   )
 }
