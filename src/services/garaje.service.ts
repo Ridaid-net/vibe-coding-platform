@@ -431,6 +431,95 @@ export async function obtenerMisPublicaciones(
 }
 
 // ---------------------------------------------------------------------------
+// Mis compras (Item 4, prioridad 3): seguimiento del comprador
+// ---------------------------------------------------------------------------
+
+export interface MiCompra {
+  transaccionId: string
+  estado: string
+  plan: string
+  precioARS: number
+  reservaVenceEn: string | null
+  creadoEn: string
+  publicacion: {
+    id: string
+    slug: string
+    titulo: string
+    fotoUrl: string | null
+  }
+  bicicleta: {
+    marca: string | null
+    modelo: string | null
+    numeroSerie: string | null
+    tipo: string | null
+  }
+}
+
+interface CompraRow {
+  tx_id: string
+  tx_estado: string
+  tx_plan: string
+  tx_precio: string
+  tx_reserva_vence_en: string | null
+  tx_created_at: string
+  pub_id: string
+  slug: string
+  titulo: string
+  fotos_urls: string[]
+  marca: string | null
+  modelo: string | null
+  numero_serie: string | null
+  tipo: string | null
+}
+
+/**
+ * Compras/reservas del usuario como COMPRADOR: tanto el flujo generico de
+ * pago unico como las tres etapas del flujo CIT Completo (sena, verificacion,
+ * saldo). No expone datos del vendedor mas alla de lo publico de la
+ * publicacion (titulo, foto, precio).
+ */
+export async function obtenerMisCompras(userId: string): Promise<MiCompra[]> {
+  const pool = getPool()
+  const res = await pool.query<CompraRow>(
+    `
+      SELECT
+        et.id AS tx_id, et.estado AS tx_estado, et.plan AS tx_plan,
+        et.precio_ars AS tx_precio, et.reserva_vence_en AS tx_reserva_vence_en,
+        et.created_at AS tx_created_at,
+        mp.id AS pub_id, mp.slug, mp.titulo, mp.fotos_urls,
+        b.marca, b.modelo, b.numero_serie, b.tipo
+      FROM escrow_transacciones et
+      INNER JOIN marketplace_publicaciones mp ON mp.id = et.publicacion_id
+      INNER JOIN bicicletas b ON b.id = mp.bicicleta_id
+      WHERE et.comprador_id = $1
+      ORDER BY et.created_at DESC
+    `,
+    [userId]
+  )
+
+  return res.rows.map((row: CompraRow): MiCompra => ({
+    transaccionId: row.tx_id,
+    estado: row.tx_estado,
+    plan: row.tx_plan,
+    precioARS: Number(row.tx_precio),
+    reservaVenceEn: row.tx_reserva_vence_en,
+    creadoEn: row.tx_created_at,
+    publicacion: {
+      id: row.pub_id,
+      slug: row.slug,
+      titulo: row.titulo,
+      fotoUrl: row.fotos_urls?.[0] ?? null,
+    },
+    bicicleta: {
+      marca: row.marca,
+      modelo: row.modelo,
+      numeroSerie: row.numero_serie,
+      tipo: row.tipo,
+    },
+  }))
+}
+
+// ---------------------------------------------------------------------------
 // Analitica personal del Garaje (metricas + mapa de calor personal)
 // ---------------------------------------------------------------------------
 

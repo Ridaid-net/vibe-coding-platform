@@ -103,6 +103,27 @@ export interface MiPublicacion {
   } | null
 }
 
+export interface MiCompra {
+  transaccionId: string
+  estado: string
+  plan: string
+  precioARS: number
+  reservaVenceEn: string | null
+  creadoEn: string
+  publicacion: {
+    id: string
+    slug: string
+    titulo: string
+    fotoUrl: string | null
+  }
+  bicicleta: {
+    marca: string | null
+    modelo: string | null
+    numeroSerie: string | null
+    tipo: string | null
+  }
+}
+
 export interface PuntoCalorPersonal {
   celda: string
   lat: number
@@ -228,6 +249,14 @@ export function useActivosGaraje(intervaloMs = 15000) {
 export function useMisPublicaciones() {
   return useSWR<{ publicaciones: MiPublicacion[]; activas: number }>(
     '/api/marketplace/mis-publicaciones',
+    authedJson,
+    { revalidateOnFocus: true, keepPreviousData: true }
+  )
+}
+
+export function useMisCompras() {
+  return useSWR<{ compras: MiCompra[] }>(
+    '/api/marketplace/mis-compras',
     authedJson,
     { revalidateOnFocus: true, keepPreviousData: true }
   )
