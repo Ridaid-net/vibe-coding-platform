@@ -67,12 +67,20 @@ export async function POST(
       return NextResponse.json({ error: 'No se puede transferir una bicicleta con denuncia activa.' }, { status: 409 })
     }
 
-    // El CIT tiene que estar VIGENTE (activo y no vencido) para transferir --
-    // server-side siempre, nunca confiar en que el frontend ya lo valido.
+    // El CIT tiene que estar activo para transferir -- server-side siempre,
+    // nunca confiar en que el frontend ya lo valido. Mismo patron que ya usa
+    // correctamente app/api/v1/marketplace/publicar/route.ts: 'activo' en
+    // minuscula, sin filtrar por fecha_vencimiento -- es la convencion real
+    // que escribe el pipeline de aprobacion (validation.service.ts), no la
+    // 'ACTIVO' mayuscula que usaba antes este chequeo (ver auditoria
+    // 2026-07-11: fecha_vencimiento casi nunca tiene valor en un CIT real,
+    // y 'ACTIVO' mayuscula es una convencion que el pipeline real no
+    // escribe -- las dos causas por separado ya alcanzaban para rechazar
+    // cualquier bici con un CIT realmente activo).
     const citResult = await pool.query(
-      `SELECT id, fecha_vencimiento FROM cits
-       WHERE bicicleta_id = $1 AND estado = 'ACTIVO' AND fecha_vencimiento > NOW()
-       ORDER BY fecha_vencimiento DESC LIMIT 1`,
+      `SELECT id FROM cits
+       WHERE bicicleta_id = $1 AND estado = 'activo'
+       ORDER BY acunado_en DESC LIMIT 1`,
       [id]
     )
     const cit = citResult.rows[0]
