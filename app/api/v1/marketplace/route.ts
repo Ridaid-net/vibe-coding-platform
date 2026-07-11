@@ -28,6 +28,18 @@ const ORDER_SQL = {
   vistas: 'mp.vistas DESC, mp.publicado_en DESC',
 } as const
 
+// Estados que se consideran "disponibles para reservar" y por lo tanto
+// visibles en el grid del Marketplace por defecto: el generico (ACTIVA) mas
+// los dos estados iniciales de CIT Completo (antes de que alguien la
+// reserve). Deliberadamente NO incluye RESERVADO/EJECUTANDO_LOGISTICA -- esas
+// ya tienen dueño, no deben aparecer como disponibles para un nuevo
+// comprador.
+const DEFAULT_ESTADOS_VISIBLES = [
+  'ACTIVA',
+  'PUBLICADO_PENDIENTE_CERTIFICACION',
+  'PUBLICADO_CERTIFICADO',
+]
+
 export async function GET(req: Request) {
   const startedAt = performance.now()
 
@@ -35,7 +47,8 @@ export async function GET(req: Request) {
     const url = new URL(req.url)
     const q = url.searchParams.get('q')?.trim() ?? ''
     const tsQuery = q ? buildSpanishTsQuery(q) : ''
-    const estado = url.searchParams.get('estado')?.trim() || 'ACTIVA'
+    const estadoParam = url.searchParams.get('estado')?.trim()
+    const estados = estadoParam ? [estadoParam] : DEFAULT_ESTADOS_VISIBLES
     const marcas = normalizeStringList(
       url.searchParams.get('marca') ?? url.searchParams.get('marcas')
     )
@@ -58,7 +71,7 @@ export async function GET(req: Request) {
     const offset = (pagina - 1) * limite
     const pool = getPool()
     const { whereSql, values, whereMeta } = buildWhere({
-      estado,
+      estados,
       marcas,
       tipo,
       rodado,
@@ -114,47 +127,47 @@ export async function GET(req: Request) {
             SELECT b.marca AS valor, COUNT(*)::text AS conteo
             FROM marketplace_publicaciones mp
             INNER JOIN bicicletas b ON b.id = mp.bicicleta_id
-            WHERE mp.estado = $1
+            WHERE mp.estado = ANY($1::text[])
             GROUP BY b.marca
             ORDER BY COUNT(*) DESC, b.marca ASC
           `,
-          [estado]
+          [estados]
         ),
         pool.query<{ valor: string; conteo: string }>(
           `
             SELECT b.tipo AS valor, COUNT(*)::text AS conteo
             FROM marketplace_publicaciones mp
             INNER JOIN bicicletas b ON b.id = mp.bicicleta_id
-            WHERE mp.estado = $1
+            WHERE mp.estado = ANY($1::text[])
             GROUP BY b.tipo
             ORDER BY COUNT(*) DESC, b.tipo ASC
           `,
-          [estado]
+          [estados]
         ),
         pool.query<{ valor: string; conteo: string }>(
           `
             SELECT b.rodado::text AS valor, COUNT(*)::text AS conteo
             FROM marketplace_publicaciones mp
             INNER JOIN bicicletas b ON b.id = mp.bicicleta_id
-            WHERE mp.estado = $1 AND b.rodado IS NOT NULL
+            WHERE mp.estado = ANY($1::text[]) AND b.rodado IS NOT NULL
             GROUP BY b.rodado
             ORDER BY b.rodado ASC
           `,
-          [estado]
+          [estados]
         ),
         pool.query<{ valor: string; conteo: string }>(
           `
             SELECT b.talle_cuadro AS valor, COUNT(*)::text AS conteo
             FROM marketplace_publicaciones mp
             INNER JOIN bicicletas b ON b.id = mp.bicicleta_id
-            WHERE mp.estado = $1 AND b.talle_cuadro IS NOT NULL
+            WHERE mp.estado = ANY($1::text[]) AND b.talle_cuadro IS NOT NULL
             GROUP BY b.talle_cuadro
             ORDER BY
               CASE b.talle_cuadro
                 WHEN 'S' THEN 1 WHEN 'M' THEN 2 WHEN 'L' THEN 3 WHEN 'XL' THEN 4 ELSE 5
               END
           `,
-          [estado]
+          [estados]
         ),
         pool.query<{ etiqueta: string; min: string; max: string; conteo: string }>(
           `
@@ -172,13 +185,13 @@ export async function GET(req: Request) {
               COUNT(mp.id)::text AS conteo
             FROM rangos r
             LEFT JOIN marketplace_publicaciones mp
-              ON mp.estado = $1
+              ON mp.estado = ANY($1::text[])
              AND mp.precio_ars >= r.min
              AND mp.precio_ars < r.max
             GROUP BY r.etiqueta, r.min, r.max
             ORDER BY r.min
           `,
-          [estado]
+          [estados]
         ),
         pool.query<{ total: string }>(
           `
@@ -229,7 +242,7 @@ export async function GET(req: Request) {
         query: {
           q: q || null,
           filtros: {
-            estado,
+            estado: estados,
             marca: marcas.length ? marcas : null,
             tipo,
             rodado,
@@ -260,7 +273,7 @@ export async function GET(req: Request) {
 }
 
 function buildWhere(filters: {
-  estado: string
+  estados: string[]
   marcas: string[]
   tipo: string | null
   rodado: number | null
@@ -271,8 +284,8 @@ function buildWhere(filters: {
   anioMax: number | null
   tsQuery: string
 }) {
-  const clauses = ['mp.estado = $1']
-  const values: Array<string | number | string[]> = [filters.estado]
+  const clauses = ['mp.estado = ANY($1::text[])']
+  const values: Array<string | number | string[]> = [filters.estados]
 
   if (filters.tsQuery) {
     values.push('spanish', filters.tsQuery)
