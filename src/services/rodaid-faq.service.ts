@@ -212,6 +212,30 @@ const HITOS: { tema: string; detalle: string }[] = [
       'los datos de SU cuenta (estado de sus CITs, seguridad de su zona). Es ' +
       'distinto de este asistente de FAQ público.',
   },
+  {
+    tema: 'CIT Express y CIT Completo — dos niveles según lo que necesites',
+    detalle:
+      'RODAID ofrece dos niveles de CIT. El CIT Express da una identidad básica ' +
+      'y rápida: verifica que el número de serie sea legítimo y que la bici no ' +
+      'figure como robada, ideal para circular. El CIT Completo/Transferencia es ' +
+      'una certificación técnica completa —inspección de 20 puntos realizada por ' +
+      'un Taller Aliado— y es el que habilita la publicación en el Marketplace: ' +
+      'el comprador reserva y paga una seña, que financia la verificación del ' +
+      'taller; una vez sellada, se completa la venta. El valor exacto y vigente ' +
+      'de cada trámite se muestra siempre en rodaid.net/precios antes de ' +
+      'confirmar.',
+  },
+  {
+    tema: 'Consecuencias de actuar de mala fe',
+    detalle:
+      'RODAID tiene mecanismos de detección y sanción para conductas de mala fe, ' +
+      'tanto de compradores como de vendedores. La reputación del usuario queda ' +
+      'registrada en la plataforma, el sistema de pagos está diseñado para que ' +
+      'nadie —ni el Taller Aliado ni RODAID— trabaje gratis por una estafa ' +
+      'ajena, y los casos graves pueden derivar en la pérdida de la cuenta. ' +
+      'Todas las transacciones y CITs quedan anclados en blockchain, con ' +
+      'identidad verificable.',
+  },
 ]
 
 /** Marco legal y garantías que el asistente debe citar con precisión. */
@@ -237,6 +261,7 @@ const MARCO_LEGAL = {
 const ENLACES = {
   verificador: '/verificar',
   garaje: '/garaje',
+  precios: '/precios',
 }
 
 const SOPORTE_OFICIAL = 'el canal de soporte oficial de RODAID (sección Ayuda / Contacto del sitio)'
@@ -316,7 +341,8 @@ export function construirSystemPrompt(
     ``,
     `INTERFAZ DE RESPUESTA: respuestas CONCISAS (máximo 3 párrafos), directas y, cuando`,
     `aplique, incluí un enlace en markdown a la sección correspondiente: el Verificador`,
-    `Público (${ENLACES.verificador}) o el Garaje Digital (${ENLACES.garaje}).`,
+    `Público (${ENLACES.verificador}), el Garaje Digital (${ENLACES.garaje}), o Precios y`,
+    `Comisiones (${ENLACES.precios}) cuando pregunten por el valor exacto de un trámite.`,
   ]
 
   if (pagina && (pagina.etiqueta || pagina.ruta)) {
