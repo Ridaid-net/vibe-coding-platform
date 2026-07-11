@@ -36,6 +36,13 @@ interface PublicacionData {
   }
 }
 
+interface MiReserva {
+  id: string
+  estado: string
+}
+
+const CIT_COMPLETO_DISPONIBLE = ['PUBLICADO_PENDIENTE_CERTIFICACION', 'PUBLICADO_CERTIFICADO']
+
 const ars = new Intl.NumberFormat('es-AR', {
   style: 'currency',
   currency: 'ARS',
@@ -47,22 +54,27 @@ export function PublicacionDetalle({ id }: { id: string }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [fotoActiva, setFotoActiva] = useState(0)
-  const [comprando, setComprando] = useState(false)
+  const [accionando, setAccionando] = useState(false)
   const [buyerId, setBuyerId] = useState<string | null>(null)
+  const [miReserva, setMiReserva] = useState<MiReserva | null>(null)
 
   const cargar = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/v1/marketplace/${id}`)
+      const res = await authedFetch(`/api/v1/marketplace/${id}`)
       if (res.status === 404) {
         setError('No encontramos esta publicación. Puede que ya no esté disponible.')
         setPub(null)
         return
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const json = (await res.json()) as { publicacion: PublicacionData }
+      const json = (await res.json()) as {
+        publicacion: PublicacionData
+        miReserva: MiReserva | null
+      }
       setPub(json.publicacion)
+      setMiReserva(json.miReserva)
     } catch {
       setError('No pudimos cargar la publicación. Probá de nuevo en unos segundos.')
       setPub(null)
@@ -83,11 +95,11 @@ export function PublicacionDetalle({ id }: { id: string }) {
       .catch(() => setBuyerId(null))
   }, [])
 
-  const comprar = async () => {
+  const iniciarPago = async (endpoint: 'comprar' | 'reservar' | 'confirmar-pago') => {
     if (!pub) return
-    setComprando(true)
+    setAccionando(true)
     try {
-      const res = await authedFetch(`/api/v1/marketplace/${pub.id}/comprar`, {
+      const res = await authedFetch(`/api/v1/marketplace/${pub.id}/${endpoint}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({}),
@@ -102,10 +114,10 @@ export function PublicacionDetalle({ id }: { id: string }) {
       }
 
       if (!res.ok || !data.pago) {
-        toast.error('No se pudo iniciar la compra', {
+        toast.error('No se pudo continuar', {
           description: data.message ?? 'Intentá de nuevo en unos instantes.',
         })
-        setComprando(false)
+        setAccionando(false)
         return
       }
 
@@ -117,10 +129,10 @@ export function PublicacionDetalle({ id }: { id: string }) {
           : data.pago.initPoint
       window.location.href = url
     } catch {
-      toast.error('No se pudo iniciar la compra', {
+      toast.error('No se pudo continuar', {
         description: 'Revisá tu conexión e intentá nuevamente.',
       })
-      setComprando(false)
+      setAccionando(false)
     }
   }
 
@@ -148,7 +160,8 @@ export function PublicacionDetalle({ id }: { id: string }) {
 
   const { bicicleta } = pub
   const esVendedor = buyerId != null && buyerId === pub.vendedorId
-  const activa = pub.estado === 'ACTIVA'
+  const disponibleCitCompleto = CIT_COMPLETO_DISPONIBLE.includes(pub.estado)
+  const yaCertificada = pub.estado === 'PUBLICADO_CERTIFICADO'
   const fotos = pub.fotosUrls ?? []
   const ficha = [
     ['Marca', bicicleta.marca],
@@ -254,17 +267,13 @@ export function PublicacionDetalle({ id }: { id: string }) {
               <p className="mt-5 rounded-xl border border-ink/12 bg-paper-dim/60 px-4 py-3 text-sm text-slate-warm">
                 Esta es tu publicación. No podés comprar tu propia bici.
               </p>
-            ) : !activa ? (
-              <p className="mt-5 rounded-xl border border-clay/30 bg-clay/5 px-4 py-3 text-sm text-slate-warm">
-                Esta publicación no está disponible para la compra en este momento.
-              </p>
-            ) : (
+            ) : pub.estado === 'ACTIVA' ? (
               <button
-                onClick={comprar}
-                disabled={comprando}
+                onClick={() => iniciarPago('comprar')}
+                disabled={accionando}
                 className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-ink px-5 py-3.5 text-sm font-semibold text-paper transition-colors hover:bg-ink-soft disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {comprando ? (
+                {accionando ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />
                     Redirigiendo al pago…
@@ -276,6 +285,66 @@ export function PublicacionDetalle({ id }: { id: string }) {
                   </>
                 )}
               </button>
+            ) : miReserva?.estado === 'SALDO_PENDIENTE' ? (
+              <>
+                <p className="mt-5 rounded-xl border border-lime-deep/30 bg-lime/10 px-4 py-3 text-sm text-ink">
+                  El Taller Aliado ya selló la verificación de esta bici. Confirmá el pago del saldo para completar la compra.
+                </p>
+                <button
+                  onClick={() => iniciarPago('confirmar-pago')}
+                  disabled={accionando}
+                  className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-ink px-5 py-3.5 text-sm font-semibold text-paper transition-colors hover:bg-ink-soft disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {accionando ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      Redirigiendo al pago…
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="size-4 text-lime" />
+                      Pagar saldo
+                    </>
+                  )}
+                </button>
+              </>
+            ) : miReserva?.estado === 'RESERVADA' ? (
+              <p className="mt-5 rounded-xl border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                Tu seña quedó confirmada. El Taller Aliado está verificando la bici — te avisamos apenas termine.
+              </p>
+            ) : miReserva?.estado === 'RESERVA_PENDIENTE' ? (
+              <p className="mt-5 rounded-xl border border-ink/12 bg-paper-dim/60 px-4 py-3 text-sm text-slate-warm">
+                Estamos confirmando tu seña. Esto puede tardar unos segundos.
+              </p>
+            ) : disponibleCitCompleto ? (
+              <>
+                <p className="mt-5 text-xs text-slate-warm">
+                  {yaCertificada
+                    ? 'Esta bici ya tiene su verificación de 20 puntos sellada. Pagás el precio completo ahora y coordinamos la entrega.'
+                    : 'Reservás pagando una seña, que financia la verificación de 20 puntos del Taller Aliado. Una vez sellada, pagás el saldo y coordinamos la entrega.'}
+                </p>
+                <button
+                  onClick={() => iniciarPago('reservar')}
+                  disabled={accionando}
+                  className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-ink px-5 py-3.5 text-sm font-semibold text-paper transition-colors hover:bg-ink-soft disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {accionando ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      Redirigiendo al pago…
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="size-4 text-lime" />
+                      {yaCertificada ? 'Comprar protegido' : 'Reservar'}
+                    </>
+                  )}
+                </button>
+              </>
+            ) : (
+              <p className="mt-5 rounded-xl border border-clay/30 bg-clay/5 px-4 py-3 text-sm text-slate-warm">
+                Esta publicación no está disponible para la compra en este momento.
+              </p>
             )}
 
             <p className="mt-3 text-center text-xs text-slate-warm">

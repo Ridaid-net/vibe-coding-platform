@@ -17,7 +17,7 @@ import { ProteccionRodaidPay } from '@/components/rodaid/rodaid-pay-badge'
 import { BotonDisputa } from '@/components/rodaid/BotonDisputa'
 import { authedFetch } from '@/lib/session'
 
-type Fase = 'verificando' | 'retenido' | 'pendiente' | 'rechazado' | 'error'
+type Fase = 'verificando' | 'sena-confirmada' | 'retenido' | 'pendiente' | 'rechazado' | 'error'
 
 const MAX_INTENTOS = 6
 const INTERVALO_MS = 2000
@@ -58,15 +58,23 @@ function ResultadoInner() {
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
-      const data = (await res.json()) as { estado: string }
+      const data = (await res.json()) as { estado: string; plan?: string }
 
+      if (data.estado === 'RESERVADA') {
+        setFase('sena-confirmada')
+        return
+      }
       if (data.estado === 'FONDOS_RETENIDOS' || data.estado === 'EN_CAMINO') {
         setFase('retenido')
         return
       }
-      if (data.estado === 'CANCELADA') {
+      if (data.estado === 'CANCELADA' || data.estado === 'RESERVA_VENCIDA') {
         setFase('rechazado')
-        setMensaje('La compra fue cancelada y el depósito reembolsado.')
+        setMensaje(
+          data.estado === 'RESERVA_VENCIDA'
+            ? 'La reserva venció antes de completarse.'
+            : 'La compra fue cancelada y el depósito reembolsado.'
+        )
         return
       }
 
@@ -114,6 +122,15 @@ function ResultadoInner() {
           tone="neutral"
           titulo="Confirmando tu pago…"
           detalle="Estamos verificando que el dinero quedó retenido en RODAID PAY."
+        />
+      )}
+
+      {fase === 'sena-confirmada' && (
+        <Estado
+          icon={<CheckCircle2 className="size-8" />}
+          tone="ok"
+          titulo="¡Seña confirmada!"
+          detalle="El Taller Aliado ya puede verificar tu bici. Te avisamos apenas termine la inspección de 20 puntos, para que confirmes el pago del saldo."
         />
       )}
 

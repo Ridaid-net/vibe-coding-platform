@@ -1796,6 +1796,24 @@ export async function getTransaccion(transaccionId: string) {
   return mapTransaccion(res.rows[0])
 }
 
+const ESTADOS_RESERVA_ACTIVA = ['RESERVA_PENDIENTE', 'RESERVADA', 'SALDO_PENDIENTE'] as const
+
+/**
+ * Reserva activa (no terminal) de un comprador puntual sobre una publicacion,
+ * si existe. Usada por la pagina de detalle para saber si el viewer ya tiene
+ * una reserva en curso sobre ESTA bici, sin exponer nunca esa informacion a
+ * otros viewers (privacidad del comprador).
+ */
+export async function obtenerMiReservaActiva(publicacionId: string, compradorId: string) {
+  const res = await getPool().query<TransaccionRow>(
+    `SELECT * FROM escrow_transacciones
+     WHERE publicacion_id = $1 AND comprador_id = $2 AND estado = ANY($3)
+     ORDER BY created_at DESC LIMIT 1`,
+    [publicacionId, compradorId, ESTADOS_RESERVA_ACTIVA]
+  )
+  return res.rows[0] ? mapTransaccion(res.rows[0]) : null
+}
+
 export async function getEventos(transaccionId: string) {
   const res = await getPool().query<EventoRow>(
     `
