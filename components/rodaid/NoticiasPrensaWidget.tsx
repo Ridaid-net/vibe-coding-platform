@@ -86,7 +86,7 @@ export function NoticiasPrensaWidget() {
           <span className="text-[10px] text-slate-warm">{noticia.fuente}</span>
         </div>
         <h4 className="font-display text-sm font-bold text-[#0F1E35] leading-snug mb-2">{noticia.titulo}</h4>
-        <p className="text-xs text-slate-warm leading-relaxed flex-1">{noticia.resumen}</p>
+        <p className="text-xs text-slate-warm leading-relaxed flex-1 line-clamp-3">{noticia.resumen}</p>
         <Link href={`/noticias/${noticia.id}`}
           className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[#2BBCB8] hover:underline">
           Leer más <ChevronRight className="size-3" />
