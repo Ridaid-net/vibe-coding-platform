@@ -275,6 +275,20 @@ export function calcularHashPayload(payload: Record<string, unknown>): string {
   return createHash('sha256').update(jsonCanonico(payload)).digest('hex')
 }
 
+/**
+ * Timeout del fetch de cross-reference contra el Ministerio, en ms. Configurable
+ * via RODAID_CROSSREF_TIMEOUT_MS, mismo patron que BFA_TIMEOUT_MS (lib/bfa.ts).
+ * Es la fuente de verdad del timeout "de mecanismo" (el fetch en si) --
+ * cit-express.service.ts deriva de esta funcion el timeout "de politica" (el
+ * presupuesto total del Promise.race externo, mayor que este con margen) para
+ * que el invariante "el timeout interno dispara antes que el externo" no
+ * dependa de mantener dos numeros sincronizados a mano.
+ */
+export function crossReferenceTimeoutMs(): number {
+  const raw = Number(process.env.RODAID_CROSSREF_TIMEOUT_MS)
+  return Number.isFinite(raw) && raw > 0 ? raw : 4000
+}
+
 function resolverBaseUrl(): string | null {
   const base =
     process.env.RODAID_BASE_URL ??
@@ -299,18 +313,23 @@ export async function ejecutarCrossReference(
 ): Promise<{ resultado: CrossReferenceResultado; via: 'http' | 'inproc' }> {
   const base = resolverBaseUrl()
   if (base) {
+    const controlador = new AbortController()
+    const timer = setTimeout(() => controlador.abort(), crossReferenceTimeoutMs())
     try {
       const res = await fetch(`${base}/api/seguridad/cross-reference`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),
+        signal: controlador.signal,
       })
       if (res.ok) {
         const resultado = (await res.json()) as CrossReferenceResultado
         return { resultado, via: 'http' }
       }
     } catch {
-      // Cae al evaluador en proceso.
+      // Cae al evaluador en proceso (timeout, abort o error de red incluidos).
+    } finally {
+      clearTimeout(timer)
     }
   }
   return { resultado: evaluarCrossReference(input, ahoraISO), via: 'inproc' }

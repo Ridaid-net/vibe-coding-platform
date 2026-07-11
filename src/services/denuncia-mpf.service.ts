@@ -11,6 +11,10 @@ import {
   invalidarCache,
   normalizarSerie,
   notificarDenunciaJudicial,
+  ministerioNotificacionConfigurada,
+  reclamarNotificacionMinisterio,
+  marcarNotificacionMinisterioExitosa,
+  marcarFalloNotificacionMinisterio,
 } from '@/src/services/ministerio.service'
 import { emitirEvento } from '@/src/services/notification.service'
 import { obtenerTextoDocumento } from '@/src/services/pdf-texto.service'
@@ -747,6 +751,103 @@ export async function registrarDenuncia(args: {
  * para el caso 2), para que el cambio de estado y la confirmacion del pago
  * sean atomicos en el caso 2.
  */
+interface IntentoNotificacionMinisterio {
+  enviado: boolean
+  modo: 'LIVE' | 'SIMULADO'
+  estado: 'enviado' | 'pendiente' | 'error'
+}
+
+/**
+ * Intenta notificar al Ministerio una denuncia ya activa, con el ciclo
+ * reclamar -> enviar -> marcar (mismo patron que el anclaje BFA en
+ * blockchain.service.ts). Nunca lanza: el resultado queda reflejado en
+ * denuncias_mpf.ministerio_estado para que el worker
+ * (notificarDenunciasJudicialesPendientes) reintente si hace falta. Usado
+ * tanto por el intento sincrono inicial (activarDenuncia) como por el
+ * barrido periodico.
+ */
+async function intentarNotificarMinisterio(
+  denunciaId: string,
+  datos: { serial: string; expediente: string | null; fechaDocumento: string | null; pdfHash: string }
+): Promise<IntentoNotificacionMinisterio> {
+  if (!ministerioNotificacionConfigurada()) {
+    console.info(
+      `[denuncia] Ministerio no configurado; notificacion de ${denunciaId} queda pendiente.`
+    )
+    return { enviado: false, modo: 'SIMULADO', estado: 'pendiente' }
+  }
+
+  const claim = await reclamarNotificacionMinisterio(denunciaId)
+  if (claim === 'ya-notificado') return { enviado: true, modo: 'LIVE', estado: 'enviado' }
+  if (claim === 'no-existe') return { enviado: false, modo: 'LIVE', estado: 'error' }
+
+  try {
+    const documentoUrl = await urlDocumentoSeguro(denunciaId)
+    await notificarDenunciaJudicial({
+      serial: datos.serial,
+      expediente: datos.expediente,
+      fechaDocumento: datos.fechaDocumento,
+      documentoUrl,
+      documentoHash: datos.pdfHash,
+      denunciaId,
+    })
+    await marcarNotificacionMinisterioExitosa(denunciaId)
+    return { enviado: true, modo: 'LIVE', estado: 'enviado' }
+  } catch (err) {
+    const mensaje = err instanceof Error ? err.message : 'Fallo la notificacion al Ministerio.'
+    console.error('[denuncia] no se pudo notificar al Ministerio', denunciaId, mensaje)
+    const estadoFinal = await marcarFalloNotificacionMinisterio(denunciaId, mensaje)
+    return { enviado: false, modo: 'LIVE', estado: estadoFinal }
+  }
+}
+
+/**
+ * Barre las denuncias DENUNCIA_JUDICIAL_ACTIVA cuya notificacion al
+ * Ministerio quedo pendiente y reintenta. Pensado para un endpoint de sistema
+ * / Scheduled Function, mismo patron que anclarPendientes()
+ * (blockchain.service.ts). Procesa secuencialmente. Las que ya agotaron sus
+ * intentos ('error') NO se reintentan automaticamente -- dead-letter,
+ * requiere revision manual, mismo criterio que bfa_estado = 'error'.
+ */
+export async function notificarDenunciasJudicialesPendientes(limite = 25): Promise<{
+  encontradas: number
+  enviadas: number
+}> {
+  if (!ministerioNotificacionConfigurada()) {
+    return { encontradas: 0, enviadas: 0 }
+  }
+
+  const res = await getPool().query<{
+    id: string
+    serial_normalizado: string
+    numero_expediente: string | null
+    fecha_documento: string | null
+    pdf_sha256: string
+  }>(
+    `
+      SELECT id, serial_normalizado, numero_expediente, fecha_documento, pdf_sha256
+      FROM denuncias_mpf
+      WHERE estado = 'DENUNCIA_JUDICIAL_ACTIVA'
+        AND ministerio_estado = 'pendiente'
+      ORDER BY creado_en ASC
+      LIMIT $1
+    `,
+    [limite]
+  )
+
+  let enviadas = 0
+  for (const row of res.rows) {
+    const resultado = await intentarNotificarMinisterio(row.id, {
+      serial: row.serial_normalizado,
+      expediente: row.numero_expediente,
+      fechaDocumento: row.fecha_documento,
+      pdfHash: row.pdf_sha256,
+    })
+    if (resultado.estado === 'enviado') enviadas += 1
+  }
+  return { encontradas: res.rows.length, enviadas }
+}
+
 async function activarDenuncia(opts: {
   denunciaId: string
   bicicletaId: string
@@ -779,17 +880,14 @@ async function activarDenuncia(opts: {
   await invalidarCache(opts.serial).catch(() => undefined)
 
   // Notificacion institucional (Hito 12) con el LINK SEGURO al PDF cifrado.
-  const documentoUrl = await urlDocumentoSeguro(opts.denunciaId)
-  const aviso = await notificarDenunciaJudicial({
+  // Reintento confiable via worker si falla o se cuelga (ver
+  // notificarDenunciasJudicialesPendientes) -- no basta con loguearlo, es un
+  // aviso a fuerzas de seguridad.
+  const aviso = await intentarNotificarMinisterio(opts.denunciaId, {
     serial: opts.serial,
     expediente: opts.expediente,
     fechaDocumento: opts.fechaDocumento,
-    documentoUrl,
-    documentoHash: opts.pdfHash,
-    denunciaId: opts.denunciaId,
-  }).catch((err) => {
-    console.error('[denuncia] no se pudo notificar al Ministerio', err)
-    return { enviado: false, modo: 'SIMULADO' as const }
+    pdfHash: opts.pdfHash,
   })
 
   await auditarDenuncia({
@@ -804,6 +902,7 @@ async function activarDenuncia(opts: {
       bfa: bfaEstado,
       bfaTxHash: bfa?.txHash ?? null,
       ministerioModo: aviso.modo,
+      ministerioEstado: aviso.estado,
     },
   })
   await auditarDenuncia({
@@ -813,7 +912,7 @@ async function activarDenuncia(opts: {
     usuarioId: opts.userId,
     evento: 'NOTIFICACION_MINISTERIO',
     pdfHash: opts.pdfHash,
-    detalle: { enviado: aviso.enviado, modo: aviso.modo, tokenized: true },
+    detalle: { enviado: aviso.enviado, modo: aviso.modo, estado: aviso.estado, tokenized: true },
   })
 
   // Avisar al propietario por el bus de notificaciones (Hito 10). Best-effort.

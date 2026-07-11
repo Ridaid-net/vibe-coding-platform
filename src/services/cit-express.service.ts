@@ -1,4 +1,4 @@
-import { ejecutarCrossReference } from '@/src/services/validation.service'
+import { ejecutarCrossReference, crossReferenceTimeoutMs } from '@/src/services/validation.service'
 import { type CrossReferenceResultado } from '@/src/services/seguridad.mock'
 
 /**
@@ -48,12 +48,23 @@ function serieEsLegible(numeroSerie: string): boolean {
 // ── Cross-reference con fail-closed deliberado ───────────────────────────────
 
 /**
- * Tiempo maximo que se espera al cross-reference antes de darlo por no
- * disponible. Hoy `ejecutarCrossReference` es 100% mock/determinístico (ver
- * seguridad.mock.ts) y nunca tira ni cuelga de verdad, asi que este timeout no
- * se dispara en la practica; existe para el dia que se conecte una API real.
+ * Margen sobre el timeout del fetch interno (validation.service.ts) para que
+ * el Promise.race externo nunca sea el primero en disparar en el camino
+ * normal -- si lo fuera, el fetch interno seguiria colgado sin abortar mas
+ * alla de la respuesta ya devuelta a este llamador (fuga de conexion).
  */
-const CROSS_REFERENCE_TIMEOUT_MS = 5000
+const CROSS_REFERENCE_MARGEN_MS = 1000
+
+/**
+ * Tiempo maximo que se espera al cross-reference antes de darlo por no
+ * disponible. Derivado del timeout del fetch interno + margen (no un numero
+ * independiente) para que "el timeout interno dispara antes que el externo"
+ * sea un invariante estructural, no una convencion a mantener a mano. Hoy
+ * `ejecutarCrossReference` es 100% mock/determinístico (ver seguridad.mock.ts)
+ * y nunca tira ni cuelga de verdad, asi que este timeout no se dispara en la
+ * practica; existe para el dia que se conecte una API real.
+ */
+const CROSS_REFERENCE_TIMEOUT_MS = crossReferenceTimeoutMs() + CROSS_REFERENCE_MARGEN_MS
 
 interface CrossReferenceEvaluado {
   /** true si el chequeo realmente corrio (no fallo ni excedio el timeout). */
