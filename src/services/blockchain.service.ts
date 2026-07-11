@@ -207,7 +207,7 @@ export async function anclarCIT(
       txHash = await mintearOnchain(tokenId, hash)
     }
 
-    await marcarAnclado(citId, txHash, tokenId)
+    await marcarAnclado(citId, txHash, tokenId, modo)
     console.info(`[bfa:${modo}] CIT ${citId} anclado tokenId=${tokenId} tx=${txHash}`)
     return { citId, estado: 'anclado', modo, txHash, tokenId: tokenId.toString() }
   } catch (error) {
@@ -286,13 +286,14 @@ async function reclamarAnclaje(citId: string): Promise<ClaimResultado> {
   })
 }
 
-async function marcarAnclado(citId: string, txHash: string, tokenId: bigint) {
+async function marcarAnclado(citId: string, txHash: string, tokenId: bigint, modo: BfaModo) {
   await getPool().query(
     `
       UPDATE cits
       SET bfa_estado = 'anclado',
           bfa_tx_hash = $2,
           bfa_token_id = $3,
+          bfa_modo = $5,
           bfa_anclado_en = NOW(),
           bfa_ultimo_error = NULL,
           metadata_json = metadata_json || $4::jsonb,
@@ -304,6 +305,7 @@ async function marcarAnclado(citId: string, txHash: string, tokenId: bigint) {
       txHash,
       tokenId.toString(),
       JSON.stringify({ bfa: { txHash, tokenId: tokenId.toString(), ancladoEn: new Date().toISOString() } }),
+      modo,
     ]
   )
 }

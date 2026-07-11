@@ -39,7 +39,7 @@ export async function GET(req: Request) {
     const result = await pool.query(`
       SELECT a.numero_serie, a.marca, a.modelo, a.anio, a.tipo, a.color,
         c.codigo_cit, c.estado::text as cit_estado, c.created_at as emitido_en,
-        c.fecha_vencimiento, c.hash_sha256,
+        c.fecha_vencimiento, c.hash_sha256, c.bfa_estado, c.bfa_modo,
         CASE WHEN d.id IS NOT NULL THEN true ELSE false END as tiene_denuncia
       FROM bicicletas a
       LEFT JOIN cits c ON c.bicicleta_id = a.id AND c.estado = 'activo'
@@ -56,6 +56,11 @@ export async function GET(req: Request) {
     const ahora = new Date().toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })
     const estadoColor = b.tiene_denuncia ? '#dc2626' : b.cit_estado === 'activo' ? '#16a34a' : '#F47B20'
     const estadoTexto = b.tiene_denuncia ? '⚠️ DENUNCIA JUDICIAL ACTIVA' : b.cit_estado === 'activo' ? '✅ CIT ACTIVO — VERIFICADO' : '⏳ SIN CIT ACTIVO'
+    // Honestidad de estado (auditoria 2026-07-11): la BFA_RPC_URL/BFA_PRIVATE_KEY/
+    // BFA_CIT_CONTRACT no estan configuradas en produccion, asi que ningun CIT
+    // tiene todavia un anclaje ONCHAIN real -- solo mostrar el rotulo "Blockchain
+    // Federal Argentina" cuando bfa_modo lo confirme.
+    const anclajeOnchain = b.bfa_estado === 'anclado' && b.bfa_modo === 'ONCHAIN'
 
     await auditTenant({
       tenantSlug,
@@ -121,8 +126,9 @@ export async function GET(req: Request) {
         <div class="field"><label>Emitido</label><span>${new Date(b.emitido_en).toLocaleDateString('es-AR')}</span></div>
         <div class="field"><label>Vence</label><span>${new Date(b.fecha_vencimiento).toLocaleDateString('es-AR')}</span></div>
       </div>
-      <p class="section-title">Hash Blockchain Federal Argentina (SHA-256)</p>
-      <div class="hash">${b.hash_sha256 ?? 'Pendiente de anclaje en BFA'}</div>
+      <p class="section-title">${anclajeOnchain ? 'Hash Anclado en Blockchain Federal Argentina (SHA-256)' : 'Huella de Identidad (SHA-256)'}</p>
+      <div class="hash">${b.hash_sha256 ?? 'Pendiente de anclaje'}</div>
+      ${!anclajeOnchain ? '<p class="timestamp">El anclaje en la Blockchain Federal Argentina está en proceso de habilitación institucional.</p>' : ''}
       ` : ''}
     </div>
     <div class="footer-cert">

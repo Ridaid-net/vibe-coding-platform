@@ -301,10 +301,15 @@ function VeredictoCard({ veredicto }: { veredicto: VerificacionVeredicto }) {
             <Fingerprint className="size-4 text-ink/60" />
             Registro en la BFA
           </span>
-          {veredicto.bfa.coincide ? (
+          {veredicto.bfa.coincide && veredicto.bfa.modo === 'ONCHAIN' ? (
             <span className="inline-flex items-center gap-1.5 font-semibold text-lime-deep">
               <CheckCircle2 className="size-4" />
               Huella verificada en blockchain
+            </span>
+          ) : veredicto.bfa.coincide ? (
+            <span className="inline-flex items-center gap-1.5 font-semibold text-amber-700">
+              <Fingerprint className="size-4" />
+              Identidad registrada en RODAID
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 font-semibold text-slate-warm">
@@ -317,6 +322,11 @@ function VeredictoCard({ veredicto }: { veredicto: VerificacionVeredicto }) {
               <Link2 className="size-3.5" />
               <span className="font-mono">{veredicto.codigoCit}</span>
             </span>
+          )}
+          {veredicto.bfa.coincide && veredicto.bfa.modo !== 'ONCHAIN' && (
+            <p className="w-full text-[11px] leading-snug text-slate-warm">
+              El anclaje en la Blockchain Federal Argentina está en proceso de habilitación institucional.
+            </p>
           )}
         </div>
       )}

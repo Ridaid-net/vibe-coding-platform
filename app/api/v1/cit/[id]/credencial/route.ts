@@ -28,7 +28,7 @@ export async function GET(
       `
         SELECT
           c.id AS cit_id, c.estado, c.codigo_cit, c.hash_sha256,
-          c.fecha_vencimiento, c.bfa_estado, c.bfa_tx_hash, c.bfa_token_id,
+          c.fecha_vencimiento, c.bfa_estado, c.bfa_tx_hash, c.bfa_token_id, c.bfa_modo,
           NULL AS bfa_anclado_en,
           b.marca, b.modelo, b.tipo, b.numero_serie, b.anio, b.color,
           b.propietario_id, u.datos_perfil AS titular_perfil, u.email AS titular_email
@@ -81,6 +81,7 @@ export async function GET(
       },
       bfa: {
         estado: fila.bfa_estado,
+        modo: fila.bfa_modo,
         txHash: fila.bfa_tx_hash,
         tokenId: fila.bfa_token_id,
         ancladoEn: fila.bfa_anclado_en,
@@ -131,6 +132,7 @@ interface FilaCit {
   bfa_tx_hash: string | null
   bfa_token_id: string | null
   bfa_anclado_en: string | null
+  bfa_modo: string | null
   marca: string
   modelo: string
   tipo: string

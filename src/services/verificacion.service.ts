@@ -188,6 +188,7 @@ interface FilaVerificacion {
   bfa_tx_hash: string | null
   bfa_token_id: string | null
   bfa_anclado_en: string | null
+  bfa_modo: string | null
 }
 
 const CONTACTO_AUTORIDADES =
@@ -210,7 +211,7 @@ export async function buscarYVerificar(
         b.id AS bici_id, b.marca, b.modelo, b.tipo, b.anio, b.color, b.numero_serie,
         c.id AS cit_id, c.estado AS cit_estado, c.codigo_cit, c.hash_sha256,
         c.fecha_vencimiento, c.bfa_estado, c.bfa_tx_hash, c.bfa_token_id,
-        NULL AS bfa_anclado_en
+        NULL AS bfa_anclado_en, c.bfa_modo
       FROM bicicletas b
       LEFT JOIN LATERAL (
         SELECT *
@@ -341,11 +342,15 @@ async function construirBfa(fila: FilaVerificacion): Promise<VerdictoBfa> {
     ancladoEnDb: fila.bfa_estado === 'anclado',
   })
   return {
+    // Honestidad de estado (auditoria 2026-07-11): preferir el modo real con el
+    // que ESTE CIT se anclo (fila.bfa_modo) sobre el modo global actual
+    // (verif.modo, getBfaModo() evaluado ahora) -- distinto el dia que haya
+    // CITs viejos en STUB conviviendo con anclajes ONCHAIN nuevos.
     coincide: verif.coincide,
     estado: fila.bfa_estado ?? 'pendiente',
     txHash: fila.bfa_tx_hash,
     tokenId: fila.bfa_token_id ?? verif.tokenId,
-    modo: verif.modo,
+    modo: fila.bfa_modo ?? verif.modo,
     ancladoEn: fila.bfa_anclado_en,
   }
 }
