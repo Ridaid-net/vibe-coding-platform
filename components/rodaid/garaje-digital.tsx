@@ -37,7 +37,7 @@ import { SeguroDinamico } from './SeguroDinamico'
 import { ArmaTuSalida } from './ArmaTuSalida'
 import { MisSalidas } from './MisSalidas'
 import { PushNotificaciones } from './PushNotificaciones'
-import { clearSession, getSession } from '@/lib/session'
+import { authedFetch, clearSession, getSession } from '@/lib/session'
 import { BiciSeguraShare } from './BiciSeguraShare'
 import { SolicitarVerificacionModal } from './solicitar-verificacion-modal'
 import { DenunciaMpfModal } from './denuncia-mpf-modal'
@@ -340,6 +340,9 @@ function ActivoCard({
         </div>
       )}
 
+      {/* Denuncia de tercero: espera confirmacion del propietario */}
+      <DenunciaTerceroBanner activoId={activo.id} />
+
       {/* Anclaje BFA */}
       {activo.bfa && activo.hashSha256 && <AnclajeBfaBloque activo={activo} />}
 
@@ -412,6 +415,102 @@ function ActivoCard({
           )}
       </div>
     </li>
+  )
+}
+
+/**
+ * Item 5: banner de "alguien reporto esta bici como robada, confirmame".
+ * Fetch unico al montar (sin polling: es un evento rarisimo y de alto
+ * impacto, el canal urgente real es push/email, no este banner). No depende
+ * de activo.estado -- un tercero puede denunciar cualquier numero de serie
+ * que coincida, sin relacion al estado actual del CIT.
+ */
+function DenunciaTerceroBanner({ activoId }: { activoId: string }) {
+  const [denuncia, setDenuncia] = useState<{
+    id: string
+    estado: string
+    montoARS: number
+    propietarioVenceEn: string | null
+  } | null>(null)
+  const [cargado, setCargado] = useState(false)
+  const [respondiendo, setRespondiendo] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    let cancelado = false
+    authedFetch(`/api/v1/bicicletas/${activoId}/denuncia-tercero`)
+      .then((r) => r.json())
+      .then((data: { denuncia: typeof denuncia }) => {
+        if (!cancelado) setDenuncia(data.denuncia)
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelado) setCargado(true)
+      })
+    return () => {
+      cancelado = true
+    }
+  }, [activoId])
+
+  if (!cargado || !denuncia || denuncia.estado !== 'ESPERANDO_PROPIETARIO') {
+    return null
+  }
+
+  const responder = async (confirmaRobo: boolean) => {
+    setRespondiendo(confirmaRobo)
+    try {
+      const res = await authedFetch(
+        `/api/v1/bicicletas/${activoId}/denuncia-tercero/${denuncia.id}/confirmar`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ confirmaRobo }),
+        }
+      )
+      if (!res.ok) throw new Error()
+      toast.success(
+        confirmaRobo
+          ? 'Gracias por confirmar. Vamos a procesar el reembolso al denunciante.'
+          : 'Gracias por avisarnos. Dimos por perdida la denuncia.'
+      )
+      setDenuncia(null)
+    } catch {
+      toast.error('No pudimos registrar tu respuesta', {
+        description: 'Probá de nuevo en unos segundos.',
+      })
+    } finally {
+      setRespondiendo(null)
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-2xl border border-clay/30 bg-clay/5 px-4 py-3.5 text-sm">
+      <p className="flex items-center gap-2 font-semibold text-clay">
+        <ShieldAlert className="size-4 shrink-0" />
+        Alguien reportó esta bici como robada
+      </p>
+      <p className="mt-1.5 text-xs text-slate-warm">
+        Necesitamos que confirmes si es cierto. Si no respondés antes de que
+        venza el plazo, se da por perdida la denuncia automáticamente.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          onClick={() => responder(true)}
+          disabled={respondiendo !== null}
+          className="inline-flex items-center gap-1.5 rounded-full bg-clay px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-clay/90 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {respondiendo === true && <Loader2 className="size-3.5 animate-spin" />}
+          Sí, es cierto
+        </button>
+        <button
+          onClick={() => responder(false)}
+          disabled={respondiendo !== null}
+          className="inline-flex items-center gap-1.5 rounded-full border border-ink/15 bg-white px-4 py-2 text-xs font-semibold text-ink transition-colors hover:border-ink/40 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {respondiendo === false && <Loader2 className="size-3.5 animate-spin" />}
+          No, es un error
+        </button>
+      </div>
+    </div>
   )
 }
 
