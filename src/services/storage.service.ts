@@ -139,7 +139,11 @@ function getNoticiasImagenesStore() {
 }
 
 export function urlPublicaImagenNoticia(key: string): string {
-  const path = `/api/v1/admin/noticias/imagenes/${key}`
+  // Fuera de /api/v1/admin/* a proposito: esa ruta la intercepta
+  // netlify/edge-functions/auth-admin.ts y exige un JWT de staff para
+  // cualquier sub-path, lo que dejaria la imagen inaccesible para cualquier
+  // visitante comun (confirmado en produccion con el listado de noticias).
+  const path = `/api/v1/noticias/imagenes/${key}`
   const base = process.env.RODAID_BASE_URL?.replace(/\/+$/, '')
   return base ? `${base}${path}` : path
 }

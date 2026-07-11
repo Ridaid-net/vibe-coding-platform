@@ -3,12 +3,12 @@ import { leerImagenNoticia } from '@/src/services/storage.service'
 export const runtime = 'nodejs'
 
 /**
- * GET /api/v1/admin/noticias/imagenes/:key
+ * GET /api/v1/noticias/imagenes/:key
  *
  * Sirve publicamente una imagen de portada de noticia almacenada en Netlify
- * Blobs. Es la URL que `subirImagenNoticia` devuelve y que se guarda en
- * `noticias_rodaid.imagen_url`. Publica (sin auth), igual que el GET de
- * /api/v1/admin/noticias — el widget y /prensa la consumen sin sesion.
+ * Blobs. NO vive bajo /api/v1/admin/* a proposito — ver la nota en
+ * app/api/v1/noticias/route.ts sobre por que esa ruta exige staff para
+ * cualquier sub-path.
  */
 export async function GET(
   _req: Request,
