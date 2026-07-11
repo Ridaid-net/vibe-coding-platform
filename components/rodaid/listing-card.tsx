@@ -13,6 +13,7 @@ export interface Publicacion {
   fotosUrls: string[]
   slug: string
   vistas: number
+  estado?: string
   citEstado?: string | null
   vendedor?: string | null
   bicicleta: {
@@ -32,6 +33,7 @@ const ars = new Intl.NumberFormat('es-AR', {
 export function ListingCard({ pub }: { pub: Publicacion }) {
   const foto = pub.fotosUrls?.[0]
   const { marca, modelo, anio, tipo } = pub.bicicleta
+  const citCompleto = pub.estado != null && pub.estado !== 'ACTIVA'
 
   return (
     <article className="group flex flex-col overflow-hidden rounded-2xl border border-ink/10 bg-white transition-all duration-300 hover:-translate-y-1 hover:border-ink/20 hover:shadow-[0_24px_48px_-24px_rgba(20,22,14,0.35)]">
@@ -55,7 +57,7 @@ export function ListingCard({ pub }: { pub: Publicacion }) {
         )}
         <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-lime px-2.5 py-1 text-[11px] font-bold text-ink">
           <Fingerprint className="size-3" />
-          CIT
+          {citCompleto ? 'CIT Completo' : 'CIT'}
         </span>
       </div>
 
@@ -94,7 +96,7 @@ export function ListingCard({ pub }: { pub: Publicacion }) {
             className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full bg-ink px-4 py-2.5 text-sm font-semibold text-paper transition-colors hover:bg-ink-soft"
           >
             <ShieldCheck className="size-4 text-lime" />
-            Comprar protegido
+            {citCompleto ? 'Reservar' : 'Comprar protegido'}
           </Link>
         </div>
         <div className="mt-3">
