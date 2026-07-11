@@ -1,4 +1,4 @@
-import { getPool } from '@/lib/marketplace'
+import { getPool, type DbClient } from '@/lib/marketplace'
 import {
   evaluarCrossReference,
   type CrossReferenceInput,
@@ -577,6 +577,22 @@ export interface DenunciaJudicialResultado {
   modo: 'LIVE' | 'SIMULADO'
 }
 
+/** Timeout de la notificacion al Ministerio, en ms. Configurable via
+ * RODAID_MINISTERIO_TIMEOUT_MS, mismo patron que BFA_TIMEOUT_MS. No bloquea a
+ * ningun usuario esperando (best-effort + reintento por worker), por eso usa
+ * el mismo default generoso que BFA en vez de uno mas agresivo. */
+function ministerioTimeoutMs(): number {
+  const raw = Number(process.env.RODAID_MINISTERIO_TIMEOUT_MS)
+  return Number.isFinite(raw) && raw > 0 ? raw : 8000
+}
+
+/** `true` si hay un endpoint real configurado para notificar al Ministerio. */
+export function ministerioNotificacionConfigurada(): boolean {
+  return Boolean(
+    process.env.RODAID_MINISTERIO_DENUNCIA_URL ?? process.env.RODAID_MINISTERIO_ROBO_URL
+  )
+}
+
 /**
  * Notifica al Ministerio de Seguridad (canal del Hito 12) que una bici tiene una
  * DENUNCIA JUDICIAL ACTIVA, incluyendo un LINK SEGURO al PDF de la denuncia del
@@ -616,13 +632,112 @@ export async function notificarDenunciaJudicial(
   const apiKey =
     process.env.RODAID_MINISTERIO_DENUNCIA_API_KEY ??
     process.env.RODAID_MINISTERIO_ROBO_API_KEY
-  await fetch(base, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
-    },
-    body: JSON.stringify(payload),
-  })
+  const controlador = new AbortController()
+  const timer = setTimeout(() => controlador.abort(), ministerioTimeoutMs())
+  try {
+    const res = await fetch(base, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+      },
+      body: JSON.stringify(payload),
+      signal: controlador.signal,
+    })
+    if (!res.ok) {
+      throw new Error(
+        `El Ministerio respondio ${res.status} a la notificacion de denuncia judicial.`
+      )
+    }
+  } finally {
+    clearTimeout(timer)
+  }
   return { enviado: true, modo: 'LIVE' }
+}
+
+// ── Reintento confiable de la notificacion de denuncia judicial ─────────────
+
+const MAX_INTENTOS_NOTIFICACION_MINISTERIO = 5
+
+async function withTx<T>(fn: (client: DbClient) => Promise<T>): Promise<T> {
+  const client = await getPool().connect()
+  try {
+    await client.query('BEGIN')
+    const result = await fn(client)
+    await client.query('COMMIT')
+    return result
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+interface DenunciaMinisterioClaimRow {
+  id: string
+  ministerio_estado: string
+  ministerio_intentos: number
+}
+
+type ClaimNotificacionResultado = 'reclamado' | 'ya-notificado' | 'no-existe'
+
+/**
+ * Reclama la notificacion de una denuncia de forma atomica: pasa
+ * `ministerio_estado` a 'notificando' solo si todavia no fue notificada.
+ * Evita que dos barridos concurrentes notifiquen la misma denuncia dos veces.
+ * Mismo patron que reclamarAnclaje() en blockchain.service.ts.
+ */
+export async function reclamarNotificacionMinisterio(
+  denunciaId: string
+): Promise<ClaimNotificacionResultado> {
+  return withTx(async (client) => {
+    const res = await client.query<DenunciaMinisterioClaimRow>(
+      `SELECT id, ministerio_estado, ministerio_intentos FROM denuncias_mpf WHERE id = $1 FOR UPDATE`,
+      [denunciaId]
+    )
+    const denuncia = res.rows[0]
+    if (!denuncia) return 'no-existe'
+    if (denuncia.ministerio_estado === 'enviado') return 'ya-notificado'
+
+    await client.query(
+      `UPDATE denuncias_mpf SET ministerio_estado = 'notificando', ministerio_intentos = ministerio_intentos + 1 WHERE id = $1`,
+      [denunciaId]
+    )
+    return 'reclamado'
+  })
+}
+
+export async function marcarNotificacionMinisterioExitosa(denunciaId: string): Promise<void> {
+  await getPool().query(
+    `UPDATE denuncias_mpf SET ministerio_estado = 'enviado', ministerio_notificado_en = NOW(), ministerio_ultimo_error = NULL WHERE id = $1`,
+    [denunciaId]
+  )
+}
+
+/**
+ * Registra un fallo de notificacion. Vuelve a 'pendiente' para reintentar,
+ * salvo que se hayan agotado los intentos, en cuyo caso queda en 'error'
+ * (dead-letter, requiere revision manual) -- mismo patron que
+ * registrarFalloAnclaje() en blockchain.service.ts.
+ */
+export async function marcarFalloNotificacionMinisterio(
+  denunciaId: string,
+  motivo: string
+): Promise<'pendiente' | 'error'> {
+  return withTx(async (client) => {
+    const res = await client.query<DenunciaMinisterioClaimRow>(
+      `SELECT id, ministerio_intentos FROM denuncias_mpf WHERE id = $1 FOR UPDATE`,
+      [denunciaId]
+    )
+    const denuncia = res.rows[0]
+    if (!denuncia) return 'error'
+    const estadoFinal =
+      denuncia.ministerio_intentos >= MAX_INTENTOS_NOTIFICACION_MINISTERIO ? 'error' : 'pendiente'
+    await client.query(
+      `UPDATE denuncias_mpf SET ministerio_estado = $2, ministerio_ultimo_error = $3 WHERE id = $1`,
+      [denunciaId, estadoFinal, motivo.slice(0, 500)]
+    )
+    return estadoFinal
+  })
 }
