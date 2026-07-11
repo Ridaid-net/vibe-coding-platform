@@ -191,3 +191,57 @@ export async function leerImagenNoticia(
   }
   return { data, contentType: contentTypeDeKey(key) }
 }
+
+// Nombre del store de Netlify Blobs para los logos de los Talleres Aliados.
+const STORE_TALLERES_LOGOS = 'rodaid-talleres-logos'
+
+function getTalleresLogosStore() {
+  return getStore(STORE_TALLERES_LOGOS)
+}
+
+export function urlPublicaLogoTaller(key: string): string {
+  const path = `/api/v1/talleres/logos/${key}`
+  const base = process.env.RODAID_BASE_URL?.replace(/\/+$/, '')
+  return base ? `${base}${path}` : path
+}
+
+/** Sube el logo de un Taller Aliado. Mismas reglas que subirFotoBicicleta/subirImagenNoticia. */
+export async function subirLogoTaller(aliadoId: string, file: Blob): Promise<FotoSubida> {
+  const contentType = file.type || 'application/octet-stream'
+  const extension = EXTENSION_POR_TIPO[contentType]
+  if (!extension) {
+    throw new StorageError(
+      'TIPO_NO_SOPORTADO',
+      'El logo debe ser una imagen JPEG, PNG, WEBP o AVIF.'
+    )
+  }
+  if (file.size === 0) {
+    throw new StorageError('LOGO_VACIO', 'El logo recibido esta vacio.')
+  }
+  if (file.size > MAX_BYTES) {
+    throw new StorageError('LOGO_DEMASIADO_GRANDE', 'El logo no puede superar los 8 MB.')
+  }
+
+  const key = `talleres/${aliadoId}/${randomUUID()}.${extension}`
+  const buffer = await file.arrayBuffer()
+
+  const store = getTalleresLogosStore()
+  await store.set(key, buffer)
+
+  return { key, url: urlPublicaLogoTaller(key), contentType, bytes: file.size }
+}
+
+/**
+ * Lee el logo de un Taller Aliado previamente subido. La consume la ruta
+ * publica que sirve los logos. Devuelve `null` si la clave no existe.
+ */
+export async function leerLogoTaller(
+  key: string
+): Promise<{ data: ArrayBuffer; contentType: string } | null> {
+  const store = getTalleresLogosStore()
+  const data = await store.get(key, { type: 'arrayBuffer' })
+  if (data === null) {
+    return null
+  }
+  return { data, contentType: contentTypeDeKey(key) }
+}

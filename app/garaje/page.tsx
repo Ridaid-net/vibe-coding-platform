@@ -5,6 +5,7 @@ import { MisPublicaciones } from '@/components/rodaid/mis-publicaciones'
 import { MisCompras } from '@/components/rodaid/mis-compras'
 import { GarajeAnalitica } from '@/components/rodaid/garaje-analitica'
 import { IotTiempoReal } from '@/components/rodaid/iot-tiempo-real'
+import { ServiciosCTA } from '@/components/rodaid/ServiciosCTA'
 import { StravaActividades } from '@/components/rodaid/StravaActividades'
 import { GarminActividades } from '@/components/rodaid/GarminActividades'
 import { PronosticoTiempo } from '@/components/rodaid/PronosticoTiempo'
@@ -29,6 +30,13 @@ export default function GarajePage() {
         <GarajeAnalitica />
         <IotTiempoReal />
 
+        {/* Bloque Bici-Salud: IoT (mantenimiento predictivo) + acceso a Servicios
+            de Talleres Aliados + actividades Strava/Garmin, agrupados porque
+            conceptualmente van juntos (ver ServiciosCTA.tsx). */}
+        <ServiciosCTA />
+        <StravaActividades />
+        <GarminActividades />
+
         {/* Widget lateral derecho — Pronóstico del Tiempo */}
         {/* Lado izquierdo disponible para futuras cajas: Noticias, Prensa, Eventos */}
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
@@ -36,8 +44,6 @@ export default function GarajePage() {
           <NoticiasPrensaWidget />
         </div>
 
-        <StravaActividades />
-        <GarminActividades />
         <PerfilCard />
         <NotificacionesCard />
       </main>
