@@ -26,6 +26,7 @@ const PRODUCTOS = [
   { label: 'Verificador público CIT', href: '/verificar' },
   { label: 'Panel Inspector', href: '/admin/inspecciones' },
   { label: 'Sumate como Aliado', href: '/aliados' },
+  { label: 'Portal de Prensa', href: '/prensa' },
 ]
 
 export function Footer() {

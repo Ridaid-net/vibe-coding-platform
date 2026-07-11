@@ -1,18 +1,10 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, ExternalLink, Newspaper } from 'lucide-react'
-
-interface Noticia {
-  id: string
-  titulo: string
-  resumen: string
-  url: string | null
-  imagen_url: string | null
-  fuente: string
-  tipo: 'noticia' | 'prensa' | 'evento'
-}
+import { ArrowLeft, ExternalLink, Newspaper, RefreshCw } from 'lucide-react'
+import { useNoticias } from '@/lib/noticias'
+import { extraerEmbedSeguro } from '@/lib/noticias-embed'
 
 const TIPO_CONFIG = {
   noticia: { label: 'Novedad', color: 'bg-[#2BBCB8]/10 text-[#2BBCB8]' },
@@ -20,26 +12,26 @@ const TIPO_CONFIG = {
   evento: { label: 'Evento', color: 'bg-purple-100 text-purple-600' },
 }
 
+function VolverAlGaraje() {
+  return (
+    <Link
+      href="/garaje"
+      className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-warm hover:text-ink"
+    >
+      <ArrowLeft className="size-4" />
+      Volver a mi Garaje
+    </Link>
+  )
+}
+
 export default function NoticiaPage() {
   const params = useParams<{ id: string }>()
-  const [noticia, setNoticia] = useState<Noticia | null>(null)
-  const [cargando, setCargando] = useState(true)
-  const [noEncontrada, setNoEncontrada] = useState(false)
-
-  useEffect(() => {
-    fetch('/api/v1/admin/noticias?activas=true')
-      .then((r) => r.json())
-      .then((d) => {
-        const encontrada = (d.noticias ?? []).find((n: Noticia) => n.id === params.id)
-        if (encontrada) setNoticia(encontrada)
-        else setNoEncontrada(true)
-        setCargando(false)
-      })
-      .catch(() => {
-        setNoEncontrada(true)
-        setCargando(false)
-      })
-  }, [params.id])
+  const { noticias, cargando, error, reintentar } = useNoticias()
+  const noticia = noticias.find((n) => n.id === params.id) ?? null
+  const embed = useMemo(
+    () => (noticia?.video_url ? extraerEmbedSeguro(noticia.video_url) : null),
+    [noticia?.video_url]
+  )
 
   if (cargando) {
     return (
@@ -53,33 +45,45 @@ export default function NoticiaPage() {
     )
   }
 
-  if (noEncontrada || !noticia) {
+  if (error) {
+    return (
+      <main className="mx-auto max-w-3xl px-4 py-16 text-center">
+        <Newspaper className="mx-auto size-10 text-slate-warm/40" />
+        <h1 className="mt-4 font-display text-xl font-bold text-ink">
+          No pudimos cargar esta noticia
+        </h1>
+        <button
+          type="button"
+          onClick={reintentar}
+          className="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-[#2BBCB8] hover:underline"
+        >
+          <RefreshCw className="size-4" />
+          Reintentar
+        </button>
+        <div className="mt-4">
+          <VolverAlGaraje />
+        </div>
+      </main>
+    )
+  }
+
+  if (!noticia) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-16 text-center">
         <Newspaper className="mx-auto size-10 text-slate-warm/40" />
         <h1 className="mt-4 font-display text-xl font-bold text-ink">
           No encontramos esta noticia
         </h1>
-        <Link
-          href="/garaje"
-          className="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-[#2BBCB8] hover:underline"
-        >
-          <ArrowLeft className="size-4" />
-          Volver al Garaje
-        </Link>
+        <div className="mt-6 flex justify-center">
+          <VolverAlGaraje />
+        </div>
       </main>
     )
   }
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
-      <Link
-        href="/garaje"
-        className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-warm hover:text-ink"
-      >
-        <ArrowLeft className="size-4" />
-        Volver al Garaje
-      </Link>
+      <VolverAlGaraje />
 
       <div className="mt-6 flex items-center gap-2">
         <span
@@ -109,6 +113,21 @@ export default function NoticiaPage() {
         {noticia.resumen}
       </p>
 
+      {embed && (
+        <div className="mt-6 overflow-hidden rounded-2xl bg-slate-950 aspect-video">
+          <iframe
+            src={embed.embedUrl}
+            title={noticia.titulo}
+            className="w-full h-full"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
+            referrerPolicy="strict-origin-when-cross-origin"
+            loading="lazy"
+          />
+        </div>
+      )}
+
       {noticia.url && (
         <a
           href={noticia.url}
@@ -120,6 +139,10 @@ export default function NoticiaPage() {
           <ExternalLink className="size-3.5" />
         </a>
       )}
+
+      <div className="mt-10 border-t border-ink/10 pt-6">
+        <VolverAlGaraje />
+      </div>
     </main>
   )
 }
