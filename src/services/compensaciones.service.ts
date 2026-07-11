@@ -193,6 +193,107 @@ export async function registrarLiquidacionAliadoFeeVerificacion(
   return id
 }
 
+// ── Fee de Logistica del CIT Completo (al cerrarse la venta) ────────────────
+
+export interface LiquidacionAliadoFeeLogisticaInput {
+  transaccionId: string
+  aliadoId: string
+  monto: number
+}
+
+/**
+ * Registra la deuda de RODAID hacia el Taller Aliado por el Fee de Logistica
+ * (embalaje) del CIT Completo. Se llama desde confirmarEntregaCitCompleto
+ * (escrow.service.ts) — el monto ya viene congelado desde la reserva
+ * (escrow_transacciones.fee_logistica_pagado_taller_ars). Idempotente, mismo
+ * indice unico que el resto de las liquidaciones.
+ */
+export async function registrarLiquidacionAliadoFeeLogistica(
+  client: DbClient,
+  input: LiquidacionAliadoFeeLogisticaInput
+): Promise<string | null> {
+  const res = await client.query<{ id: string }>(
+    `
+      INSERT INTO pagos_liquidaciones
+        (tipo, estado, beneficiario_id, beneficiario_tipo, origen_tipo, origen_id,
+         transaccion_id, monto, metadata)
+      VALUES ('ALIADO_FEE_LOGISTICA', 'PENDIENTE', $1, 'aliado', 'ESCROW', $2,
+              $2, $3, $4::jsonb)
+      ON CONFLICT (origen_tipo, origen_id, tipo, beneficiario_id) DO NOTHING
+      RETURNING id
+    `,
+    [
+      input.aliadoId,
+      input.transaccionId,
+      round2(input.monto),
+      JSON.stringify({ concepto: 'fee_logistica_cit_completo' }),
+    ]
+  )
+  const id = res.rows[0]?.id ?? null
+  if (id) {
+    await registrarPagoLog(client, {
+      evento: 'ALIADO_FEE_LOGISTICA_REGISTRADA',
+      origenTipo: 'ESCROW',
+      origenId: input.transaccionId,
+      monto: round2(input.monto),
+      beneficiarioId: input.aliadoId,
+      actorRol: 'sistema',
+      metadata: { concepto: 'fee_logistica_cit_completo' },
+    })
+  }
+  return id
+}
+
+// ── Fee de Exito del CIT Completo (al cerrarse la venta) ────────────────────
+
+export interface LiquidacionAliadoFeeExitoInput {
+  transaccionId: string
+  aliadoId: string
+  monto: number
+}
+
+/**
+ * Registra la deuda de RODAID hacia el Taller Aliado por su mitad del Fee de
+ * Exito del CIT Completo (la otra mitad es ingreso propio de RODAID, no se
+ * liquida como deuda). Monto congelado desde la reserva
+ * (escrow_transacciones.fee_exito_taller_ars). Idempotente.
+ */
+export async function registrarLiquidacionAliadoFeeExito(
+  client: DbClient,
+  input: LiquidacionAliadoFeeExitoInput
+): Promise<string | null> {
+  const res = await client.query<{ id: string }>(
+    `
+      INSERT INTO pagos_liquidaciones
+        (tipo, estado, beneficiario_id, beneficiario_tipo, origen_tipo, origen_id,
+         transaccion_id, monto, metadata)
+      VALUES ('ALIADO_FEE_EXITO', 'PENDIENTE', $1, 'aliado', 'ESCROW', $2,
+              $2, $3, $4::jsonb)
+      ON CONFLICT (origen_tipo, origen_id, tipo, beneficiario_id) DO NOTHING
+      RETURNING id
+    `,
+    [
+      input.aliadoId,
+      input.transaccionId,
+      round2(input.monto),
+      JSON.stringify({ concepto: 'fee_exito_cit_completo' }),
+    ]
+  )
+  const id = res.rows[0]?.id ?? null
+  if (id) {
+    await registrarPagoLog(client, {
+      evento: 'ALIADO_FEE_EXITO_REGISTRADA',
+      origenTipo: 'ESCROW',
+      origenId: input.transaccionId,
+      monto: round2(input.monto),
+      beneficiarioId: input.aliadoId,
+      actorRol: 'sistema',
+      metadata: { concepto: 'fee_exito_cit_completo' },
+    })
+  }
+  return id
+}
+
 // ── Retribucion al Taller Aliado (al validarse un CIT) ────────────────────────
 
 interface AliadoRetribucion {

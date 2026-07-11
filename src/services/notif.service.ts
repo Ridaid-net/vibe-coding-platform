@@ -544,7 +544,7 @@ export function notificarCompraCompletada(
     usuarioId: compradorId,
     tipo: 'COMPRA_COMPLETADA',
     titulo: 'Tu compra se completo',
-    cuerpo: `Confirmamos tu compra${datos.titulo ? ` de "${datos.titulo}"` : ''}. El certificado del rodado queda asociado a tu cuenta.`,
+    cuerpo: `Confirmamos tu compra${datos.titulo ? ` de "${datos.titulo}"` : ''}. El CIT mantiene su identidad y su historial — el cambio de titularidad quedó anclado en la Blockchain Federal Argentina.`,
     cta: { label: 'Ver la operacion', url: appUrl(`/transacciones/${datos.transaccionId}`) },
     data: { transaccionId: datos.transaccionId },
   })

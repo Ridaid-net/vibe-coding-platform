@@ -12,6 +12,8 @@ import { emitirEvento } from '@/src/services/notification.service'
 import {
   cancelarLiquidacionesDeTransaccion,
   registrarLiquidacionVendedor,
+  registrarLiquidacionAliadoFeeLogistica,
+  registrarLiquidacionAliadoFeeExito,
 } from '@/src/services/compensaciones.service'
 import {
   notificarCompraCompletada,
@@ -22,6 +24,11 @@ import {
   contarTalleresAliadosActivos,
 } from '@/src/services/aliados.service'
 import { calcularEconomiaTransaccionCIT } from '@/src/services/pricing-cit.service'
+import {
+  transferirTitularidadBicicleta,
+  anclarTransferenciaEnBFA,
+  invalidarCachePorTransferencia,
+} from '@/src/services/transferencia-dominio.service'
 
 /**
  * Dispara, fuera de la transaccion (best-effort), las notificaciones de cierre de una
@@ -302,7 +309,7 @@ async function liberarFondos(
   client: DbClient,
   tx: TransaccionRow,
   actor: { id: string | null; rol: string }
-) {
+): Promise<{ transaccion: TransaccionRow; transferenciaId: string | null; numeroSerie: string | null }> {
   const updated = await client.query<TransaccionRow>(
     `
       UPDATE escrow_transacciones
@@ -337,6 +344,32 @@ async function liberarFondos(
     [tx.publicacion_id, tx.comprador_id, tx.precio_ars, tx.comision_rodaid]
   )
 
+  // Transferencia REAL de titularidad — mismo criterio que la liberacion de
+  // fondos: si "entrega confirmada" alcanza para soltar el dinero, alcanza
+  // para transferir la bici. Cubre los 4 caminos que llegan hasta aca:
+  // confirmarEntrega, resolverDisputa a favor del vendedor,
+  // procesarAutoReleases y confirmarEntregaCitCompleto.
+  const pubRow = await client.query<{ cit_id: string | null; bicicleta_id: string | null }>(
+    `SELECT cit_id, bicicleta_id FROM marketplace_publicaciones WHERE id = $1`,
+    [tx.publicacion_id]
+  )
+  let transferenciaId: string | null = null
+  let numeroSerie: string | null = null
+  if (pubRow.rows[0]?.cit_id && pubRow.rows[0]?.bicicleta_id) {
+    const resultado = await transferirTitularidadBicicleta(client, {
+      citId: pubRow.rows[0].cit_id,
+      bicicletaId: pubRow.rows[0].bicicleta_id,
+      propietarioAnteriorId: tx.vendedor_id,
+      propietarioNuevoId: tx.comprador_id,
+      motivo: 'venta_marketplace',
+      escrowTransaccionId: tx.id,
+      actorId: actor.id,
+      actorRol: actor.rol,
+    })
+    transferenciaId = resultado.transferenciaId
+    numeroSerie = resultado.numeroSerie
+  }
+
   await logEvento(client, {
     transaccionId: tx.id,
     tipo: 'FONDOS_ACREDITADOS_VENDEDOR',
@@ -347,6 +380,7 @@ async function liberarFondos(
     metadata: {
       montoVendedor: Number(tx.monto_vendedor),
       comision: Number(tx.comision_rodaid),
+      transferenciaId,
     },
   })
   await logEvento(client, {
@@ -367,7 +401,19 @@ async function liberarFondos(
     comision: Number(tx.comision_rodaid),
   })
 
-  return updated.rows[0]
+  return { transaccion: updated.rows[0], transferenciaId, numeroSerie }
+}
+
+/** Best-effort, fuera de la transaccion: anclaje BFA + invalidacion de cache. */
+async function cerrarTransferenciaPostCommit(
+  transferenciaId: string | null,
+  numeroSerie: string | null
+): Promise<void> {
+  if (!transferenciaId) return
+  await Promise.allSettled([
+    anclarTransferenciaEnBFA(transferenciaId),
+    invalidarCachePorTransferencia(numeroSerie),
+  ])
 }
 
 /** Reembolsa el pago retenido (si existe) contra la API de MercadoPago. */
@@ -1266,16 +1312,81 @@ export async function confirmarEntrega(input: {
       )
     }
 
-    const updated = await liberarFondos(client, tx, {
+    const { transaccion: updated, transferenciaId, numeroSerie } = await liberarFondos(client, tx, {
       id: input.compradorId,
       rol: 'comprador',
     })
 
-    return mapTransaccion(updated)
+    return { transaccion: mapTransaccion(updated), transferenciaId, numeroSerie }
   })
 
-  await notificarOperacionCompletada(transaccion)
-  return transaccion
+  await notificarOperacionCompletada(transaccion.transaccion)
+  await cerrarTransferenciaPostCommit(transaccion.transferenciaId, transaccion.numeroSerie)
+  return transaccion.transaccion
+}
+
+// ── 4b. confirmarEntregaCitCompleto (comprador, cierre de CIT Completo) ────
+
+/**
+ * Cierre de CIT Completo (Fase 6 TODO resuelto): el comprador confirma la
+ * recepcion directo desde FONDOS_RETENIDOS -- CIT Completo no usa el paso
+ * EN_CAMINO/confirmarEnvio del flujo generico, porque la "logistica" la
+ * coordina el Taller Aliado antes de llegar a este punto, no es un envio
+ * postal del vendedor. Libera el pago, transfiere la titularidad real y
+ * liquida vendedor + Taller Aliado (logistica + exito).
+ */
+export async function confirmarEntregaCitCompleto(input: {
+  transaccionId: string
+  compradorId: string
+}) {
+  const resultado = await withTx(async (client) => {
+    const tx = await lockTransaccion(client, input.transaccionId)
+
+    if (tx.comprador_id !== input.compradorId) {
+      throw new ApiError(403, 'NOT_BUYER', 'Solo el comprador puede confirmar la entrega.')
+    }
+    if (!tx.aliado_id) {
+      throw new ApiError(409, 'NO_ES_CIT_COMPLETO', 'Esta operacion no corresponde al flujo de CIT Completo.')
+    }
+    if (tx.estado !== 'FONDOS_RETENIDOS') {
+      throw new ApiError(
+        409,
+        'ESTADO_INVALIDO',
+        'La entrega solo se confirma con los fondos retenidos.'
+      )
+    }
+
+    const { transaccion: updated, transferenciaId, numeroSerie } = await liberarFondos(client, tx, {
+      id: input.compradorId,
+      rol: 'comprador',
+    })
+
+    await registrarLiquidacionAliadoFeeLogistica(client, {
+      transaccionId: tx.id,
+      aliadoId: tx.aliado_id,
+      monto: Number(tx.fee_logistica_pagado_taller_ars),
+    })
+    await registrarLiquidacionAliadoFeeExito(client, {
+      transaccionId: tx.id,
+      aliadoId: tx.aliado_id,
+      monto: Number(tx.fee_exito_taller_ars),
+    })
+
+    await logEvento(client, {
+      transaccionId: tx.id,
+      tipo: 'CIT_COMPLETO_ENTREGA_CONFIRMADA',
+      estadoAnterior: 'FONDOS_RETENIDOS',
+      estadoNuevo: 'COMPLETADA',
+      actorId: input.compradorId,
+      actorRol: 'comprador',
+    })
+
+    return { transaccion: mapTransaccion(updated), transferenciaId, numeroSerie }
+  })
+
+  await notificarOperacionCompletada(resultado.transaccion)
+  await cerrarTransferenciaPostCommit(resultado.transferenciaId, resultado.numeroSerie)
+  return resultado.transaccion
 }
 
 // ── 5. cancelarTransaccion ──────────────────────────────────────────────────
@@ -1410,7 +1521,7 @@ export async function resolverDisputa(input: {
     }
 
     if (input.aFavor === 'VENDEDOR') {
-      const updated = await liberarFondos(client, tx, { id: input.adminId, rol: 'admin' })
+      const { transaccion: updated, transferenciaId, numeroSerie } = await liberarFondos(client, tx, { id: input.adminId, rol: 'admin' })
       await logEvento(client, {
         transaccionId: tx.id,
         tipo: 'DISPUTA_RESUELTA',
@@ -1419,7 +1530,7 @@ export async function resolverDisputa(input: {
         actorRol: 'admin',
         metadata: { aFavor: 'VENDEDOR', nota: input.nota ?? null },
       })
-      return { transaccion: mapTransaccion(updated), reembolso: null, completada: true }
+      return { transaccion: mapTransaccion(updated), reembolso: null, completada: true, transferenciaId, numeroSerie }
     }
 
     // A favor del comprador: reembolso + cancelacion + re-activacion.
@@ -1456,11 +1567,12 @@ export async function resolverDisputa(input: {
       metadata: { aFavor: 'COMPRADOR', nota: input.nota ?? null, reembolsado: Boolean(reembolso) },
     })
 
-    return { transaccion: mapTransaccion(updated.rows[0]), reembolso, completada: false }
+    return { transaccion: mapTransaccion(updated.rows[0]), reembolso, completada: false, transferenciaId: null, numeroSerie: null }
   })
 
   if (resultado.completada) {
     await notificarOperacionCompletada(resultado.transaccion)
+    await cerrarTransferenciaPostCommit(resultado.transferenciaId, resultado.numeroSerie)
   }
   return { transaccion: resultado.transaccion, reembolso: resultado.reembolso }
 }
@@ -1482,7 +1594,7 @@ export async function resolverPagoForzado(input: {
   accion: AccionForzada
   motivo?: string | null
 }) {
-  return withTx(async (client) => {
+  const resultado = await withTx(async (client) => {
     const tx = await lockTransaccion(client, input.transaccionId)
 
     const estadosForzables: EscrowEstado[] = [
@@ -1499,7 +1611,7 @@ export async function resolverPagoForzado(input: {
     }
 
     if (input.accion === 'LIBERAR') {
-      const updated = await liberarFondos(client, tx, { id: input.adminId, rol: 'admin' })
+      const { transaccion: updated, transferenciaId, numeroSerie } = await liberarFondos(client, tx, { id: input.adminId, rol: 'admin' })
       await logEvento(client, {
         transaccionId: tx.id,
         tipo: 'RESOLUCION_FORZADA',
@@ -1509,7 +1621,7 @@ export async function resolverPagoForzado(input: {
         actorRol: 'admin',
         metadata: { accion: 'LIBERAR', motivo: input.motivo ?? null },
       })
-      return { transaccion: mapTransaccion(updated), reembolso: null }
+      return { transaccion: mapTransaccion(updated), reembolso: null, completada: true, transferenciaId, numeroSerie }
     }
 
     // REEMBOLSAR: devuelve al comprador, cancela deudas y re-activa la publicacion.
@@ -1545,8 +1657,14 @@ export async function resolverPagoForzado(input: {
       actorRol: 'admin',
       metadata: { accion: 'REEMBOLSAR', motivo: input.motivo ?? null, reembolsado: Boolean(reembolso) },
     })
-    return { transaccion: mapTransaccion(updated.rows[0]), reembolso }
+    return { transaccion: mapTransaccion(updated.rows[0]), reembolso, completada: false, transferenciaId: null, numeroSerie: null }
   })
+
+  if (resultado.completada) {
+    await notificarOperacionCompletada(resultado.transaccion)
+    await cerrarTransferenciaPostCommit(resultado.transferenciaId, resultado.numeroSerie)
+  }
+  return { transaccion: resultado.transaccion, reembolso: resultado.reembolso }
 }
 
 // ── 8. procesarAutoReleases ─────────────────────────────────────────────────
@@ -1576,7 +1694,11 @@ export async function procesarAutoReleases(limite = 100) {
   )
 
   const liberadas: string[] = []
-  const completadas: Array<ReturnType<typeof mapTransaccion>> = []
+  const completadas: Array<{
+    tx: ReturnType<typeof mapTransaccion>
+    transferenciaId: string | null
+    numeroSerie: string | null
+  }> = []
   for (const { id } of pendientes.rows) {
     try {
       await withTx(async (client) => {
@@ -1587,7 +1709,7 @@ export async function procesarAutoReleases(limite = 100) {
         if (new Date(tx.auto_release_en).getTime() > Date.now()) {
           return
         }
-        const updated = await liberarFondos(client, tx, { id: null, rol: 'sistema' })
+        const { transaccion: updated, transferenciaId, numeroSerie } = await liberarFondos(client, tx, { id: null, rol: 'sistema' })
         await logEvento(client, {
           transaccionId: tx.id,
           tipo: 'AUTO_RELEASE',
@@ -1597,7 +1719,7 @@ export async function procesarAutoReleases(limite = 100) {
           metadata: { motivo: `${AUTO_RELEASE_DIAS} dias sin confirmacion del comprador` },
         })
         liberadas.push(tx.id)
-        completadas.push(mapTransaccion(updated))
+        completadas.push({ tx: mapTransaccion(updated), transferenciaId, numeroSerie })
       })
     } catch (error) {
       console.error('[escrow] auto-release fallo para', id, error)
@@ -1605,8 +1727,9 @@ export async function procesarAutoReleases(limite = 100) {
   }
 
   // Notificaciones de cierre (best-effort), fuera de las transacciones.
-  for (const tx of completadas) {
-    await notificarOperacionCompletada(tx)
+  for (const c of completadas) {
+    await notificarOperacionCompletada(c.tx)
+    await cerrarTransferenciaPostCommit(c.transferenciaId, c.numeroSerie)
   }
 
   return { procesadas: pendientes.rows.length, liberadas }

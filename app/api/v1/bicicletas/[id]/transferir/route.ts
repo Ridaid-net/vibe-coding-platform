@@ -1,11 +1,22 @@
 /**
  * RODAID · Transferencia de dominio de bicicleta
  * POST /api/v1/bicicletas/[id]/transferir
- * Transfiere la propiedad a otro usuario y revoca el CIT activo
+ *
+ * Transfiere la propiedad a otro usuario de RODAID. Exige un CIT vigente
+ * (activo y no vencido) — server-side siempre, nunca confia en que el
+ * frontend ya lo valido. El CIT NO se revoca: misma identidad tecnica de
+ * siempre, el cambio de titularidad queda anclado como evento propio (mismo
+ * mecanismo que usan las ventas del Marketplace, ver
+ * transferencia-dominio.service.ts).
  */
 export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
-import { getPool, requireUser } from '@/lib/marketplace'
+import { getPool, requireUser, jsonError } from '@/lib/marketplace'
+import {
+  transferirTitularidadBicicleta,
+  anclarTransferenciaEnBFA,
+  invalidarCachePorTransferencia,
+} from '@/src/services/transferencia-dominio.service'
 
 export async function POST(
   req: Request,
@@ -15,7 +26,7 @@ export async function POST(
     const { id } = await params
     const user = await requireUser(req)
     const body = await req.json()
-    const { emailDestino, motivo } = body
+    const { emailDestino } = body
 
     if (!emailDestino) {
       return NextResponse.json({ error: 'emailDestino es obligatorio.' }, { status: 400 })
@@ -56,30 +67,52 @@ export async function POST(
       return NextResponse.json({ error: 'No se puede transferir una bicicleta con denuncia activa.' }, { status: 409 })
     }
 
-    // Ejecutar transferencia en transacción
-    await pool.query('BEGIN')
+    // El CIT tiene que estar VIGENTE (activo y no vencido) para transferir --
+    // server-side siempre, nunca confiar en que el frontend ya lo valido.
+    const citResult = await pool.query(
+      `SELECT id, fecha_vencimiento FROM cits
+       WHERE bicicleta_id = $1 AND estado = 'ACTIVO' AND fecha_vencimiento > NOW()
+       ORDER BY fecha_vencimiento DESC LIMIT 1`,
+      [id]
+    )
+    const cit = citResult.rows[0]
+    if (!cit) {
+      return NextResponse.json(
+        { error: 'Renová tu CIT antes de transferir la bici.' },
+        { status: 409 }
+      )
+    }
+
+    // Ejecutar transferencia (cliente dedicado para una transaccion real).
+    const client = await pool.connect()
+    let transferenciaId: string | null = null
+    let numeroSerie: string | null = null
     try {
-      // Revocar CIT activo
-      await pool.query(
-        "UPDATE cits SET estado = 'revocado', updated_at = NOW() WHERE bicicleta_id = $1 AND estado = 'activo'",
-        [id]
-      )
-      // Transferir propiedad
-      await pool.query(
-        'UPDATE bicicletas SET propietario_id = $1, updated_at = NOW() WHERE id = $2',
-        [destino.id, id]
-      )
-      // Registrar en historial
-      await pool.query(
-        `INSERT INTO transferencias_dominio (bicicleta_id, propietario_anterior_id, propietario_nuevo_id, motivo)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT DO NOTHING`,
-        [id, user.id, destino.id, motivo ?? 'Transferencia voluntaria']
-      ).catch(() => undefined) // Si no existe la tabla, continúa
-      await pool.query('COMMIT')
+      await client.query('BEGIN')
+      const resultado = await transferirTitularidadBicicleta(client, {
+        citId: cit.id,
+        bicicletaId: id,
+        propietarioAnteriorId: user.id,
+        propietarioNuevoId: destino.id,
+        motivo: 'transferencia_manual',
+        actorId: user.id,
+        actorRol: 'ciclista',
+      })
+      transferenciaId = resultado.transferenciaId
+      numeroSerie = resultado.numeroSerie
+      await client.query('COMMIT')
     } catch (err) {
-      await pool.query('ROLLBACK')
+      await client.query('ROLLBACK')
       throw err
+    } finally {
+      client.release()
+    }
+
+    if (transferenciaId) {
+      await Promise.allSettled([
+        anclarTransferenciaEnBFA(transferenciaId),
+        invalidarCachePorTransferencia(numeroSerie),
+      ])
     }
 
     return NextResponse.json({
@@ -88,11 +121,11 @@ export async function POST(
         bicicleta: { id: bici.id, numero_serie: bici.numero_serie, marca: bici.marca, modelo: bici.modelo },
         propietario_anterior: (user as { id: string; email?: string }).email ?? user.id,
         propietario_nuevo: destino.email,
-        cit_revocado: true,
-        mensaje: `Bicicleta transferida a ${destino.email}. El CIT fue revocado — el nuevo propietario deberá certificarla nuevamente.`
+        cit_preservado: true,
+        mensaje: `Bicicleta transferida a ${destino.email}. El CIT mantiene su identidad y quedó anclado el cambio de titularidad en la Blockchain Federal Argentina.`
       }
     })
   } catch (e: unknown) {
-    return NextResponse.json({ error: String(e) }, { status: 500 })
+    return jsonError(e)
   }
 }
