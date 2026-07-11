@@ -60,7 +60,7 @@ export async function GET(req: Request) {
     // BFA_CIT_CONTRACT no estan configuradas en produccion, asi que ningun CIT
     // tiene todavia un anclaje ONCHAIN real -- solo mostrar el rotulo "Blockchain
     // Federal Argentina" cuando bfa_modo lo confirme.
-    const anclajeOnchain = b.bfa_estado === 'anclado' && b.bfa_modo === 'ONCHAIN'
+    const anclajeOnchain = b.bfa_estado === 'ACUNADO' && b.bfa_modo === 'ONCHAIN'
 
     await auditTenant({
       tenantSlug,

@@ -548,8 +548,8 @@ function dibujarIdentidad(page: PDFPage, f: Fuentes, d: CertificadoDatos): void 
   // BFA_RPC_URL/BFA_PRIVATE_KEY/BFA_CIT_CONTRACT configuradas, ningun anclaje
   // es ONCHAIN real todavia -- el titulo y el texto solo afirman "Blockchain
   // Federal Argentina" cuando bfa.modo lo confirma.
-  const onchain = d.bfa.estado === 'anclado' && d.bfa.modo === 'ONCHAIN' && !!d.bfa.txHash
-  const stub = d.bfa.estado === 'anclado' && d.bfa.modo !== 'ONCHAIN'
+  const onchain = d.bfa.estado === 'ACUNADO' && d.bfa.modo === 'ONCHAIN' && !!d.bfa.txHash
+  const stub = d.bfa.estado === 'ACUNADO' && d.bfa.modo !== 'ONCHAIN'
 
   y -= 20
   page.drawText(

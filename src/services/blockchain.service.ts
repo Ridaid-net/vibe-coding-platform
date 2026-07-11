@@ -28,7 +28,7 @@ import { getPool, type DbClient } from '@/lib/marketplace'
  *    se ejecuta como side-effect best-effort tras aprobar el CIT (en el worker
  *    de validación) y se puede reintentar desde un barrido. Si la red BFA tiene
  *    latencia o está caída, el CIT igual queda 'activo'; solo su `bfa_estado`
- *    queda 'pendiente'/'error' para reintentar.
+ *    queda 'PENDIENTE'/'ERROR' para reintentar.
  *  - MANEJO DE REVERTS. Las transacciones revertidas (token ya minteado, gas,
  *    permisos) se detectan (receipt.status === 0 o error CALL_EXCEPTION) y se
  *    registran sin tirar abajo la aprobación del CIT.
@@ -137,7 +137,7 @@ export function serialToTokenId(serial: string | number | bigint): bigint {
 
 export interface AnclajeResultado {
   citId: string
-  estado: 'anclado' | 'pendiente' | 'error' | 'omitido'
+  estado: 'ACUNADO' | 'PENDIENTE' | 'ERROR' | 'OMITIDO'
   modo: BfaModo
   txHash: string | null
   tokenId: string | null
@@ -191,10 +191,10 @@ export async function anclarCIT(
   // 1. Idempotencia + claim: solo seguimos si el CIT existe y no está anclado.
   const claim = await reclamarAnclaje(citId)
   if (claim === 'no-existe') {
-    return { citId, estado: 'omitido', modo, txHash: null, tokenId: null, motivo: 'CIT inexistente' }
+    return { citId, estado: 'OMITIDO', modo, txHash: null, tokenId: null, motivo: 'CIT inexistente' }
   }
   if (claim === 'ya-anclado') {
-    return { citId, estado: 'anclado', modo, txHash: null, tokenId: tokenId.toString(), motivo: 'Ya estaba anclado' }
+    return { citId, estado: 'ACUNADO', modo, txHash: null, tokenId: tokenId.toString(), motivo: 'Ya estaba anclado' }
   }
 
   try {
@@ -209,7 +209,7 @@ export async function anclarCIT(
 
     await marcarAnclado(citId, txHash, tokenId, modo)
     console.info(`[bfa:${modo}] CIT ${citId} anclado tokenId=${tokenId} tx=${txHash}`)
-    return { citId, estado: 'anclado', modo, txHash, tokenId: tokenId.toString() }
+    return { citId, estado: 'ACUNADO', modo, txHash, tokenId: tokenId.toString() }
   } catch (error) {
     const motivo = mensajeError(error)
     const revert = esRevert(error)
@@ -265,8 +265,19 @@ function txHashSimulado(citId: string, hash: string, tokenId: bigint): string {
 type ClaimResultado = 'reclamado' | 'ya-anclado' | 'no-existe'
 
 /**
- * Reclama el anclaje de un CIT de forma atómica: pasa `bfa_estado` a 'anclando'
- * solo si todavía no fue anclado. Evita que dos procesos ancles el mismo CIT.
+ * Reclama el anclaje de un CIT de forma atómica: pasa `bfa_estado` a
+ * 'PENDIENTE' (reusado tambien como marca de claim -- este sistema no tiene
+ * concurrencia real entre workers, asi que no hace falta un estado
+ * intermedio propio) solo si todavia no fue anclado. El lock `FOR UPDATE`
+ * es lo que realmente evita que dos procesos ancles el mismo CIT a la vez.
+ *
+ * IMPORTANTE: los valores del enum real `cit_bfa_estado` son en MAYUSCULA
+ * (NO_INICIADA/PENDIENTE/ACUNADO/ERROR/FALLIDO) -- confirmado 2026-07-11 via
+ * un deploy fallido (22P02) y verificado empiricamente contra produccion
+ * (los 3 CIT existentes estaban en NO_INICIADA, con bfa_tx_hash e intentos
+ * en cero: el anclaje nunca habia escrito con exito ni una sola vez, porque
+ * este archivo escribia en minuscula contra un enum que nunca tuvo esos
+ * valores).
  */
 async function reclamarAnclaje(citId: string): Promise<ClaimResultado> {
   return withTx(async (client) => {
@@ -276,10 +287,10 @@ async function reclamarAnclaje(citId: string): Promise<ClaimResultado> {
     )
     const cit = res.rows[0]
     if (!cit) return 'no-existe'
-    if (cit.bfa_estado === 'anclado' || cit.bfa_tx_hash) return 'ya-anclado'
+    if (cit.bfa_estado === 'ACUNADO' || cit.bfa_tx_hash) return 'ya-anclado'
 
     await client.query(
-      `UPDATE cits SET bfa_estado = 'anclando', bfa_intentos = bfa_intentos + 1, actualizado_en = NOW() WHERE id = $1`,
+      `UPDATE cits SET bfa_estado = 'PENDIENTE', bfa_intentos = bfa_intentos + 1, actualizado_en = NOW() WHERE id = $1`,
       [citId]
     )
     return 'reclamado'
@@ -290,7 +301,7 @@ async function marcarAnclado(citId: string, txHash: string, tokenId: bigint, mod
   await getPool().query(
     `
       UPDATE cits
-      SET bfa_estado = 'anclado',
+      SET bfa_estado = 'ACUNADO',
           bfa_tx_hash = $2,
           bfa_token_id = $3,
           bfa_modo = $5,
@@ -311,21 +322,21 @@ async function marcarAnclado(citId: string, txHash: string, tokenId: bigint, mod
 }
 
 /**
- * Registra un fallo de anclaje. Vuelve a 'pendiente' para reintentar, salvo que
- * se hayan agotado los intentos, en cuyo caso queda en 'error' (dead-letter).
+ * Registra un fallo de anclaje. Vuelve a 'PENDIENTE' para reintentar, salvo
+ * que se hayan agotado los intentos, en cuyo caso queda en 'ERROR' (dead-letter).
  */
 async function registrarFalloAnclaje(
   citId: string,
   motivo: string
-): Promise<'pendiente' | 'error'> {
+): Promise<'PENDIENTE' | 'ERROR'> {
   return withTx(async (client) => {
     const res = await client.query<CitAnclajeRow>(
       `SELECT id, bfa_estado, bfa_tx_hash, bfa_intentos FROM cits WHERE id = $1 FOR UPDATE`,
       [citId]
     )
     const cit = res.rows[0]
-    if (!cit) return 'error'
-    const estadoFinal = cit.bfa_intentos >= MAX_INTENTOS_ANCLAJE ? 'error' : 'pendiente'
+    if (!cit) return 'ERROR'
+    const estadoFinal = cit.bfa_intentos >= MAX_INTENTOS_ANCLAJE ? 'ERROR' : 'PENDIENTE'
     await client.query(
       `UPDATE cits SET bfa_estado = $2, bfa_ultimo_error = $3, actualizado_en = NOW() WHERE id = $1`,
       [citId, estadoFinal, motivo.slice(0, 500)]
@@ -374,8 +385,12 @@ interface CitPendienteRow {
 
 /**
  * Barre los CITs aprobados que todavía no se anclaron (o quedaron pendientes de
- * reintento) y reintenta el anclaje. Pensado para un endpoint de sistema /
- * Scheduled Function. Procesa secuencialmente para no saturar el nodo RPC.
+ * reintento) y reintenta el anclaje. Incluye 'NO_INICIADA' (el default de todo
+ * CIT nuevo, nunca reclamado todavia) ademas de 'PENDIENTE' (reintento) --
+ * sin esto, un CIT cuyo disparo fire-and-forget post-aprobacion falle antes de
+ * llegar al claim queda huerfano para siempre, porque nunca llega a
+ * 'PENDIENTE'. Pensado para un endpoint de sistema / Scheduled Function.
+ * Procesa secuencialmente para no saturar el nodo RPC.
  */
 export async function anclarPendientes(limite = 25): Promise<{
   encontrados: number
@@ -390,7 +405,7 @@ export async function anclarPendientes(limite = 25): Promise<{
       JOIN bicicletas b ON b.id = c.bicicleta_id
       WHERE c.estado = 'activo'
         AND c.hash_sha256 IS NOT NULL
-        AND c.bfa_estado = 'pendiente'
+        AND c.bfa_estado IN ('NO_INICIADA', 'PENDIENTE')
       ORDER BY c.actualizado_en ASC
       LIMIT $1
     `,
@@ -404,8 +419,8 @@ export async function anclarPendientes(limite = 25): Promise<{
 
   return {
     encontrados: res.rows.length,
-    anclados: resultados.filter((r) => r.estado === 'anclado').length,
-    fallidos: resultados.filter((r) => r.estado === 'error' || r.estado === 'pendiente').length,
+    anclados: resultados.filter((r) => r.estado === 'ACUNADO').length,
+    fallidos: resultados.filter((r) => r.estado === 'ERROR' || r.estado === 'PENDIENTE').length,
     resultados,
   }
 }

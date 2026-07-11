@@ -101,7 +101,7 @@ export async function GET(req: Request) {
         emitido_en: bici.emitido_en,
         vence_en: bici.vence_en,
         hash_identidad: bici.hash_sha256,
-        anclaje_bfa: bici.bfa_estado === 'anclado'
+        anclaje_bfa: bici.bfa_estado === 'ACUNADO'
           ? {
               estado: bici.bfa_modo === 'ONCHAIN' ? 'ANCLADO_ONCHAIN' : 'REGISTRO_INTERNO',
               tx_hash: bici.bfa_modo === 'ONCHAIN' ? bici.bfa_tx_hash : null,

@@ -48,7 +48,7 @@ export type ValidacionEstado =
 export type ResultadoValidacion = 'APROBADO' | 'BLOQUEADO'
 
 /** Estado del anclaje on-chain del CIT en la BFA (enum `bfa_anclaje_estado`). */
-export type BfaAnclajeEstado = 'pendiente' | 'anclando' | 'anclado' | 'error'
+export type BfaAnclajeEstado = 'NO_INICIADA' | 'PENDIENTE' | 'ACUNADO' | 'ERROR' | 'FALLIDO'
 
 // ---------------------------------------------------------------------------
 // bicicletas

@@ -575,7 +575,7 @@ function PipelineEstado({ activo }: { activo: ActivoGaraje }) {
 
 function AnclajeBfaBloque({ activo }: { activo: ActivoGaraje }) {
   const bfa = activo.bfa!
-  const anclado = bfa.estado === 'anclado'
+  const anclado = bfa.estado === 'ACUNADO'
   // Honestidad de estado (auditoria 2026-07-11): sin BFA_RPC_URL/BFA_PRIVATE_KEY/
   // BFA_CIT_CONTRACT configuradas, ningun anclaje es ONCHAIN real todavia --
   // "Anclado on-chain" solo aparece cuando bfa.modo lo confirma. `stub` cubre

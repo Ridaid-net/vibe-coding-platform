@@ -339,7 +339,7 @@ export async function buscarYVerificar(
 /** Arma el bloque BFA del veredicto, verificando la coincidencia del hash. */
 async function construirBfa(fila: FilaVerificacion): Promise<VerdictoBfa> {
   const verif = await verificarHashEnBFA(fila.numero_serie, fila.hash_sha256, {
-    ancladoEnDb: fila.bfa_estado === 'anclado',
+    ancladoEnDb: fila.bfa_estado === 'ACUNADO',
   })
   return {
     // Honestidad de estado (auditoria 2026-07-11): preferir el modo real con el

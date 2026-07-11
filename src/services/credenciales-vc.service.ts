@@ -164,7 +164,7 @@ export async function emitirCredencial(datos: DatosCredencial): Promise<Credenci
       // ONCHAIN real todavia -- esta credencial es firmada y portable a
       // billeteras de terceros, asi que no puede afirmar "Blockchain Federal
       // Argentina" sin distinguir el modo.
-      const onchain = datos.bfa.estado === 'anclado' && datos.bfa.modo === 'ONCHAIN'
+      const onchain = datos.bfa.estado === 'ACUNADO' && datos.bfa.modo === 'ONCHAIN'
       return {
         code: datos.codigoCit,
         anchorHash: datos.hashSha256,
