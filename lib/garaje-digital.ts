@@ -21,6 +21,8 @@ export type EstadoActivo =
 
 export interface AnclajeBfa {
   estado: string
+  /** 'ONCHAIN' (anclaje real) | 'STUB' (registro interno, no blockchain) | null. */
+  modo: string | null
   txHash: string | null
   tokenId: string | null
   ancladoEn: string | null

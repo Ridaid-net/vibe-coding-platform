@@ -63,6 +63,8 @@ export interface CertificadoBici {
 
 export interface CertificadoBfa {
   estado: string
+  /** 'ONCHAIN' (anclaje real) | 'STUB' (registro interno, no blockchain) | null. */
+  modo: string | null
   txHash: string | null
   tokenId: string | null
   ancladoEn: string | null
@@ -542,18 +544,26 @@ function dibujarIdentidad(page: PDFPage, f: Fuentes, d: CertificadoDatos): void 
     })
   }
 
-  // Anclaje en la BFA.
+  // Anclaje en la BFA. Honestidad de estado (auditoria 2026-07-11): sin
+  // BFA_RPC_URL/BFA_PRIVATE_KEY/BFA_CIT_CONTRACT configuradas, ningun anclaje
+  // es ONCHAIN real todavia -- el titulo y el texto solo afirman "Blockchain
+  // Federal Argentina" cuando bfa.modo lo confirma.
+  const onchain = d.bfa.estado === 'ACUNADO' && d.bfa.modo === 'ONCHAIN' && !!d.bfa.txHash
+  const stub = d.bfa.estado === 'ACUNADO' && d.bfa.modo !== 'ONCHAIN'
+
   y -= 20
-  page.drawText('ANCLAJE EN LA BLOCKCHAIN FEDERAL ARGENTINA (BFA)', {
-    x: COL_LEFT,
-    y,
-    size: 7.5,
-    font: f.body,
-    color: C.slate,
-  })
+  page.drawText(
+    onchain ? 'ANCLAJE EN LA BLOCKCHAIN FEDERAL ARGENTINA (BFA)' : 'REGISTRO DE IDENTIDAD RODAID',
+    {
+      x: COL_LEFT,
+      y,
+      size: 7.5,
+      font: f.body,
+      color: C.slate,
+    }
+  )
   y -= 12
-  const anclado = d.bfa.estado === 'anclado' && d.bfa.txHash
-  if (anclado) {
+  if (onchain) {
     page.drawText(recortar(d.bfa.txHash ?? '', f.mono, 8.5, COL_LEFT_W), {
       x: COL_LEFT,
       y,
@@ -571,6 +581,30 @@ function dibujarIdentidad(page: PDFPage, f: Fuentes, d: CertificadoDatos): void 
         color: C.slate,
       })
     }
+  } else if (stub) {
+    page.drawText('Identidad registrada en RODAID.', {
+      x: COL_LEFT,
+      y,
+      size: 9,
+      font: f.body,
+      color: C.slate,
+    })
+    y -= 11
+    page.drawText('El anclaje en la Blockchain Federal Argentina está en proceso', {
+      x: COL_LEFT,
+      y,
+      size: 7,
+      font: f.body,
+      color: C.slate,
+    })
+    y -= 9
+    page.drawText('de habilitación institucional.', {
+      x: COL_LEFT,
+      y,
+      size: 7,
+      font: f.body,
+      color: C.slate,
+    })
   } else {
     page.drawText('Anclaje pendiente / no disponible.', {
       x: COL_LEFT,

@@ -654,9 +654,9 @@ async function registrarAnclaje(
     await logPaso(client, {
       colaId: jobId,
       citId,
-      paso: anclaje.estado === 'anclado' ? 'BFA_ANCLADO' : 'BFA_ANCLAJE_PENDIENTE',
+      paso: anclaje.estado === 'ACUNADO' ? 'BFA_ANCLADO' : 'BFA_ANCLAJE_PENDIENTE',
       detalle:
-        anclaje.estado === 'anclado'
+        anclaje.estado === 'ACUNADO'
           ? `CIT anclado en la BFA (${anclaje.modo}). tx=${anclaje.txHash}`
           : `Anclaje BFA ${anclaje.estado} (${anclaje.modo}).${anclaje.motivo ? ' ' + anclaje.motivo : ''}`,
       metadata: {

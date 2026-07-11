@@ -53,7 +53,10 @@ export async function GET(req: Request) {
         c.estado::text as cit_estado,
         c.created_at as emitido_en,
         c.fecha_vencimiento as vence_en,
-        c.hash_sha256 as hash_bfa,
+        c.hash_sha256,
+        c.bfa_estado,
+        c.bfa_modo,
+        c.bfa_tx_hash,
         CASE WHEN d.id IS NOT NULL THEN true ELSE false END as tiene_denuncia_activa
       FROM bicicletas a
       LEFT JOIN cits c ON c.bicicleta_id = a.id AND c.estado = 'activo'
@@ -97,7 +100,16 @@ export async function GET(req: Request) {
         estado: bici.cit_estado,
         emitido_en: bici.emitido_en,
         vence_en: bici.vence_en,
-        hash_bfa: bici.hash_bfa,
+        hash_identidad: bici.hash_sha256,
+        anclaje_bfa: bici.bfa_estado === 'ACUNADO'
+          ? {
+              estado: bici.bfa_modo === 'ONCHAIN' ? 'ANCLADO_ONCHAIN' : 'REGISTRO_INTERNO',
+              tx_hash: bici.bfa_modo === 'ONCHAIN' ? bici.bfa_tx_hash : null,
+              detalle: bici.bfa_modo === 'ONCHAIN'
+                ? 'Anclado on-chain en la Blockchain Federal Argentina.'
+                : 'Identidad registrada en RODAID. El anclaje en la Blockchain Federal Argentina está en proceso de habilitación institucional.',
+            }
+          : { estado: 'PENDIENTE', tx_hash: null, detalle: 'Anclaje pendiente.' },
         taller: null
       } : null,
       alerta: bici.tiene_denuncia_activa ? {
@@ -106,7 +118,7 @@ export async function GET(req: Request) {
       } : null,
       consultado_en: new Date().toISOString(),
       tenant: tenantSlug,
-      fuente: 'RODAID · Blockchain Federal Argentina · Ley Provincial N° 9556',
+      fuente: 'RODAID · Registro Digital de Identidad de Bicicletas · Ley Provincial N° 9.556',
     })
   } catch (e: unknown) {
     return NextResponse.json(

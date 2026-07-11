@@ -33,7 +33,7 @@ export async function GET(
       `
         SELECT
           c.id AS cit_id, c.estado, c.codigo_cit, c.hash_sha256,
-          c.fecha_vencimiento, c.bfa_estado, c.bfa_tx_hash, c.bfa_token_id,
+          c.fecha_vencimiento, c.bfa_estado, c.bfa_tx_hash, c.bfa_token_id, c.bfa_modo,
           NULL AS bfa_anclado_en, c.metadata_json,
           b.id AS bici_id, b.marca, b.modelo, b.tipo, b.numero_serie,
           b.anio, b.color, b.rodado, b.talle_cuadro, b.propietario_id,
@@ -96,6 +96,7 @@ export async function GET(
       },
       bfa: {
         estado: fila.bfa_estado ?? 'pendiente',
+        modo: fila.bfa_modo,
         txHash: fila.bfa_tx_hash,
         tokenId: fila.bfa_token_id,
         ancladoEn: fila.bfa_anclado_en,
@@ -134,6 +135,7 @@ interface FilaCert {
   bfa_tx_hash: string | null
   bfa_token_id: string | null
   bfa_anclado_en: string | null
+  bfa_modo: string | null
   metadata_json: Record<string, unknown> | null
   bici_id: string
   marca: string

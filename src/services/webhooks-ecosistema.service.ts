@@ -296,7 +296,7 @@ async function construirPayload(
     bfa: {
       estado: fila.bfa_estado,
       txHash: fila.bfa_tx_hash,
-      anclado: fila.bfa_estado === 'anclado',
+      anclado: fila.bfa_estado === 'ACUNADO',
     },
   }
 }

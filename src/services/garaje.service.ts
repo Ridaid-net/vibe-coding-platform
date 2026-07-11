@@ -34,6 +34,8 @@ export type EstadoActivo =
 
 export interface AnclajeBfa {
   estado: string
+  /** 'ONCHAIN' (anclaje real) | 'STUB' (registro interno, no blockchain) | null. */
+  modo: string | null
   txHash: string | null
   tokenId: string | null
   ancladoEn: string | null
@@ -118,6 +120,7 @@ interface ActivoRow {
   bfa_tx_hash: string | null
   bfa_token_id: string | null
   bfa_anclado_en: string | null
+  bfa_modo: string | null
   job_estado: EstadoPipeline['estado'] | null
   job_ejecutar_en: string | null
   job_resultado: string | null
@@ -170,7 +173,7 @@ export async function obtenerActivosUsuario(
         c.huella_sha256 AS hash_sha256,
         c.fecha_vencimiento AS cit_vencimiento,
         COALESCE(c.estado = 'activo' AND c.fecha_vencimiento > NOW(), FALSE) AS cit_activo,
-        c.bfa_estado, c.bfa_tx_hash, c.bfa_token_id, c.bfa_anclado_en,
+        c.bfa_estado, c.bfa_tx_hash, c.bfa_token_id, c.bfa_anclado_en, c.bfa_modo,
         job.estado AS job_estado,
         job.ejecutar_en AS job_ejecutar_en,
         job.resultado AS job_resultado,
@@ -237,6 +240,7 @@ export async function obtenerActivosUsuario(
     bfa: row.cit_id
       ? {
           estado: row.bfa_estado ?? 'pendiente',
+          modo: row.bfa_modo,
           txHash: row.bfa_tx_hash,
           tokenId: row.bfa_token_id,
           ancladoEn: row.bfa_anclado_en,

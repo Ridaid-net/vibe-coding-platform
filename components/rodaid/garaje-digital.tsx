@@ -575,7 +575,14 @@ function PipelineEstado({ activo }: { activo: ActivoGaraje }) {
 
 function AnclajeBfaBloque({ activo }: { activo: ActivoGaraje }) {
   const bfa = activo.bfa!
-  const anclado = bfa.estado === 'anclado'
+  const anclado = bfa.estado === 'ACUNADO'
+  // Honestidad de estado (auditoria 2026-07-11): sin BFA_RPC_URL/BFA_PRIVATE_KEY/
+  // BFA_CIT_CONTRACT configuradas, ningun anclaje es ONCHAIN real todavia --
+  // "Anclado on-chain" solo aparece cuando bfa.modo lo confirma. `stub` cubre
+  // tambien los CITs anclados antes de esta migracion (bfa.modo null), que son
+  // STUB por confirmacion de la auditoria.
+  const onchain = anclado && bfa.modo === 'ONCHAIN'
+  const stub = anclado && bfa.modo !== 'ONCHAIN'
   const hashCorto = activo.hashSha256
     ? `${activo.hashSha256.slice(0, 10)}…${activo.hashSha256.slice(-8)}`
     : null
@@ -589,14 +596,21 @@ function AnclajeBfaBloque({ activo }: { activo: ActivoGaraje }) {
         </span>
         <span
           className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-            anclado
+            onchain
               ? 'bg-lime/25 text-ink'
-              : 'bg-paper-dim text-slate-warm'
+              : stub
+                ? 'bg-amber-100 text-amber-700'
+                : 'bg-paper-dim text-slate-warm'
           }`}
         >
-          {anclado ? 'Anclado on-chain' : 'Pendiente de anclaje'}
+          {onchain ? 'Anclado on-chain' : stub ? 'Identidad registrada' : 'Pendiente de anclaje'}
         </span>
       </div>
+      {stub && (
+        <p className="mt-1.5 text-[10px] leading-snug text-slate-warm">
+          El anclaje en la Blockchain Federal Argentina está en proceso de habilitación institucional. Tu CIT es válido igual.
+        </p>
+      )}
       {hashCorto && (
         <p className="mt-1.5 break-all font-mono text-[11px] text-slate-warm">
           {hashCorto}

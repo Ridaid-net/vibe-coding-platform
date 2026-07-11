@@ -98,6 +98,8 @@ export interface DatosCredencial {
   }
   bfa: {
     estado: string | null
+    /** 'ONCHAIN' (anclaje real) | 'STUB' (registro interno, no blockchain) | null. */
+    modo: string | null
     txHash: string | null
     tokenId: string | null
     ancladoEn: string | null
@@ -156,15 +158,26 @@ export async function emitirCredencial(datos: DatosCredencial): Promise<Credenci
     year: datos.bici.anio,
     color: datos.bici.color,
     verificationStatus: datos.estado === 'activo' ? 'VERIFIED' : datos.estado.toUpperCase(),
-    cit: {
-      code: datos.codigoCit,
-      anchorHash: datos.hashSha256,
-      blockchain: 'Blockchain Federal Argentina (BFA)',
-      anchorStatus: datos.bfa.estado,
-      transactionHash: datos.bfa.txHash,
-      tokenId: datos.bfa.tokenId,
-      anchoredAt: datos.bfa.ancladoEn,
-    },
+    cit: (() => {
+      // Honestidad de estado (auditoria 2026-07-11): sin BFA_RPC_URL/
+      // BFA_PRIVATE_KEY/BFA_CIT_CONTRACT configuradas, ningun anclaje es
+      // ONCHAIN real todavia -- esta credencial es firmada y portable a
+      // billeteras de terceros, asi que no puede afirmar "Blockchain Federal
+      // Argentina" sin distinguir el modo.
+      const onchain = datos.bfa.estado === 'ACUNADO' && datos.bfa.modo === 'ONCHAIN'
+      return {
+        code: datos.codigoCit,
+        anchorHash: datos.hashSha256,
+        blockchain: onchain
+          ? 'Blockchain Federal Argentina (BFA)'
+          : 'Blockchain Federal Argentina (BFA) — anclaje en proceso de habilitación institucional',
+        anchorMode: datos.bfa.modo ?? 'STUB',
+        anchorStatus: datos.bfa.estado,
+        transactionHash: onchain ? datos.bfa.txHash : null,
+        tokenId: datos.bfa.tokenId,
+        anchoredAt: datos.bfa.ancladoEn,
+      }
+    })(),
   }
   if (datos.titular) {
     credentialSubject.holder = datos.titular
