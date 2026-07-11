@@ -15,7 +15,7 @@ const RESPUESTAS_AUTO: Record<string, string> = {
   default: 'Gracias por contactarnos. Tu mensaje fue recibido y un agente de RODAID te responderá a la brevedad. También podés escribirnos a federicodegeaceo@rodaid.net',
   cit: 'Para consultas sobre el CIT, podés verificar el estado de tu bicicleta en rodaid.net/verificar. Si necesitás renovar, contactá a tu taller aliado más cercano.',
   pago: 'Para consultas sobre pagos o el escrow RODAID PAY, te recomendamos ir a tu Garaje Digital y revisar el estado de la transacción. Si hay un problema, podés abrir una disputa desde el botón correspondiente.',
-  hurto: 'Para denunciar una bicicleta hurtada, ingresá a tu cuenta y usá la opción "Denunciar robo" en el Garaje Digital. El trámite tiene un costo de $4.500 ARS.',
+  hurto: 'Para denunciar una bicicleta hurtada, ingresá a tu cuenta y usá la opción "Denunciar robo" en el Garaje Digital. Es gratis si tu bici ya tiene un CIT activo; si no, te mostramos el costo exacto antes de confirmar la denuncia.',
   aliado: 'Para sumarte como taller aliado, completá el formulario en rodaid.net/aliados. Te contactaremos dentro de las 48hs hábiles.',
 }
 
