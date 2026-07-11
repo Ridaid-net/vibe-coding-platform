@@ -11,7 +11,7 @@
  */
 export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
-import { getPool, requireUser } from '@/lib/marketplace'
+import { getPool, requireUser, jsonError } from '@/lib/marketplace'
 import {
   transferirTitularidadBicicleta,
   anclarTransferenciaEnBFA,
@@ -126,6 +126,6 @@ export async function POST(
       }
     })
   } catch (e: unknown) {
-    return NextResponse.json({ error: String(e) }, { status: 500 })
+    return jsonError(e)
   }
 }
