@@ -130,3 +130,60 @@ export async function leerFotoBicicleta(
   }
   return { data, contentType: contentTypeDeKey(key) }
 }
+
+// Nombre del store de Netlify Blobs para las imagenes de portada de noticias.
+const STORE_NOTICIAS_IMAGENES = 'rodaid-noticias-imagenes'
+
+function getNoticiasImagenesStore() {
+  return getStore(STORE_NOTICIAS_IMAGENES)
+}
+
+export function urlPublicaImagenNoticia(key: string): string {
+  const path = `/api/v1/admin/noticias/imagenes/${key}`
+  const base = process.env.RODAID_BASE_URL?.replace(/\/+$/, '')
+  return base ? `${base}${path}` : path
+}
+
+/** Sube la imagen de portada de una noticia. Mismas reglas que subirFotoBicicleta. */
+export async function subirImagenNoticia(file: Blob): Promise<FotoSubida> {
+  const contentType = file.type || 'application/octet-stream'
+  const extension = EXTENSION_POR_TIPO[contentType]
+  if (!extension) {
+    throw new StorageError(
+      'TIPO_NO_SOPORTADO',
+      'La imagen debe ser JPEG, PNG, WEBP o AVIF.'
+    )
+  }
+  if (file.size === 0) {
+    throw new StorageError('IMAGEN_VACIA', 'La imagen recibida esta vacia.')
+  }
+  if (file.size > MAX_BYTES) {
+    throw new StorageError(
+      'IMAGEN_DEMASIADO_GRANDE',
+      'La imagen no puede superar los 8 MB.'
+    )
+  }
+
+  const key = `noticias/${randomUUID()}.${extension}`
+  const buffer = await file.arrayBuffer()
+
+  const store = getNoticiasImagenesStore()
+  await store.set(key, buffer)
+
+  return { key, url: urlPublicaImagenNoticia(key), contentType, bytes: file.size }
+}
+
+/**
+ * Lee una imagen de noticia previamente subida. La consume la ruta publica que
+ * sirve las imagenes. Devuelve `null` si la clave no existe.
+ */
+export async function leerImagenNoticia(
+  key: string
+): Promise<{ data: ArrayBuffer; contentType: string } | null> {
+  const store = getNoticiasImagenesStore()
+  const data = await store.get(key, { type: 'arrayBuffer' })
+  if (data === null) {
+    return null
+  }
+  return { data, contentType: contentTypeDeKey(key) }
+}

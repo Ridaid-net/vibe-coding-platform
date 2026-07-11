@@ -1,17 +1,8 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Newspaper, ExternalLink, ChevronRight } from 'lucide-react'
-
-interface Noticia {
-  id: string
-  titulo: string
-  resumen: string
-  url: string | null
-  imagen_url: string | null
-  fuente: string
-  tipo: 'noticia' | 'prensa' | 'evento'
-}
+import { Newspaper, ExternalLink, ChevronRight, Play, RefreshCw } from 'lucide-react'
+import { useNoticias } from '@/lib/noticias'
 
 const TIPO_CONFIG = {
   noticia: { label: 'Novedad', color: 'bg-[#2BBCB8]/10 text-[#2BBCB8]' },
@@ -20,16 +11,8 @@ const TIPO_CONFIG = {
 }
 
 export function NoticiasPrensaWidget() {
-  const [noticias, setNoticias] = useState<Noticia[]>([])
+  const { noticias, cargando, error, reintentar } = useNoticias()
   const [activa, setActiva] = useState(0)
-  const [cargando, setCargando] = useState(true)
-
-  useEffect(() => {
-    fetch('/api/v1/admin/noticias?activas=true')
-      .then(r => r.json())
-      .then(d => { setNoticias(d.noticias ?? []); setCargando(false) })
-      .catch(() => setCargando(false))
-  }, [])
 
   useEffect(() => {
     if (noticias.length <= 1) return
@@ -44,6 +27,19 @@ export function NoticiasPrensaWidget() {
       <div className="h-5 w-40 rounded bg-slate-100 mb-4" />
       <div className="h-32 rounded-xl bg-slate-50 mb-3" />
       <div className="h-4 w-3/4 rounded bg-slate-100" />
+    </div>
+  )
+
+  if (error) return (
+    <div className="rounded-3xl border border-dashed border-clay/30 bg-white/50 p-6 flex flex-col items-center justify-center gap-2 h-full text-center">
+      <p className="text-xs text-slate-warm/70">No pudimos cargar las noticias.</p>
+      <button
+        type="button"
+        onClick={reintentar}
+        className="inline-flex items-center gap-1 text-xs font-semibold text-[#2BBCB8] hover:underline"
+      >
+        <RefreshCw className="size-3" /> Reintentar
+      </button>
     </div>
   )
 
@@ -71,9 +67,16 @@ export function NoticiasPrensaWidget() {
 
       <div className="flex-1 flex flex-col">
         {noticia.imagen_url && (
-          <div className="rounded-xl overflow-hidden bg-slate-100 mb-4 aspect-video">
+          <div className="relative rounded-xl overflow-hidden bg-slate-100 mb-4 aspect-video">
             <img src={noticia.imagen_url} alt={noticia.titulo}
               className="w-full h-full object-cover" loading="lazy" />
+            {noticia.video_url && (
+              <span className="absolute inset-0 flex items-center justify-center bg-black/20">
+                <span className="flex size-9 items-center justify-center rounded-full bg-white/90">
+                  <Play className="size-3.5 text-ink fill-ink" />
+                </span>
+              </span>
+            )}
           </div>
         )}
         <div className="flex items-center gap-2 mb-2">
