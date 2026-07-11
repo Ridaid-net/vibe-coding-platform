@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { jsonError, requireAdmin } from '@/lib/marketplace'
 import { anclarPendientes } from '@/src/services/blockchain.service'
+import { anclarTransferenciasPendientes } from '@/src/services/transferencia-dominio.service'
 
 export const runtime = 'nodejs'
 
@@ -16,7 +17,8 @@ export async function POST(req: Request) {
   try {
     requireAdmin(req)
     const resultado = await anclarPendientes()
-    return NextResponse.json(resultado)
+    const transferencias = await anclarTransferenciasPendientes()
+    return NextResponse.json({ ...resultado, transferencias })
   } catch (error) {
     return jsonError(error)
   }
