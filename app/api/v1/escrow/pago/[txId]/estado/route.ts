@@ -22,7 +22,12 @@ export async function GET(
     }
 
     const pago = await getEstadoPago(txId)
-    return NextResponse.json({ transaccionId: txId, estado: transaccion.estado, pago })
+    return NextResponse.json({
+      transaccionId: txId,
+      estado: transaccion.estado,
+      plan: transaccion.plan,
+      pago,
+    })
   } catch (error) {
     return jsonError(error)
   }

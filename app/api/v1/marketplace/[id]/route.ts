@@ -4,8 +4,10 @@ import {
   getPool,
   jsonError,
   mapPublicacion,
+  requireUser,
   type PublicacionRow,
 } from '@/lib/marketplace'
+import { obtenerMiReservaActiva } from '@/src/services/escrow.service'
 
 export const runtime = 'nodejs'
 
@@ -14,10 +16,12 @@ export const runtime = 'nodejs'
  *
  * Devuelve la publicacion con los datos de la bicicleta asociada para la
  * pantalla de detalle/compra. Incrementa el contador de vistas (best-effort)
- * cuando la publicacion esta activa.
+ * cuando la publicacion esta activa. Si el request trae una sesion valida,
+ * ademas devuelve miReserva -- la reserva CIT Completo activa del viewer
+ * sobre ESTA publicacion, si tiene una. Nunca se expone a otros viewers.
  */
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -57,7 +61,15 @@ export async function GET(
         .catch(() => undefined)
     }
 
-    return NextResponse.json({ publicacion: mapPublicacion(row) })
+    let miReserva = null
+    try {
+      const user = await requireUser(req)
+      miReserva = await obtenerMiReservaActiva(id, user.id)
+    } catch {
+      // Sin sesion o token invalido: la publicacion sigue siendo publica.
+    }
+
+    return NextResponse.json({ publicacion: mapPublicacion(row), miReserva })
   } catch (error) {
     return jsonError(error)
   }
