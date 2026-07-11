@@ -5,26 +5,26 @@ import { StorageError, subirImagenNoticia } from '@/src/services/storage.service
 import { extraerEmbedSeguro } from '@/lib/noticias-embed'
 import { parseNoticiaBody } from './_shared'
 
+/**
+ * GET /api/v1/admin/noticias — listado COMPLETO (incluye inactivas, sin
+ * filtro) para el editor de /admin/noticias. Protegido por el borde
+ * (netlify/edge-functions/auth-admin.ts exige staff para todo /api/v1/admin/*).
+ * La lectura publica (widget, /prensa, noticia completa) vive en
+ * GET /api/v1/noticias — ver la nota ahi sobre por que no puede estar aca.
+ */
 export async function GET(req: Request) {
   try {
+    await requireStaff(req, 'admin')
     const pool = getPool()
-    const url = new URL(req.url)
-    const soloActivas = url.searchParams.get('activas') === 'true'
-    const soloPrensa = url.searchParams.get('prensa') === 'true'
-    const condiciones: string[] = []
-    if (soloActivas) condiciones.push('activa = true')
-    if (soloPrensa) condiciones.push('es_comunicado_prensa = true')
-    const where = condiciones.length ? `WHERE ${condiciones.join(' AND ')}` : ''
     const result = await pool.query(
       `SELECT id, titulo, resumen, url, imagen_url, video_url, fuente, tipo, activa, es_comunicado_prensa, orden, created_at
        FROM noticias_rodaid
-       ${where}
        ORDER BY orden ASC, created_at DESC
-       LIMIT ${soloPrensa ? 50 : 20}`
+       LIMIT 50`
     )
     return NextResponse.json({ ok: true, noticias: result.rows })
   } catch (e: unknown) {
-    return NextResponse.json({ error: String(e) }, { status: 500 })
+    return jsonError(e)
   }
 }
 

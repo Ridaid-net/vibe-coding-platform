@@ -38,7 +38,7 @@ export function useNoticias(opts: { soloPrensa?: boolean } = {}): UseNoticiasRes
     setError(false)
     const params = new URLSearchParams({ activas: 'true' })
     if (opts.soloPrensa) params.set('prensa', 'true')
-    fetch(`/api/v1/admin/noticias?${params.toString()}`)
+    fetch(`/api/v1/noticias?${params.toString()}`)
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
