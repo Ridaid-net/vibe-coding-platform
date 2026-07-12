@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import { authedFetch } from '@/lib/session'
 import { SERVICIOS_ALIADO, CATEGORIAS_SERVICIOS_ALIADO, normalizarWhatsapp } from '@/lib/aliado-servicios'
 import { Megaphone, Save, X, UserX } from 'lucide-react'
@@ -23,6 +23,14 @@ interface EstadoPublicacion {
 }
 
 export function PublicarServicioTaller() {
+  return (
+    <Suspense fallback={null}>
+      <PublicarServicioTallerInner />
+    </Suspense>
+  )
+}
+
+function PublicarServicioTallerInner() {
   const verComoAliado = useVerComoAliado()
   const [estado, setEstado] = useState<EstadoPublicacion | null>(null)
   const [errorCode, setErrorCode] = useState<string | null>(null)

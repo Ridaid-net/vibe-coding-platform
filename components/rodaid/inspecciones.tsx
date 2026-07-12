@@ -2,7 +2,7 @@
 import { ChecklistCIT } from '@/components/rodaid/ChecklistCIT'
 import { ChecklistInspeccion } from '@/lib/puntos-inspeccion'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Bike,
@@ -50,6 +50,14 @@ const ROL_LABEL: Record<string, string> = {
  * Mantiene el lenguaje visual de "Mi Garaje", extendido para el rol inspector.
  */
 export function Inspecciones() {
+  return (
+    <Suspense fallback={null}>
+      <InspeccionesInner />
+    </Suspense>
+  )
+}
+
+function InspeccionesInner() {
   const verComoAliado = useVerComoAliado()
   const [ctx, setCtx] = useState<InspectorContextoCliente | null>(null)
   const [cargandoCtx, setCargandoCtx] = useState(true)
