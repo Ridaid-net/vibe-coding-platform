@@ -3,6 +3,9 @@ import { useState, useEffect } from 'react'
 import { authedFetch } from '@/lib/session'
 import { SERVICIOS_ALIADO, CATEGORIAS_SERVICIOS_ALIADO, normalizarWhatsapp } from '@/lib/aliado-servicios'
 import { Megaphone, Save, X, UserX } from 'lucide-react'
+import { useVerComoAliado } from '@/lib/admin-view-as'
+import { AdminViewAsBanner } from '@/components/rodaid/AdminViewAsBanner'
+import { SelectorVerComoAliado } from '@/components/rodaid/SelectorVerComoAliado'
 
 interface EstadoPublicacion {
   puedePublicar: boolean
@@ -16,9 +19,11 @@ interface EstadoPublicacion {
     whatsappNumero: string | null
     publicado: boolean
   } | null
+  modoVista?: 'propio' | 'ver_como' | 'vista_previa'
 }
 
 export function PublicarServicioTaller() {
+  const verComoAliado = useVerComoAliado()
   const [estado, setEstado] = useState<EstadoPublicacion | null>(null)
   const [errorCode, setErrorCode] = useState<string | null>(null)
   const [cargando, setCargando] = useState(true)
@@ -37,7 +42,8 @@ export function PublicarServicioTaller() {
   const cargar = () => {
     setCargando(true)
     setErrorCode(null)
-    authedFetch('/api/v1/talleres/servicio-publicado')
+    const qs = verComoAliado ? `?verComoAliado=${encodeURIComponent(verComoAliado)}` : ''
+    authedFetch(`/api/v1/talleres/servicio-publicado${qs}`)
       .then(async (r) => {
         const data = await r.json()
         if (!r.ok) {
@@ -57,7 +63,7 @@ export function PublicarServicioTaller() {
       .finally(() => setCargando(false))
   }
 
-  useEffect(() => { cargar() }, [])
+  useEffect(() => { cargar() }, [verComoAliado])
 
   const elegirLogo = (file: File | null) => {
     setLogoFile(file)
@@ -125,9 +131,13 @@ export function PublicarServicioTaller() {
 
   if (errorCode || !estado) return null
 
+  const soloLectura = !!estado.modoVista && estado.modoVista !== 'propio'
+
   if (!estado.puedePublicar) {
     return (
       <div className="rounded-2xl border border-dashed border-ink/10 bg-white p-5 mb-8">
+        <SelectorVerComoAliado />
+        <AdminViewAsBanner modo={estado.modoVista ?? 'propio'} />
         <div className="flex items-center gap-3">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-slate-50">
             <Megaphone className="size-5 text-slate-400" />
@@ -146,6 +156,8 @@ export function PublicarServicioTaller() {
 
   return (
     <div className="rounded-2xl border border-[#2BBCB8]/30 bg-white p-5 mb-8">
+      <SelectorVerComoAliado />
+      <AdminViewAsBanner modo={estado.modoVista ?? 'propio'} />
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-teal-50">
@@ -160,7 +172,7 @@ export function PublicarServicioTaller() {
             </p>
           </div>
         </div>
-        {!editando && (
+        {!editando && !soloLectura && (
           <button type="button" onClick={() => setEditando(true)}
             className="inline-flex items-center gap-2 rounded-full bg-[#0F1E35] px-4 py-2 text-xs font-semibold text-white hover:bg-[#0F1E35]/80">
             {estado.publicacion ? 'Editar publicación' : 'Publicar'}

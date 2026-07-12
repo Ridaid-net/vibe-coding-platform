@@ -42,8 +42,9 @@ interface PostBody {
 export async function GET(req: Request) {
   try {
     const user = await requireRole('inspector', 'aliado', 'admin')(req)
-    const ctx = await cargarInspectorContexto(user.id)
     const url = new URL(req.url)
+    const verComoAliado = url.searchParams.get('verComoAliado')
+    const ctx = await cargarInspectorContexto(user.id, verComoAliado)
     const q = url.searchParams.get('q') ?? url.searchParams.get('serial') ?? ''
     const resultado = await buscarParaInspeccion(q, ctx)
     return NextResponse.json(resultado)
@@ -55,6 +56,9 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const user = await requireRole('inspector', 'aliado', 'admin')(req)
+    // Deliberado: SIN verComoAliado acá. Aprobar/reportar discrepancia firma
+    // un acta real -- un admin en "ver como" nunca puede atribuirle una
+    // accion a un aliado que no es el suyo.
     const ctx = await cargarInspectorContexto(user.id)
     const body = (await req.json().catch(() => ({}))) as PostBody
     const accion = typeof body.accion === 'string' ? body.accion : ''

@@ -1,10 +1,11 @@
 export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
 import { ApiError, jsonError, requireRole } from '@/lib/marketplace'
-import { resolverAliadoDeUsuario } from '@/src/services/inspeccion.service'
+import { resolverAliadoDeUsuario, resolverAliadoParaLectura } from '@/src/services/inspeccion.service'
 import {
   obtenerEstadoPublicacionTaller,
   publicarServicioTaller,
+  estadoPublicacionVistaPrevia,
 } from '@/src/services/talleres-desempeno.service'
 
 /**
@@ -31,8 +32,22 @@ async function resolverAliadoIdDelUsuario(usuarioId: string): Promise<string> {
 export async function GET(req: Request) {
   try {
     const user = await requireRole('aliado', 'admin')(req)
-    const aliadoId = await resolverAliadoIdDelUsuario(user.id)
-    return NextResponse.json(await obtenerEstadoPublicacionTaller(aliadoId))
+    const verComoAliado = new URL(req.url).searchParams.get('verComoAliado')
+    const { aliado, modo } = await resolverAliadoParaLectura(user, verComoAliado)
+
+    if (modo === 'vista_previa') {
+      return NextResponse.json({ ...estadoPublicacionVistaPrevia(), modoVista: modo })
+    }
+    if (!aliado) {
+      throw new ApiError(
+        404,
+        'ALIADO_NO_ENCONTRADO',
+        modo === 'ver_como'
+          ? 'El aliado solicitado no existe o no esta aprobado.'
+          : 'No encontramos un perfil de aliado aprobado vinculado a tu cuenta.'
+      )
+    }
+    return NextResponse.json({ ...(await obtenerEstadoPublicacionTaller(aliado.id)), modoVista: modo })
   } catch (error) {
     return jsonError(error)
   }
