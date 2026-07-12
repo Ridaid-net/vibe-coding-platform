@@ -13,7 +13,11 @@ const COLS = [
   },
   {
     title: 'RODAID PAY',
-    links: ['Academia', 'Eventos', 'Servicios', 'Pago protegido', 'Disputas', 'Reembolsos', 'Seguimiento'],
+    // "Disputas" sacado temporalmente (2026-07-12): la pagina y el boton real
+    // publicaban una clausula de arbitraje vinculante sin revision legal,
+    // atada a POST /api/v1/disputas/abrir -- endpoint que no existe. No
+    // reactivar hasta decidir que hacer con /disputas y BotonDisputa.tsx.
+    links: ['Academia', 'Eventos', 'Servicios', 'Pago protegido', 'Reembolsos', 'Seguimiento'],
   },
   {
     title: 'Empresa',
