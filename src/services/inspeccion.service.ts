@@ -55,6 +55,7 @@ export interface InspectorContexto {
   walletAddress: string | null
   /** Aliado aprobado del usuario, si su rol es 'aliado'. */
   aliado: { id: string; nombre: string } | null
+  modoVista: ModoVistaAliado
 }
 
 // ── Helpers de transaccion / firma ───────────────────────────────────────────
@@ -126,6 +127,50 @@ export async function resolverAliadoDeUsuario(
   return res.rows[0] ?? null
 }
 
+export type ModoVistaAliado = 'propio' | 'ver_como' | 'vista_previa'
+
+export interface ResolucionAliadoLectura {
+  aliado: { id: string; nombre: string } | null
+  modo: ModoVistaAliado
+}
+
+/**
+ * Resuelve el aliado para una LECTURA (contexto, busqueda, estado de
+ * publicacion) -- NUNCA para una escritura, que sigue exigiendo
+ * resolverAliadoDeUsuario()/resolverAliadoIdDelUsuario() (dueno real via
+ * usuario_id). Es la unica pieza que interpreta `aliadoIdSolicitado` -- el
+ * parametro "ver como" que un admin puede pasar para inspeccionar
+ * visualmente el panel de un aliado real, de solo lectura.
+ *
+ *   - rol 'aliado'  -> ignora aliadoIdSolicitado, resuelve su propio perfil
+ *                      (modo 'propio', igual que siempre).
+ *   - rol 'admin' + aliadoIdSolicitado -> ese aliado real (debe existir y
+ *                      estar aprobado), modo 'ver_como'.
+ *   - rol 'admin' sin aliadoIdSolicitado -> aliado null, modo 'vista_previa'
+ *                      (el caller arma datos de ejemplo, sin tocar `aliados`).
+ *   - cualquier otro rol (p. ej. 'inspector') -> aliado null, modo 'propio'
+ *                      (mismo comportamiento que hoy: no tiene taller propio).
+ */
+export async function resolverAliadoParaLectura(
+  user: { id: string; rol: string },
+  aliadoIdSolicitado: string | null
+): Promise<ResolucionAliadoLectura> {
+  if (user.rol === 'aliado') {
+    return { aliado: await resolverAliadoDeUsuario(user.id), modo: 'propio' }
+  }
+  if (user.rol === 'admin' && aliadoIdSolicitado) {
+    const res = await getPool().query<AliadoRow>(
+      `SELECT id, nombre FROM aliados WHERE id = $1 AND estado = 'aprobado' LIMIT 1`,
+      [aliadoIdSolicitado]
+    )
+    return { aliado: res.rows[0] ?? null, modo: 'ver_como' }
+  }
+  if (user.rol === 'admin') {
+    return { aliado: null, modo: 'vista_previa' }
+  }
+  return { aliado: null, modo: 'propio' }
+}
+
 interface InspectorPerfilRow {
   id: string
   rol: UsuarioRol
@@ -135,10 +180,12 @@ interface InspectorPerfilRow {
 
 /**
  * Carga el contexto de inspeccion de un usuario: su rol, su wallet (identidad
- * digital) y, si es aliado, su aliado aprobado. Lanza si el usuario no existe.
+ * digital) y su aliado (propio, "ver como", o vista previa). Lanza si el
+ * usuario no existe.
  */
 export async function cargarInspectorContexto(
-  usuarioId: string
+  usuarioId: string,
+  aliadoIdSolicitado: string | null = null
 ): Promise<InspectorContexto> {
   const res = await getPool().query<InspectorPerfilRow>(
     `SELECT id, rol, wallet_address, datos_perfil FROM usuarios WHERE id = $1 LIMIT 1`,
@@ -151,13 +198,35 @@ export async function cargarInspectorContexto(
   const perfil = row.datos_perfil ?? {}
   const nombre =
     (typeof perfil.nombre === 'string' && perfil.nombre.trim()) || 'Inspector'
-  const aliado = row.rol === 'aliado' ? await resolverAliadoDeUsuario(row.id) : null
+
+  // 'inspector' nunca tiene taller propio -- mismo comportamiento de siempre.
+  // aliadoIdSolicitado solo se interpreta para 'aliado'/'admin' (ver
+  // resolverAliadoParaLectura). CRITICO: el POST de aprobar/discrepancia
+  // (mas abajo, via autorizarCitParaInspeccion) llama a esta funcion SIN
+  // pasar aliadoIdSolicitado nunca -- asi que un admin en modo "ver como"
+  // jamas puede firmar un acta atribuida a un aliado real.
+  if (row.rol !== 'aliado' && row.rol !== 'admin') {
+    return {
+      id: row.id,
+      rol: row.rol,
+      nombre,
+      walletAddress: row.wallet_address,
+      aliado: null,
+      modoVista: 'propio',
+    }
+  }
+
+  const { aliado, modo } = await resolverAliadoParaLectura(
+    { id: row.id, rol: row.rol },
+    aliadoIdSolicitado
+  )
   return {
     id: row.id,
     rol: row.rol,
     nombre,
     walletAddress: row.wallet_address,
     aliado,
+    modoVista: modo,
   }
 }
 

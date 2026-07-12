@@ -14,6 +14,7 @@ export interface InspectorContextoCliente {
   nombre: string
   walletAddress: string | null
   aliado: { id: string; nombre: string } | null
+  modoVista: 'propio' | 'ver_como' | 'vista_previa'
 }
 
 export interface ActaFirmaCliente {
@@ -81,8 +82,11 @@ async function leer<T>(res: Response): Promise<T> {
   return (await res.json()) as T
 }
 
-export async function fetchContexto(): Promise<InspectorContextoCliente> {
-  return leer(await authedFetch('/api/v1/inspecciones/contexto'))
+export async function fetchContexto(
+  verComoAliado?: string | null
+): Promise<InspectorContextoCliente> {
+  const qs = verComoAliado ? `?verComoAliado=${encodeURIComponent(verComoAliado)}` : ''
+  return leer(await authedFetch(`/api/v1/inspecciones/contexto${qs}`))
 }
 
 export async function guardarWallet(
@@ -97,9 +101,13 @@ export async function guardarWallet(
   )
 }
 
-export async function buscarBici(q: string): Promise<BusquedaInspeccion> {
+export async function buscarBici(
+  q: string,
+  verComoAliado?: string | null
+): Promise<BusquedaInspeccion> {
+  const verComoQs = verComoAliado ? `&verComoAliado=${encodeURIComponent(verComoAliado)}` : ''
   return leer(
-    await authedFetch(`/api/inspector/cit?q=${encodeURIComponent(q)}`)
+    await authedFetch(`/api/inspector/cit?q=${encodeURIComponent(q)}${verComoQs}`)
   )
 }
 

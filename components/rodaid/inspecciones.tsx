@@ -2,7 +2,7 @@
 import { ChecklistCIT } from '@/components/rodaid/ChecklistCIT'
 import { ChecklistInspeccion } from '@/lib/puntos-inspeccion'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Bike,
@@ -32,6 +32,9 @@ import {
   type InspectorContextoCliente,
   type VerificacionRespuesta,
 } from '@/lib/inspecciones'
+import { useVerComoAliado } from '@/lib/admin-view-as'
+import { AdminViewAsBanner } from '@/components/rodaid/AdminViewAsBanner'
+import { SelectorVerComoAliado } from '@/components/rodaid/SelectorVerComoAliado'
 
 const ROL_LABEL: Record<string, string> = {
   inspector: 'Inspector',
@@ -47,6 +50,15 @@ const ROL_LABEL: Record<string, string> = {
  * Mantiene el lenguaje visual de "Mi Garaje", extendido para el rol inspector.
  */
 export function Inspecciones() {
+  return (
+    <Suspense fallback={null}>
+      <InspeccionesInner />
+    </Suspense>
+  )
+}
+
+function InspeccionesInner() {
+  const verComoAliado = useVerComoAliado()
   const [ctx, setCtx] = useState<InspectorContextoCliente | null>(null)
   const [cargandoCtx, setCargandoCtx] = useState(true)
   const [errorCtx, setErrorCtx] = useState<string | null>(null)
@@ -56,13 +68,13 @@ export function Inspecciones() {
     setErrorCtx(null)
     try {
       await ensureInspectorSession()
-      setCtx(await fetchContexto())
+      setCtx(await fetchContexto(verComoAliado))
     } catch (err) {
       setErrorCtx((err as Error).message ?? 'No se pudo cargar el panel.')
     } finally {
       setCargandoCtx(false)
     }
-  }, [])
+  }, [verComoAliado])
 
   useEffect(() => {
     cargarCtx()
@@ -95,6 +107,11 @@ export function Inspecciones() {
           </div>
         )}
       </header>
+
+      <div className="mt-4">
+        <SelectorVerComoAliado />
+        {ctx && <AdminViewAsBanner modo={ctx.modoVista} aliadoNombre={ctx.aliado?.nombre} />}
+      </div>
 
       {cargandoCtx ? (
         <div className="mt-10 flex items-center gap-2 text-sm text-slate-warm">
@@ -207,6 +224,7 @@ function WalletPanel({
 // ── Buscador + resultado ─────────────────────────────────────────────────────
 
 function Buscador({ ctx }: { ctx: InspectorContextoCliente }) {
+  const verComoAliado = useVerComoAliado()
   const [q, setQ] = useState('')
   const [buscando, setBuscando] = useState(false)
   const [resultado, setResultado] = useState<BusquedaInspeccion | null>(null)
@@ -217,7 +235,7 @@ function Buscador({ ctx }: { ctx: InspectorContextoCliente }) {
     if (!limpio) return
     setBuscando(true)
     try {
-      setResultado(await buscarBici(limpio))
+      setResultado(await buscarBici(limpio, verComoAliado))
     } catch (err) {
       toast.error('No pudimos buscar la bici', {
         description: (err as Error).message,
@@ -225,7 +243,7 @@ function Buscador({ ctx }: { ctx: InspectorContextoCliente }) {
     } finally {
       setBuscando(false)
     }
-  }, [])
+  }, [verComoAliado])
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
@@ -439,6 +457,7 @@ function Acciones({
   const sinWallet = !ctx.walletAddress
   const bloqueado = cit.estado === 'bloqueado'
   const yaResuelta = cit.estado === 'rechazado'
+  const modoVistaActivo = ctx.modoVista !== 'propio'
 
   const aprobar = async () => {
     if (enviando) return
@@ -498,6 +517,11 @@ function Acciones({
 
   return (
     <div className="space-y-3">
+      {modoVistaActivo && (
+        <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+          Estás en modo vista previa / ver-como: no podés aprobar ni rechazar inspecciones desde acá.
+        </p>
+      )}
       {sinWallet && (
         <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
           Configurá tu wallet arriba para poder firmar.
@@ -521,7 +545,7 @@ function Acciones({
           <div className="flex flex-wrap gap-2">
             <button
               onClick={aprobar}
-              disabled={sinWallet || enviando !== null}
+              disabled={sinWallet || enviando !== null || modoVistaActivo}
               className="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-ink px-4 py-2.5 text-sm font-semibold text-paper transition-colors hover:bg-ink-soft disabled:cursor-not-allowed disabled:opacity-50"
             >
               {enviando === 'aprobar' ? (
@@ -533,7 +557,7 @@ function Acciones({
             </button>
             <button
               onClick={() => setModo('discrepancia')}
-              disabled={sinWallet || enviando !== null}
+              disabled={sinWallet || enviando !== null || modoVistaActivo}
               className="inline-flex items-center justify-center gap-2 rounded-full border border-clay/40 bg-white px-4 py-2.5 text-sm font-semibold text-clay transition-colors hover:bg-clay/5 disabled:opacity-50"
             >
               <AlertTriangle className="size-4" />

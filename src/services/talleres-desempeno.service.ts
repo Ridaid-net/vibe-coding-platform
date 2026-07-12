@@ -74,6 +74,27 @@ export interface EstadoPublicacionTaller {
   } | null
 }
 
+/**
+ * Datos de ejemplo para el modo Vista Previa de un admin sin aliado propio
+ * ni "ver como" seleccionado. Nunca toca `aliados` ni ninguna otra tabla --
+ * es puramente informativo, para que el panel no quede vacio/roto.
+ */
+export function estadoPublicacionVistaPrevia(): EstadoPublicacionTaller {
+  return {
+    puedePublicar: true,
+    citsPromedio30d: 4.2,
+    umbral: 3,
+    publicacion: {
+      servicio: 'tecnico_mantenimiento_lavado',
+      precioArs: 15000,
+      logoUrl: '',
+      linkTienda: null,
+      whatsappNumero: null,
+      publicado: false,
+    },
+  }
+}
+
 export async function obtenerEstadoPublicacionTaller(
   aliadoId: string
 ): Promise<EstadoPublicacionTaller> {

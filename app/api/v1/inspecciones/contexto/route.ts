@@ -20,7 +20,8 @@ interface Body {
 export async function GET(req: Request) {
   try {
     const user = await requireRole('inspector', 'aliado', 'admin')(req)
-    const ctx = await cargarInspectorContexto(user.id)
+    const verComoAliado = new URL(req.url).searchParams.get('verComoAliado')
+    const ctx = await cargarInspectorContexto(user.id, verComoAliado)
     return NextResponse.json(serializar(ctx))
   } catch (error) {
     return jsonError(error)
@@ -60,5 +61,6 @@ function serializar(ctx: Awaited<ReturnType<typeof cargarInspectorContexto>>) {
     nombre: ctx.nombre,
     walletAddress: ctx.walletAddress,
     aliado: ctx.aliado,
+    modoVista: ctx.modoVista,
   }
 }
