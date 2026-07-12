@@ -683,8 +683,8 @@ export async function registrarDenuncia(args: {
   if (fee.montoARS > 0) {
     const preferencia = await crearPreferencia({
       transaccionId: denunciaId,
-      titulo: `Denuncia de robo — ${bici.numero_serie}`,
-      descripcion: 'Tarifa de denuncia de robo (cuenta sin CIT activo).',
+      titulo: `Servicio RODAID de bloqueo y alerta — ${bici.numero_serie}`,
+      descripcion: 'Servicio RODAID de bloqueo y alerta de red (cuenta sin CIT activo).',
       precioARS: fee.montoARS,
       notificationPath: '/api/v1/denuncias/webhook/mp',
     })
