@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { authedFetch } from '@/lib/session'
 import { SERVICIOS_ALIADO, CATEGORIAS_SERVICIOS_ALIADO, normalizarWhatsapp } from '@/lib/aliado-servicios'
-import { Megaphone, Save, X } from 'lucide-react'
+import { Megaphone, Save, X, UserX } from 'lucide-react'
 
 interface EstadoPublicacion {
   puedePublicar: boolean
@@ -20,6 +20,7 @@ interface EstadoPublicacion {
 
 export function PublicarServicioTaller() {
   const [estado, setEstado] = useState<EstadoPublicacion | null>(null)
+  const [errorCode, setErrorCode] = useState<string | null>(null)
   const [cargando, setCargando] = useState(true)
   const [editando, setEditando] = useState(false)
   const [guardando, setGuardando] = useState(false)
@@ -35,9 +36,15 @@ export function PublicarServicioTaller() {
 
   const cargar = () => {
     setCargando(true)
+    setErrorCode(null)
     authedFetch('/api/v1/talleres/servicio-publicado')
-      .then(r => r.json())
-      .then((data: EstadoPublicacion) => {
+      .then(async (r) => {
+        const data = await r.json()
+        if (!r.ok) {
+          setErrorCode(typeof data?.error === 'string' ? data.error : 'ERROR_DESCONOCIDO')
+          setEstado(null)
+          return
+        }
         setEstado(data)
         if (data.publicacion) {
           setServicio(data.publicacion.servicio)
@@ -46,7 +53,7 @@ export function PublicarServicioTaller() {
           setWhatsappNumero(data.publicacion.whatsappNumero ?? '')
         }
       })
-      .catch(() => undefined)
+      .catch(() => setErrorCode('ERROR_RED'))
       .finally(() => setCargando(false))
   }
 
@@ -96,7 +103,27 @@ export function PublicarServicioTaller() {
     }
   }
 
-  if (cargando || !estado) return null
+  if (cargando) return null
+
+  if (errorCode === 'ALIADO_NO_ENCONTRADO') {
+    return (
+      <div className="rounded-2xl border border-dashed border-ink/10 bg-white p-5 mb-8">
+        <div className="flex items-center gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-slate-50">
+            <UserX className="size-5 text-slate-400" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-[#0F1E35]">Sin perfil de Taller Aliado</p>
+            <p className="text-xs text-slate-warm mt-0.5">
+              Tu cuenta de administrador no tiene un perfil de Taller Aliado asociado, así que esta sección no aplica para vos.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (errorCode || !estado) return null
 
   if (!estado.puedePublicar) {
     return (
