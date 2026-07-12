@@ -310,7 +310,7 @@ function ResultadoDenuncia({
             className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-clay px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-clay/90"
           >
             <ShieldAlert className="size-4" />
-            Pagar {pesos(resultado.pago.montoARS)} y activar la denuncia
+            Pagar {pesos(resultado.pago.montoARS)} y activar el bloqueo
           </button>
           <a
             href="https://wa.me/5492617542335"
@@ -320,6 +320,19 @@ function ResultadoDenuncia({
           >
             ¿No podés pagar ahora? Escribinos por WhatsApp
           </a>
+          <p className="text-center text-[11px] leading-snug text-slate-warm">
+            Este pago es por el bloqueo y la alerta en la red RODAID. Denunciar
+            el robo ante la Justicia siempre es gratis, con o sin RODAID, en{' '}
+            <a
+              href="https://denuncias.mpfmza.gob.ar"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-ink"
+            >
+              denuncias.mpfmza.gob.ar
+            </a>
+            .
+          </p>
         </>
       ) : (
         <button
