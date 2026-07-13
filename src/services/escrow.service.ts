@@ -12,7 +12,6 @@ import { emitirEvento } from '@/src/services/notification.service'
 import {
   cancelarLiquidacionesDeTransaccion,
   registrarLiquidacionVendedor,
-  registrarLiquidacionAliadoFeeLogistica,
   registrarLiquidacionAliadoFeeExito,
 } from '@/src/services/compensaciones.service'
 import {
@@ -70,19 +69,28 @@ async function notificarOperacionCompletada(
  *   webhookPago(sena aprobada)   -> RESERVADA (financia la verificacion del Taller)
  *   aprobarInspeccionFisica()    -> (inspeccion.service.ts) publicacion EJECUTANDO_LOGISTICA
  *   confirmarPagoCitCompleto()   -> SALDO_PENDIENTE (saldo: precio + logistica)
- *   webhookPago(saldo aprobado)  -> FONDOS_RETENIDOS (reserva_vence_en se limpia aca)
+ *   webhookPago(saldo aprobado)  -> FONDOS_RETENIDOS (reserva_vence_en se limpia aca,
+ *                                   saldo_confirmado_en se estampa aca)
  *
- *   TODO(cierre CIT Completo): NO EXISTE todavia el endpoint que confirma la
- *   venta/entrega para este flujo. Una transaccion de CIT Completo que llega a
- *   FONDOS_RETENIDOS via SALDO_PENDIENTE se queda ATASCADA ahi para siempre:
- *   nadie cobra nunca -- ni el vendedor (registrarLiquidacionVendedor nunca se
- *   llama), ni el Taller Aliado por logistica/exito (no existen todavia
- *   registrarLiquidacionAliadoFeeLogistica/Exito, a diferencia del fee de
- *   verificacion que SI se registra en aprobarInspeccionFisica). Los
- *   endpoints genericos confirmarEnvio/confirmarEntrega NO son la solucion:
- *   representan el envio postal del flujo generico, no la logistica que
- *   coordina el Taller en CIT Completo, y de todas formas solo liquidarian al
- *   vendedor, no al Taller. Falta construir ese cierre como pieza propia.
+ *   Fase 6b (Remito de Embalaje y Despacho, remito.service.ts) — vive DENTRO
+ *   de FONDOS_RETENIDOS, no agrega ningun estado nuevo al enum: generarRemito()
+ *   (vendedor, accion explicita) -> confirmarDespachoRemito() (Taller, firma
+ *   con su wallet_address) -> liquida el Fee de Logistica. remitos.estado
+ *   (GENERADO/DESPACHADO) es la fuente de verdad de este sub-tramo.
+ *
+ *   Cierre de CIT Completo (RESUELTO 2026-07-11, commit 233922f -- este
+ *   comentario estuvo desactualizado un tiempo, ver tambien CLAUDE.md):
+ *   confirmarEntregaCitCompleto() es el cierre real de este flujo. Lo dispara
+ *   el COMPRADOR al confirmar que recibio la bici: FONDOS_RETENIDOS ->
+ *   COMPLETADA, libera el pago, transfiere la titularidad real
+ *   (transferencia-dominio.service.ts) y liquida el vendedor + la mitad del
+ *   Taller Aliado en el Fee de Exito. El Fee de Logistica (embalaje) NO se
+ *   liquida aca -- se liquida antes, en confirmarDespachoRemito()
+ *   (remito.service.ts), cuando el Taller confirma que efectivamente embalo
+ *   y despacho la bici (boton "Despacho a Logistica" del Remito, Fase 6b).
+ *   Mismo criterio que el Fee de Verificacion (se paga al sellar el
+ *   checklist, no al cerrarse la venta): el Taller cobra por el trabajo que
+ *   el hizo, sin depender de una confirmacion de un tercero dias despues.
  *
  *   Auditoria de integridad de dinero (misma fecha): procesarReservasVencidas()
  *   reconcilia contra MercadoPago (buscarPagosPorExternalReference) ANTES de
@@ -236,7 +244,8 @@ export function mapPago(row: PagoRow) {
 
 // ── Helpers internos ────────────────────────────────────────────────────────
 
-async function withTx<T>(fn: (client: DbClient) => Promise<T>): Promise<T> {
+/** Exportado para remito.service.ts: misma disciplina de transaccion/lock/auditoria que el resto del escrow. */
+export async function withTx<T>(fn: (client: DbClient) => Promise<T>): Promise<T> {
   const client = await getPool().connect()
   try {
     await client.query('BEGIN')
@@ -251,7 +260,7 @@ async function withTx<T>(fn: (client: DbClient) => Promise<T>): Promise<T> {
   }
 }
 
-async function lockTransaccion(
+export async function lockTransaccion(
   client: DbClient,
   transaccionId: string
 ): Promise<TransaccionRow> {
@@ -266,7 +275,7 @@ async function lockTransaccion(
   return tx
 }
 
-async function logEvento(
+export async function logEvento(
   client: DbClient,
   evento: {
     transaccionId: string
@@ -1328,12 +1337,15 @@ export async function confirmarEntrega(input: {
 // ── 4b. confirmarEntregaCitCompleto (comprador, cierre de CIT Completo) ────
 
 /**
- * Cierre de CIT Completo (Fase 6 TODO resuelto): el comprador confirma la
- * recepcion directo desde FONDOS_RETENIDOS -- CIT Completo no usa el paso
- * EN_CAMINO/confirmarEnvio del flujo generico, porque la "logistica" la
- * coordina el Taller Aliado antes de llegar a este punto, no es un envio
- * postal del vendedor. Libera el pago, transfiere la titularidad real y
- * liquida vendedor + Taller Aliado (logistica + exito).
+ * Cierre de CIT Completo: el comprador confirma la recepcion directo desde
+ * FONDOS_RETENIDOS -- CIT Completo no usa el paso EN_CAMINO/confirmarEnvio del
+ * flujo generico, porque la "logistica" la coordina el Taller Aliado antes de
+ * llegar a este punto, no es un envio postal del vendedor. Libera el pago,
+ * transfiere la titularidad real y liquida vendedor + la mitad del Taller
+ * Aliado en el Fee de Exito. NO liquida el Fee de Logistica (embalaje) --
+ * eso ya se liquido antes, en confirmarDespachoRemito() (remito.service.ts),
+ * cuando el Taller confirmo el trabajo hecho (ver el comentario de la maquina
+ * de estados al inicio del archivo, seccion "Fase 6b").
  */
 export async function confirmarEntregaCitCompleto(input: {
   transaccionId: string
@@ -1361,11 +1373,6 @@ export async function confirmarEntregaCitCompleto(input: {
       rol: 'comprador',
     })
 
-    await registrarLiquidacionAliadoFeeLogistica(client, {
-      transaccionId: tx.id,
-      aliadoId: tx.aliado_id,
-      monto: Number(tx.fee_logistica_pagado_taller_ars),
-    })
     await registrarLiquidacionAliadoFeeExito(client, {
       transaccionId: tx.id,
       aliadoId: tx.aliado_id,

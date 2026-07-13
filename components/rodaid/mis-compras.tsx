@@ -1,9 +1,11 @@
 'use client'
 
 import Link from 'next/link'
-import { ShoppingBag } from 'lucide-react'
+import { AlertTriangle, Mail, Package, ShoppingBag, Truck } from 'lucide-react'
 import { useMisCompras, type MiCompra } from '@/lib/garaje-digital'
 import { CuentaRegresiva } from './cuenta-regresiva'
+
+const EMAIL_SOPORTE = 'federicodegeaceo@rodaid.net'
 
 /**
  * "Mis compras" — Item 4 (prioridad 3): seguimiento del comprador.
@@ -166,6 +168,9 @@ function CompraItem({ compra }: { compra: MiCompra }) {
         {compra.reservaVenceEn && (
           <CuentaRegresiva venceEn={compra.reservaVenceEn} />
         )}
+        {compra.aliadoId && compra.estado === 'FONDOS_RETENIDOS' && (
+          <RemitoEstadoCompra compra={compra} />
+        )}
       </div>
 
       <Link
@@ -175,5 +180,57 @@ function CompraItem({ compra }: { compra: MiCompra }) {
         Ver publicación
       </Link>
     </li>
+  )
+}
+
+/**
+ * Fase 6b (CIT Completo): estado del Remito de Embalaje y Despacho, del lado
+ * del comprador. Sin remito todavía: esperando al vendedor. Con remito
+ * GENERADO: en embalaje. DESPACHADO: en camino. Si pasaron 7 días desde el
+ * saldo confirmado sin remito (remitoVencido), se habilita un reclamo --
+ * hoy deriva a contacto directo (mismo criterio honesto que BotonDisputa.tsx:
+ * el mecanismo de disputas real de CIT Completo todavía no está construido).
+ */
+function RemitoEstadoCompra({ compra }: { compra: MiCompra }) {
+  if (compra.remito?.estado === 'DESPACHADO') {
+    return (
+      <p className="mt-1 flex items-center gap-1.5 text-[11px] font-semibold text-[#0a7d5a]">
+        <Truck className="size-3.5" /> Tu bici ya fue despachada
+      </p>
+    )
+  }
+
+  if (compra.remito?.estado === 'GENERADO') {
+    return (
+      <p className="mt-1 flex items-center gap-1.5 text-[11px] font-semibold text-amber-700">
+        <Package className="size-3.5" /> El taller está embalando tu bici
+      </p>
+    )
+  }
+
+  if (compra.remitoVencido) {
+    return (
+      <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+        <p className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-800">
+          <AlertTriangle className="size-3.5" />
+          El vendedor todavía no generó el remito de embalaje
+        </p>
+        <p className="mt-1 text-[11px] leading-relaxed text-amber-700">
+          Pasaron varios días desde que confirmaste el pago. Tu plata sigue protegida en RODAID PAY. Si querés, escribinos y lo revisamos con vos.
+        </p>
+        <a
+          href={`mailto:${EMAIL_SOPORTE}`}
+          className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-800 underline-offset-2 hover:underline"
+        >
+          <Mail className="size-3" /> {EMAIL_SOPORTE}
+        </a>
+      </div>
+    )
+  }
+
+  return (
+    <p className="mt-1 text-[11px] text-slate-warm">
+      Esperando que el vendedor genere el remito de embalaje
+    </p>
   )
 }

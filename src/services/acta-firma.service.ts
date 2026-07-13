@@ -64,6 +64,9 @@ export interface ActaFirmada {
   commonName: string
 }
 
+/** Firma sobre un texto canonico arbitrario (sin el campo `canonico`, ya lo tiene el llamador). */
+export type FirmaCanonica = Omit<ActaFirmada, 'canonico'>
+
 // ── Configuracion / modo ─────────────────────────────────────────────────────
 
 function getP12Base64(): string | null {
@@ -267,13 +270,15 @@ export function firmaHashActa(p: ActaPayload): string {
 // ── Firma / verificacion ─────────────────────────────────────────────────────
 
 /**
- * Firma el acta con la Web Crypto API usando la clave del bundle PKCS#12. Devuelve
- * la firma en base64, el certificado del firmante (para verificacion offline) y
- * sus metadatos (serie, fingerprint, CN).
+ * Firma un texto canonico ARBITRARIO con la misma credencial (PKCS#12 real o
+ * DEV autofirmada) y el mismo algoritmo que firmarActa() -- primitiva
+ * reutilizable para cualquier documento del sistema que necesite la misma
+ * disciplina de firma sin ser un acta de inspeccion (p. ej. la confirmacion de
+ * despacho de un Remito). Devuelve la firma en base64, el certificado del
+ * firmante (para verificacion offline) y sus metadatos (serie, fingerprint, CN).
  */
-export async function firmarActa(p: ActaPayload): Promise<ActaFirmada> {
+export async function firmarCanonico(canonico: string): Promise<FirmaCanonica> {
   const cred = await getCredencial()
-  const canonico = canonicalizarActa(p)
   const firma = await webcrypto.subtle.sign(
     WEBCRYPTO_ALG.name,
     cred.signingKey,
@@ -283,12 +288,22 @@ export async function firmarActa(p: ActaPayload): Promise<ActaFirmada> {
     modo: cred.modo,
     algoritmo: ACTA_FIRMA_ALGORITMO,
     valor: Buffer.from(firma).toString('base64'),
-    canonico,
     certificadoPem: cred.certificadoPem,
     certSerie: cred.certSerie,
     certFingerprint: cred.certFingerprint,
     commonName: cred.commonName,
   }
+}
+
+/**
+ * Firma el acta con la Web Crypto API usando la clave del bundle PKCS#12. Devuelve
+ * la firma en base64, el certificado del firmante (para verificacion offline) y
+ * sus metadatos (serie, fingerprint, CN).
+ */
+export async function firmarActa(p: ActaPayload): Promise<ActaFirmada> {
+  const canonico = canonicalizarActa(p)
+  const firma = await firmarCanonico(canonico)
+  return { ...firma, canonico }
 }
 
 /**

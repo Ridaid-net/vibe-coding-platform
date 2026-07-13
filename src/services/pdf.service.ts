@@ -952,3 +952,253 @@ async function guardarEnBlobs(
     // El almacenamiento es best-effort: nunca frena la descarga.
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ── Remito de Embalaje y Despacho (Fase 6b, CIT Completo) ────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Documento distinto del Certificado de arriba (bici vs. orden de trabajo de
+// embalaje), pero mismo motor: pdf-lib + QRCode + firma PKCS#7 detached de la
+// misma Autoridad Certificadora RODAID (firma.service.ts). A diferencia del
+// certificado, un Remito es INMUTABLE una vez generado -- no hay fingerprint
+// de invalidacion de cache: se genera una unica vez (generarRemito(), en
+// remito.service.ts) y esos bytes son los definitivos para siempre.
+
+export interface RemitoVendedor {
+  nombre: string
+  /** Email o telefono de contacto, lo que haya disponible. */
+  contacto: string | null
+}
+
+export interface RemitoTaller {
+  nombre: string
+  direccion: string | null
+  ciudad: string | null
+  telefono: string | null
+}
+
+export interface RemitoDatos {
+  numero: string
+  codigoCit: string
+  bici: CertificadoBici
+  vendedor: RemitoVendedor
+  taller: RemitoTaller
+  /** URL absoluta del Verificador Publico de Remitos (destino del QR). */
+  verifierUrl: string
+}
+
+export interface RemitoPdfGenerado {
+  pdf: Uint8Array
+  documentoHash: string
+  modoFirma: ReturnType<typeof getFirmaModo>
+}
+
+/** Genera y FIRMA el PDF del remito. No toca almacenamiento (lo hace remito.service.ts). */
+export async function generarRemitoPdf(d: RemitoDatos): Promise<RemitoPdfGenerado> {
+  const emitidoEn = new Date()
+
+  const doc = await PDFDocument.create()
+  doc.setTitle(`Remito de Embalaje y Despacho — ${d.numero}`)
+  doc.setAuthor('RODAID')
+  doc.setSubject('Remito de Embalaje y Despacho (CIT Completo)')
+  doc.setProducer('RODAID')
+  doc.setCreator('RODAID')
+  doc.setCreationDate(emitidoEn)
+  doc.setModificationDate(emitidoEn)
+
+  const fuentes = await cargarFuentes(doc)
+  const page = doc.addPage([PAGE_W, PAGE_H])
+
+  const qrPng = await generarQrPng(d.verifierUrl)
+  const qrImage = await doc.embedPng(qrPng)
+
+  componerRemito(page, fuentes, d, { emitidoEn, qrImage })
+
+  const { signer, modo } = crearSignerRodaid()
+  pdflibAddPlaceholder({
+    pdfDoc: doc,
+    reason: 'Remito de Embalaje y Despacho RODAID',
+    contactInfo: 'verificaciones@rodaid.ar',
+    name: 'RODAID Autoridad Certificadora',
+    location: 'Argentina',
+    signingTime: emitidoEn,
+    signatureLength: 8192,
+    subFilter: SUBFILTER_ADOBE_PKCS7_DETACHED,
+  })
+
+  const sinFirmar = await doc.save({ useObjectStreams: false })
+  const firmado = await new SignPdf().sign(Buffer.from(sinFirmar), signer, emitidoEn)
+  const pdf = new Uint8Array(firmado)
+
+  return { pdf, documentoHash: sha256Hex(pdf), modoFirma: modo }
+}
+
+interface RemitoRenderMeta {
+  emitidoEn: Date
+  qrImage: PDFImage
+}
+
+const INSTRUCCIONES_EMBALAJE = [
+  'No uses una caja con forma reconocible de bicicleta. Aunque parezca mas prolijo,',
+  'los operadores de transporte identifican esa forma al instante y, pese a la',
+  'apariencia fragil, suelen manipularla con menos cuidado del que la carga necesita.',
+  '',
+  'Reutiliza una caja rectangular grande de electrodomestico (por ejemplo, una caja',
+  'de Smart TV) para embalar la bici. Esa forma esta asociada por costumbre',
+  'logistica a contenido delicado, y en la practica recibe un manejo mas cuidadoso',
+  'en el circuito de transporte.',
+  '',
+  'Precinta la caja y coloca cinta o faja con la leyenda "FRAGIL" en al menos dos',
+  'caras visibles.',
+  '',
+  'Recorda: desarma/proteje pedales, manubrio y rueda delantera segun corresponda,',
+  'y asegura que no queden piezas sueltas dentro de la caja.',
+]
+
+function componerRemito(
+  page: PDFPage,
+  f: Fuentes,
+  d: RemitoDatos,
+  meta: RemitoRenderMeta
+): void {
+  page.drawRectangle({ x: 0, y: 0, width: PAGE_W, height: PAGE_H, color: C.paper })
+  page.drawRectangle({
+    x: MARGIN - 14,
+    y: MARGIN - 14,
+    width: PAGE_W - (MARGIN - 14) * 2,
+    height: PAGE_H - (MARGIN - 14) * 2,
+    borderColor: C.ink,
+    borderWidth: 1.2,
+    color: undefined,
+  })
+
+  const top = PAGE_H - MARGIN - HEADER_H
+  page.drawRectangle({ x: MARGIN, y: top, width: PAGE_W - MARGIN * 2, height: HEADER_H, color: C.ink })
+  page.drawRectangle({ x: MARGIN, y: top, width: 8, height: HEADER_H, color: C.lime })
+  page.drawText('RODAID', { x: MARGIN + 28, y: top + HEADER_H - 40, size: 28, font: f.display, color: C.lime })
+  page.drawText('Remito de Embalaje y Despacho', {
+    x: MARGIN + 28, y: top + HEADER_H - 60, size: 11, font: f.bodyBold, color: C.white,
+  })
+  page.drawText('CIT Completo — orden de trabajo para el Taller Aliado', {
+    x: MARGIN + 28, y: top + HEADER_H - 76, size: 9, font: f.body, color: C.paperDim,
+  })
+  const numLabel = 'N° de remito'
+  const numW = f.body.widthOfTextAtSize(numLabel, 8)
+  page.drawText(numLabel, { x: PAGE_W - MARGIN - 24 - numW, y: top + HEADER_H - 34, size: 8, font: f.body, color: C.paperDim })
+  const numValW = f.bodyBold.widthOfTextAtSize(d.numero, 13)
+  page.drawText(d.numero, { x: PAGE_W - MARGIN - 24 - numValW, y: top + HEADER_H - 52, size: 13, font: f.bodyBold, color: C.lime })
+
+  const bodyTop = top - 40
+  const colLeftW = 300
+  const colRightX = MARGIN + colLeftW + 34
+
+  // Columna izquierda: bici, vendedor, taller, detalle del trabajo.
+  seccionTitulo(page, f, MARGIN, bodyTop, 'Datos de la bicicleta')
+  let y = bodyTop - 24
+  const filasBici: Array<[string, string]> = [
+    ['Marca / Modelo', `${d.bici.marca} ${d.bici.modelo}`],
+    ['Número de serie', d.bici.numeroSerie],
+    ['Código CIT', d.codigoCit],
+  ]
+  for (const [label, valor] of filasBici) {
+    page.drawText(label.toUpperCase(), { x: MARGIN, y, size: 7, font: f.body, color: C.slate })
+    page.drawText(recortar(valor, f.bodyBold, 11, colLeftW), { x: MARGIN, y: y - 12, size: 11, font: f.bodyBold, color: C.ink })
+    y -= 30
+  }
+
+  y -= 6
+  seccionTitulo(page, f, MARGIN, y, 'Vendedor')
+  y -= 20
+  page.drawText(recortar(d.vendedor.nombre, f.bodyBold, 11, colLeftW), { x: MARGIN, y, size: 11, font: f.bodyBold, color: C.ink })
+  if (d.vendedor.contacto) {
+    y -= 13
+    page.drawText(recortar(d.vendedor.contacto, f.body, 9, colLeftW), { x: MARGIN, y, size: 9, font: f.body, color: C.slate })
+  }
+
+  y -= 30
+  seccionTitulo(page, f, MARGIN, y, 'Taller Aliado asignado')
+  y -= 20
+  page.drawText(recortar(d.taller.nombre, f.bodyBold, 11, colLeftW), { x: MARGIN, y, size: 11, font: f.bodyBold, color: C.ink })
+  const tallerLinea2 = [d.taller.direccion, d.taller.ciudad].filter(Boolean).join(', ')
+  if (tallerLinea2) {
+    y -= 13
+    page.drawText(recortar(tallerLinea2, f.body, 9, colLeftW), { x: MARGIN, y, size: 9, font: f.body, color: C.slate })
+  }
+  if (d.taller.telefono) {
+    y -= 12
+    page.drawText(d.taller.telefono, { x: MARGIN, y, size: 9, font: f.body, color: C.slate })
+  }
+
+  y -= 30
+  seccionTitulo(page, f, MARGIN, y, 'Detalle del trabajo')
+  y -= 20
+  page.drawText('Embalaje para despacho — CIT Completo', { x: MARGIN, y, size: 10, font: f.bodyBold, color: C.ink })
+
+  // Columna derecha: QR de verificacion publica.
+  seccionTitulo(page, f, colRightX, bodyTop, 'Verificación pública')
+  const qrSize = 130
+  const qrY = bodyTop - 26 - qrSize
+  page.drawRectangle({
+    x: colRightX - 8, y: qrY - 8, width: qrSize + 16, height: qrSize + 16,
+    color: C.white, borderColor: C.ink, borderWidth: 1,
+  })
+  page.drawImage(meta.qrImage, { x: colRightX, y: qrY, width: qrSize, height: qrSize })
+  page.drawText('Escaneá para confirmar que este', { x: colRightX, y: qrY - 20, size: 8, font: f.bodyBold, color: C.ink })
+  page.drawText('remito es genuino y ver su estado.', { x: colRightX, y: qrY - 31, size: 8, font: f.body, color: C.slate })
+  page.drawText(recortar(d.verifierUrl, f.mono, 7, qrSize + 16), { x: colRightX, y: qrY - 46, size: 7, font: f.mono, color: C.slate })
+
+  // Instrucciones de embalaje — texto fijo, igual para todos los Talleres.
+  const instrY = 300
+  const instrH = 190
+  page.drawRectangle({
+    x: MARGIN, y: instrY, width: PAGE_W - MARGIN * 2, height: instrH,
+    color: C.white, borderColor: C.clay, borderWidth: 1.2,
+  })
+  page.drawRectangle({ x: MARGIN, y: instrY, width: 5, height: instrH, color: C.clay })
+  page.drawText('INSTRUCCIONES DE EMBALAJE — LECTURA OBLIGATORIA', {
+    x: MARGIN + 18, y: instrY + instrH - 20, size: 10, font: f.bodyBold, color: C.clay,
+  })
+  let iy = instrY + instrH - 38
+  for (const linea of INSTRUCCIONES_EMBALAJE) {
+    if (linea) {
+      page.drawText(linea, { x: MARGIN + 18, y: iy, size: 8.5, font: f.body, color: C.inkSoft })
+    }
+    iy -= 12
+  }
+
+  // Pie: firma PKCS#7 + sello temporal.
+  const pieY = MARGIN + 6
+  page.drawLine({ start: { x: MARGIN, y: pieY + 34 }, end: { x: PAGE_W - MARGIN, y: pieY + 34 }, thickness: 0.8, color: C.ink })
+  page.drawText('Documento firmado digitalmente por la Autoridad Certificadora de RODAID.', {
+    x: MARGIN, y: pieY + 20, size: 7.5, font: f.body, color: C.slate,
+  })
+  page.drawText(`Sello temporal del sistema: ${meta.emitidoEn.toISOString()}`, {
+    x: MARGIN, y: pieY + 8, size: 7.5, font: f.mono, color: C.ink,
+  })
+}
+
+const STORE_REMITOS = 'rodaid-remitos'
+
+function getRemitoStore() {
+  return getStore(STORE_REMITOS)
+}
+
+/** Persiste el PDF ya firmado del remito (una unica vez, es inmutable). */
+export async function guardarRemitoPdfEnBlobs(numero: string, pdf: Uint8Array): Promise<void> {
+  try {
+    await getRemitoStore().set(`remitos/${numero}.pdf`, toArrayBuffer(pdf))
+  } catch {
+    // Best-effort: si falla el guardado, generarRemito() igual devuelve los
+    // bytes para la respuesta inmediata; solo se pierde la re-descarga futura.
+  }
+}
+
+/** Recupera el PDF ya generado de un remito. null si no esta (nunca deberia pasar). */
+export async function leerRemitoPdfDeBlobs(numero: string): Promise<Uint8Array | null> {
+  try {
+    const res = await getRemitoStore().get(`remitos/${numero}.pdf`, { type: 'arrayBuffer' })
+    return res ? new Uint8Array(res as ArrayBuffer) : null
+  } catch {
+    return null
+  }
+}

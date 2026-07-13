@@ -1,14 +1,20 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
+import { mutate } from 'swr'
+import { toast } from 'sonner'
 import {
   Eye,
   Loader2,
   MessageCircle,
+  Package,
   Store,
   Tag,
+  Truck,
 } from 'lucide-react'
 import { useMisPublicaciones, type MiPublicacion } from '@/lib/garaje-digital'
+import { generarRemito, descargarRemitoPdf } from '@/lib/remitos'
 
 /**
  * "Mis publicaciones" — Hito 14: gestion de venta desde el Garaje Digital.
@@ -219,6 +225,9 @@ function PublicacionItem({ pub }: { pub: MiPublicacion }) {
                 Recibís {pesos(pub.transaccion.montoVendedor)}
               </span>
             )}
+            {pub.transaccion?.aliadoId && pub.transaccion.estado === 'FONDOS_RETENIDOS' && (
+              <RemitoAccion transaccion={pub.transaccion} />
+            )}
           </div>
         )}
       </div>
@@ -230,5 +239,91 @@ function PublicacionItem({ pub }: { pub: MiPublicacion }) {
         Ver publicación
       </Link>
     </li>
+  )
+}
+
+/**
+ * Fase 6b (CIT Completo): acción del Remito de Embalaje y Despacho, visible
+ * cuando el saldo ya se confirmó (FONDOS_RETENIDOS) y la venta pasa por un
+ * Taller Aliado. Sin remito todavía: botón "Generar Remito" (acción
+ * explícita del vendedor). Con remito: estado + link al PDF.
+ */
+function RemitoAccion({
+  transaccion,
+}: {
+  transaccion: NonNullable<MiPublicacion['transaccion']>
+}) {
+  const [generando, setGenerando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const verRemito = (numero: string) => {
+    descargarRemitoPdf(numero).catch((err) => {
+      toast.error('No pudimos descargar el remito', { description: (err as Error).message })
+    })
+  }
+
+  if (transaccion.remito?.estado === 'DESPACHADO') {
+    return (
+      <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-[#0a7d5a]">
+        <Truck className="size-3.5" />
+        Bici despachada por {transaccion.tallerNombre ?? 'el taller'}
+        <button
+          type="button"
+          onClick={() => verRemito(transaccion.remito!.numero)}
+          className="underline-offset-2 hover:underline"
+        >
+          Ver remito
+        </button>
+      </p>
+    )
+  }
+
+  if (transaccion.remito?.estado === 'GENERADO') {
+    return (
+      <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-amber-700">
+        <Package className="size-3.5" />
+        Remito enviado a {transaccion.tallerNombre ?? 'el taller'} — esperando el despacho
+        <button
+          type="button"
+          onClick={() => verRemito(transaccion.remito!.numero)}
+          className="underline-offset-2 hover:underline"
+        >
+          Ver remito
+        </button>
+      </p>
+    )
+  }
+
+  const generar = async () => {
+    if (generando) return
+    setGenerando(true)
+    setError(null)
+    try {
+      await generarRemito(transaccion.id)
+      await mutate('/api/marketplace/mis-publicaciones')
+      toast.success('Remito generado', {
+        description: `${transaccion.tallerNombre ?? 'El taller'} ya fue notificado para embalar la bici.`,
+      })
+    } catch (err) {
+      setError((err as Error).message)
+      toast.error('No pudimos generar el remito', { description: (err as Error).message })
+    } finally {
+      setGenerando(false)
+    }
+  }
+
+  return (
+    <div className="mt-1.5">
+      <button
+        type="button"
+        onClick={generar}
+        disabled={generando}
+        className="inline-flex items-center gap-1.5 rounded-full bg-[#0F1E35] px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-[#0F1E35]/80 disabled:opacity-50"
+      >
+        {generando ? <Loader2 className="size-3 animate-spin" /> : <Package className="size-3" />}
+        Generar Remito
+      </button>
+      {error && <p className="mt-1 text-[11px] text-clay">{error}</p>}
+    </div>
   )
 }

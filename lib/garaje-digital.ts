@@ -102,6 +102,9 @@ export interface MiPublicacion {
     precioARS: number
     montoVendedor: number
     comisionRodaid: number
+    aliadoId: string | null
+    tallerNombre: string | null
+    remito: { numero: string; estado: 'GENERADO' | 'DESPACHADO' } | null
   } | null
 }
 
@@ -124,6 +127,9 @@ export interface MiCompra {
     numeroSerie: string | null
     tipo: string | null
   }
+  aliadoId: string | null
+  remito: { numero: string; estado: 'GENERADO' | 'DESPACHADO' } | null
+  remitoVencido: boolean
 }
 
 export interface PuntoCalorPersonal {
