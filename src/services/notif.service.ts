@@ -37,6 +37,7 @@ export type NotifTipo =
   | 'COMPRA_COMPLETADA'
   | 'REMITO_GENERADO'
   | 'REMITO_DESPACHADO'
+  | 'REMITO_RECORDATORIO'
 
 interface NotificacionRow {
   id: string
@@ -623,5 +624,34 @@ export function notificarRemitoDespachado(
     cta: { label: 'Ver mis compras', url: appUrl('/garaje') },
     detalles: [{ etiqueta: 'Remito', valor: datos.numero }],
     data: { remitoId: datos.remitoId, numero: datos.numero },
+  })
+}
+
+/**
+ * REMITO_RECORDATORIO — el vendedor todavia no genero el Remito despues de
+ * confirmado el saldo. Siempre tiene cuenta (requisito para vender), un
+ * unico camino. `forzarEmail` lo decide el llamador (procesarRecordatoriosRemito(),
+ * remito.service.ts) segun su propio reloj de 8hs, independiente del reloj de
+ * 2hs del in-app -- esta funcion siempre inserta la fila in-app, el email es
+ * condicional dentro de la misma llamada.
+ */
+export function notificarRemitoRecordatorio(
+  vendedorId: string,
+  datos: { transaccionId: string; bicicletaSerial: string },
+  forzarEmail: boolean
+) {
+  return emitirNotificacion({
+    usuarioId: vendedorId,
+    tipo: 'REMITO_RECORDATORIO',
+    titulo: 'Generá el Remito para que el Taller pueda embalar tu bici',
+    cuerpo: `Confirmamos el pago de tu venta de la bici ${datos.bicicletaSerial}. Generá el Remito de Embalaje y Despacho para que el Taller Aliado pueda avanzar.`,
+    parrafosEmail: [
+      `Confirmamos el pago del saldo de tu venta de la bici ${datos.bicicletaSerial} (CIT Completo).`,
+      `Todavía no generaste el Remito de Embalaje y Despacho — sin ese paso, el Taller Aliado no tiene forma de saber que debe embalar la bici. Generalo desde tu Garaje Digital.`,
+    ],
+    cta: { label: 'Generar el Remito', url: appUrl('/garaje') },
+    detalles: [{ etiqueta: 'Bici', valor: datos.bicicletaSerial }],
+    data: { transaccionId: datos.transaccionId },
+    forzarEmail,
   })
 }
