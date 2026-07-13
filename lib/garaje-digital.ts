@@ -176,6 +176,22 @@ async function authedJson<T>(url: string): Promise<T> {
   return (await res.json()) as T
 }
 
+/**
+ * Cierre de CIT Completo: el comprador confirma que recibio la bici. Libera
+ * el pago al vendedor, transfiere la titularidad real y liquida el Fee de
+ * Exito -- irreversible, por eso el frontend exige una confirmacion explicita
+ * antes de llamarla (ver mis-compras.tsx).
+ */
+export async function confirmarEntregaCitCompleto(transaccionId: string): Promise<void> {
+  const res = await authedFetch(`/api/v1/transacciones/${transaccionId}/confirmar-entrega-cit-completo`, {
+    method: 'POST',
+  })
+  if (!res.ok) {
+    const detalle = (await res.json().catch(() => null)) as { message?: string } | null
+    throw new Error(detalle?.message ?? `HTTP ${res.status}`)
+  }
+}
+
 // ── Presentacion del estado del activo ───────────────────────────────────────
 
 export interface EstadoVisual {
