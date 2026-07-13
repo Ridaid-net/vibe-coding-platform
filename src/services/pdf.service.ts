@@ -98,6 +98,16 @@ export interface CertificadoDatos {
   verifierUrl: string
   /** Nota tecnica de la inspeccion fisica, si la bici fue inspeccionada. */
   inspeccion?: CertificadoInspeccion | null
+  /**
+   * true: Certificado PUBLICO (Verificador Publico, sin sesion) -- nunca
+   * dibuja el titular ni el nombre del inspector individual, aunque esos
+   * datos vengan poblados en `titular`/`inspeccion.inspector` (el llamador
+   * de todos modos deberia pasar `titular: null`; este flag es la defensa en
+   * profundidad). El nombre del TALLER (negocio, no persona) si se muestra.
+   * Cache, numero de certificado y titulo del documento quedan en un
+   * namespace separado del certificado privado.
+   */
+  publico?: boolean
 }
 
 export interface CertificadoGenerado {
@@ -190,10 +200,15 @@ async function cargarFuentes(doc: PDFDocument): Promise<Fuentes> {
 
 // ── API publica ──────────────────────────────────────────────────────────────
 
-/** Numero de certificado estable y legible derivado del CIT. */
-export function numeroCertificado(citId: string): string {
+/**
+ * Numero de certificado estable y legible derivado del CIT. El certificado
+ * publico usa un prefijo distinto (RODAID-VERIF-) para que nunca se confunda
+ * a simple vista -- ni en pantalla ni en el nombre del archivo descargado --
+ * con el certificado privado del titular (RODAID-CERT-).
+ */
+export function numeroCertificado(citId: string, publico = false): string {
   const huella = sha256Hex(Buffer.from(citId)).slice(0, 10).toUpperCase()
-  return `RODAID-CERT-${huella}`
+  return publico ? `RODAID-VERIF-${huella}` : `RODAID-CERT-${huella}`
 }
 
 /**
@@ -213,6 +228,7 @@ function fingerprintDatos(d: CertificadoDatos): string {
         titular: d.titular,
         url: d.verifierUrl,
         insp: d.inspeccion ?? null,
+        publico: d.publico ?? false,
       })
     )
   )
@@ -226,7 +242,9 @@ export async function obtenerCertificado(
   d: CertificadoDatos
 ): Promise<CertificadoGenerado> {
   const fingerprint = fingerprintDatos(d)
-  const key = `certificados/${d.citId}.pdf`
+  const key = d.publico
+    ? `certificados-publicos/${d.citId}.pdf`
+    : `certificados/${d.citId}.pdf`
 
   // 1. Intentar recuperar del almacenamiento (best-effort).
   const cacheado = await leerDeBlobs(key, fingerprint)
@@ -252,13 +270,21 @@ export async function generarCertificado(
   d: CertificadoDatos
 ): Promise<Omit<CertificadoGenerado, 'fromCache'>> {
   const emitidoEn = new Date()
-  const numero = numeroCertificado(d.citId)
+  const numero = numeroCertificado(d.citId, d.publico)
 
   // 1. Componer el PDF (template vectorial).
   const doc = await PDFDocument.create()
-  doc.setTitle(`Certificado de Propiedad y Verificacion — ${d.codigoCit}`)
+  doc.setTitle(
+    d.publico
+      ? `Certificado Publico de Verificacion — ${d.codigoCit}`
+      : `Certificado de Propiedad y Verificacion — ${d.codigoCit}`
+  )
   doc.setAuthor('RODAID')
-  doc.setSubject('Certificado Digital de Propiedad y Verificacion (CIT)')
+  doc.setSubject(
+    d.publico
+      ? 'Certificado Publico de Verificacion de Identidad (CIT)'
+      : 'Certificado Digital de Propiedad y Verificacion (CIT)'
+  )
   doc.setProducer('RODAID')
   doc.setCreator('RODAID')
   doc.setCreationDate(emitidoEn)
@@ -280,7 +306,9 @@ export async function generarCertificado(
   const { signer, modo } = crearSignerRodaid()
   pdflibAddPlaceholder({
     pdfDoc: doc,
-    reason: 'Certificado de Propiedad y Verificacion RODAID',
+    reason: d.publico
+      ? 'Certificado Publico de Verificacion RODAID'
+      : 'Certificado de Propiedad y Verificacion RODAID',
     contactInfo: 'verificaciones@rodaid.ar',
     name: 'RODAID Autoridad Certificadora',
     location: 'Argentina',
@@ -333,7 +361,7 @@ async function componerCertificado(
     color: undefined,
   })
 
-  dibujarEncabezado(page, f, meta)
+  dibujarEncabezado(page, f, meta, d)
   dibujarEstado(page, f, d)
   dibujarDatosBici(page, f, d)
   dibujarIdentidad(page, f, d)
@@ -345,7 +373,12 @@ async function componerCertificado(
 
 const HEADER_H = 96
 
-function dibujarEncabezado(page: PDFPage, f: Fuentes, meta: RenderMeta): void {
+function dibujarEncabezado(
+  page: PDFPage,
+  f: Fuentes,
+  meta: RenderMeta,
+  d: CertificadoDatos
+): void {
   const top = PAGE_H - MARGIN - HEADER_H
   // Banda oscura de marca.
   page.drawRectangle({
@@ -365,13 +398,18 @@ function dibujarEncabezado(page: PDFPage, f: Fuentes, meta: RenderMeta): void {
     font: f.display,
     color: C.lime,
   })
-  page.drawText('Certificado Digital de Propiedad y Verificacion', {
-    x: MARGIN + 28,
-    y: top + HEADER_H - 60,
-    size: 11,
-    font: f.bodyBold,
-    color: C.white,
-  })
+  page.drawText(
+    d.publico
+      ? 'Certificado Publico de Verificacion'
+      : 'Certificado Digital de Propiedad y Verificacion',
+    {
+      x: MARGIN + 28,
+      y: top + HEADER_H - 60,
+      size: 11,
+      font: f.bodyBold,
+      color: C.white,
+    }
+  )
   page.drawText('Cedula de Identidad de la bicicleta (CIT)', {
     x: MARGIN + 28,
     y: top + HEADER_H - 76,
@@ -476,7 +514,10 @@ function dibujarDatosBici(page: PDFPage, f: Fuentes, d: CertificadoDatos): void 
     ['Ano', d.bici.anio ? String(d.bici.anio) : '—'],
     ['Color', d.bici.color ?? '—'],
   ]
-  if (d.titular) {
+  // El certificado PUBLICO nunca muestra el titular, incluso si viniera
+  // poblado -- defensa en profundidad ademas de que el llamador ya deberia
+  // pasar `titular: null` en ese caso.
+  if (d.titular && !d.publico) {
     filas.push(['Titular', d.titular])
   }
 
@@ -509,7 +550,8 @@ function dibujarDatosBici(page: PDFPage, f: Fuentes, d: CertificadoDatos): void 
 
 // Bloque de identidad / integridad (huella + BFA), debajo de los datos.
 function dibujarIdentidad(page: PDFPage, f: Fuentes, d: CertificadoDatos): void {
-  const top = BODY_TOP - 28 - 36 * (d.titular ? 9 : 8) - 8
+  const hayFilaTitular = Boolean(d.titular) && !d.publico
+  const top = BODY_TOP - 28 - 36 * (hayFilaTitular ? 9 : 8) - 8
   seccionTitulo(page, f, COL_LEFT, top, 'Integridad y registro')
 
   let y = top - 26
@@ -705,10 +747,16 @@ function dibujarNotaInspeccion(
     color: C.ink,
   })
 
-  // Texto requerido: realizada por Taller [Nombre], Inspector [Nombre].
-  const nota = insp.taller
-    ? `Realizada por Taller ${insp.taller}, Inspector ${insp.inspector}.`
-    : `Realizada por Inspector ${insp.inspector}.`
+  // Texto requerido: realizada por Taller [Nombre], Inspector [Nombre]. En el
+  // certificado PUBLICO se omite el nombre del inspector individual (dato
+  // personal) -- el nombre del taller (negocio) si se muestra.
+  const nota = d.publico
+    ? insp.taller
+      ? `Verificada por Taller ${insp.taller}.`
+      : 'Verificacion con inspeccion fisica certificada.'
+    : insp.taller
+      ? `Realizada por Taller ${insp.taller}, Inspector ${insp.inspector}.`
+      : `Realizada por Inspector ${insp.inspector}.`
   const lineas = envolver(nota, f.body, 8, innerW).slice(0, 3)
   let y = boxY + boxH - 30
   for (const linea of lineas) {
