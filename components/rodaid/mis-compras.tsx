@@ -1,8 +1,11 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, Mail, Package, ShoppingBag, Truck } from 'lucide-react'
-import { useMisCompras, type MiCompra } from '@/lib/garaje-digital'
+import { mutate } from 'swr'
+import { toast } from 'sonner'
+import { AlertTriangle, CheckCircle2, Loader2, Mail, Package, ShoppingBag, Truck } from 'lucide-react'
+import { useMisCompras, confirmarEntregaCitCompleto, type MiCompra } from '@/lib/garaje-digital'
 import { CuentaRegresiva } from './cuenta-regresiva'
 
 const EMAIL_SOPORTE = 'federicodegeaceo@rodaid.net'
@@ -192,11 +195,72 @@ function CompraItem({ compra }: { compra: MiCompra }) {
  * el mecanismo de disputas real de CIT Completo todavía no está construido).
  */
 function RemitoEstadoCompra({ compra }: { compra: MiCompra }) {
+  const [modoConfirmar, setModoConfirmar] = useState(false)
+  const [confirmando, setConfirmando] = useState(false)
+
+  const confirmarRecepcion = async () => {
+    if (confirmando) return
+    setConfirmando(true)
+    try {
+      await confirmarEntregaCitCompleto(compra.transaccionId)
+      await mutate('/api/marketplace/mis-compras')
+      toast.success('¡Compra completada!', {
+        description: 'Liberamos el pago al vendedor y transferimos la titularidad de la bici a tu nombre.',
+      })
+    } catch (err) {
+      toast.error('No pudimos confirmar la recepción', { description: (err as Error).message })
+    } finally {
+      setConfirmando(false)
+      setModoConfirmar(false)
+    }
+  }
+
   if (compra.remito?.estado === 'DESPACHADO') {
+    if (modoConfirmar) {
+      return (
+        <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-800">
+            <AlertTriangle className="size-3.5" />
+            ¿Confirmás que recibiste la bici en buen estado?
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-amber-700">
+            Esta acción libera el pago al vendedor y transfiere la titularidad de forma definitiva. No se puede deshacer.
+          </p>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              onClick={confirmarRecepcion}
+              disabled={confirmando}
+              className="inline-flex items-center gap-1.5 rounded-full bg-ink px-3 py-1.5 text-[11px] font-semibold text-paper disabled:opacity-50"
+            >
+              {confirmando ? <Loader2 className="size-3 animate-spin" /> : <CheckCircle2 className="size-3" />}
+              Sí, confirmar recepción
+            </button>
+            <button
+              type="button"
+              onClick={() => setModoConfirmar(false)}
+              disabled={confirmando}
+              className="rounded-full border border-ink/15 px-3 py-1.5 text-[11px] font-semibold text-ink disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )
+    }
     return (
-      <p className="mt-1 flex items-center gap-1.5 text-[11px] font-semibold text-[#0a7d5a]">
-        <Truck className="size-3.5" /> Tu bici ya fue despachada
-      </p>
+      <div className="mt-1.5">
+        <p className="flex items-center gap-1.5 text-[11px] font-semibold text-[#0a7d5a]">
+          <Truck className="size-3.5" /> Tu bici ya fue despachada
+        </p>
+        <button
+          type="button"
+          onClick={() => setModoConfirmar(true)}
+          className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-ink px-3 py-1.5 text-[11px] font-semibold text-paper"
+        >
+          Confirmar recepción
+        </button>
+      </div>
     )
   }
 
