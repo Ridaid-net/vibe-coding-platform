@@ -145,9 +145,16 @@ export interface ResolucionAliadoLectura {
  *   - rol 'aliado'  -> ignora aliadoIdSolicitado, resuelve su propio perfil
  *                      (modo 'propio', igual que siempre).
  *   - rol 'admin' + aliadoIdSolicitado -> ese aliado real (debe existir y
- *                      estar aprobado), modo 'ver_como'.
- *   - rol 'admin' sin aliadoIdSolicitado -> aliado null, modo 'vista_previa'
- *                      (el caller arma datos de ejemplo, sin tocar `aliados`).
+ *                      estar aprobado), modo 'ver_como'. Gana siempre que se
+ *                      mande, incluso si el admin tiene tambien un aliado
+ *                      propio vinculado.
+ *   - rol 'admin' sin aliadoIdSolicitado -> primero chequea si ese admin
+ *                      tiene un aliado propio real y aprobado vinculado a su
+ *                      propia cuenta (mismo chequeo que la rama 'aliado', via
+ *                      resolverAliadoDeUsuario()) -> si lo tiene, modo
+ *                      'propio' con ese aliado. Si no, aliado null, modo
+ *                      'vista_previa' (el caller arma datos de ejemplo, sin
+ *                      tocar `aliados`).
  *   - cualquier otro rol (p. ej. 'inspector') -> aliado null, modo 'propio'
  *                      (mismo comportamiento que hoy: no tiene taller propio).
  */
@@ -166,6 +173,10 @@ export async function resolverAliadoParaLectura(
     return { aliado: res.rows[0] ?? null, modo: 'ver_como' }
   }
   if (user.rol === 'admin') {
+    const propio = await resolverAliadoDeUsuario(user.id)
+    if (propio) {
+      return { aliado: propio, modo: 'propio' }
+    }
     return { aliado: null, modo: 'vista_previa' }
   }
   return { aliado: null, modo: 'propio' }
@@ -204,7 +215,13 @@ export async function cargarInspectorContexto(
   // resolverAliadoParaLectura). CRITICO: el POST de aprobar/discrepancia
   // (mas abajo, via autorizarCitParaInspeccion) llama a esta funcion SIN
   // pasar aliadoIdSolicitado nunca -- asi que un admin en modo "ver como"
-  // jamas puede firmar un acta atribuida a un aliado real.
+  // (impersonando a otro aliado via el selector) jamas puede firmar un acta
+  // atribuida a ese aliado. Si el admin tiene su PROPIO aliado real vinculado
+  // a su cuenta (resolverAliadoDeUsuario(user.id) lo encuentra), en cambio,
+  // queda en modo 'propio' con ese aliado -- y sus aprobaciones SI quedan
+  // atribuidas a el, igual que si hubiera iniciado sesion con rol 'aliado'
+  // (fix 2026-07-13: antes, cualquier admin firmaba siempre con aliado_id
+  // NULL, incluso si tenia un taller real propio vinculado).
   if (row.rol !== 'aliado' && row.rol !== 'admin') {
     return {
       id: row.id,
