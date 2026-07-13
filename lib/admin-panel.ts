@@ -741,7 +741,7 @@ async function bloquearActivos(bicicletaId: string, denunciaId: string): Promise
       `UPDATE cits
        SET estado = 'bloqueado',
            metadata_json = metadata_json || $2::jsonb,
-           actualizado_en = NOW()
+           updated_at = NOW()
        WHERE bicicleta_id = $1 AND estado IN ('activo', 'pendiente')`,
       [bicicletaId, JSON.stringify({ denuncia: { denunciaId, estado: 'DENUNCIA_JUDICIAL_ACTIVA', bloqueadoEn: new Date().toISOString() } })]
     )
@@ -765,7 +765,7 @@ async function desbloquearActivos(bicicletaId: string, denunciaId: string): Prom
     `UPDATE cits
      SET estado = 'activo',
          metadata_json = metadata_json || $2::jsonb,
-         actualizado_en = NOW()
+         updated_at = NOW()
      WHERE bicicleta_id = $1 AND estado = 'bloqueado'`,
     [bicicletaId, JSON.stringify({ denuncia: { denunciaId, estado: 'DESBLOQUEADO', desbloqueadoEn: new Date().toISOString() } })]
   )
