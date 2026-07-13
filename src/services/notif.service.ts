@@ -35,6 +35,8 @@ export type NotifTipo =
   | 'BICI_RECUPERADA'
   | 'VENTA_CONFIRMADA'
   | 'COMPRA_COMPLETADA'
+  | 'REMITO_GENERADO'
+  | 'REMITO_DESPACHADO'
 
 interface NotificacionRow {
   id: string
@@ -547,5 +549,79 @@ export function notificarCompraCompletada(
     cuerpo: `Confirmamos tu compra${datos.titulo ? ` de "${datos.titulo}"` : ''}. El CIT mantiene su identidad y su historial — el cambio de titularidad quedó anclado en la Blockchain Federal Argentina.`,
     cta: { label: 'Ver la operacion', url: appUrl(`/transacciones/${datos.transaccionId}`) },
     data: { transaccionId: datos.transaccionId },
+  })
+}
+
+/**
+ * REMITO_GENERADO — el vendedor generó el Remito de Embalaje y Despacho
+ * (Fase 6b, CIT Completo). Variante para cuando el Taller Aliado SÍ tiene una
+ * cuenta de usuario vinculada (aliados.usuario_id): in-app + email por el
+ * motor normal, con preferencias.
+ */
+export function notificarRemitoGenerado(
+  tallerUsuarioId: string,
+  datos: { remitoId: string; numero: string; bicicletaSerial: string; vendedorNombre: string }
+) {
+  return emitirNotificacion({
+    usuarioId: tallerUsuarioId,
+    tipo: 'REMITO_GENERADO',
+    titulo: 'Nuevo Remito de Embalaje y Despacho',
+    cuerpo: `${datos.vendedorNombre} confirmó la venta de la bici ${datos.bicicletaSerial}. Generá el embalaje y confirmá el despacho desde tu panel.`,
+    parrafosEmail: [
+      `${datos.vendedorNombre} confirmó el pago de una venta de CIT Completo — la bici ${datos.bicicletaSerial} está lista para embalar.`,
+      `Descargá el remito (N° ${datos.numero}), embalá la bici siguiendo las instrucciones impresas, y confirmá el despacho desde tu Panel de Taller Aliado.`,
+    ],
+    cta: { label: 'Ver en mi Panel de Taller', url: appUrl('/taller') },
+    detalles: [
+      { etiqueta: 'Remito', valor: datos.numero },
+      { etiqueta: 'Bici', valor: datos.bicicletaSerial },
+    ],
+    data: { remitoId: datos.remitoId, numero: datos.numero },
+    forzarEmail: true, // orden de trabajo real -- tiene que llegar si o si
+  })
+}
+
+/**
+ * REMITO_GENERADO — variante para cuando el Taller Aliado NO tiene cuenta de
+ * usuario vinculada. El motor de notificaciones normal es enteramente
+ * usuario_id-centrico (preferencias, fila in-app) y no aplica sin una cuenta
+ * -- se manda un email directo a aliados.email, sin preferencias de por medio.
+ */
+export async function notificarRemitoGeneradoSinCuenta(
+  email: string,
+  datos: { numero: string; bicicletaSerial: string; vendedorNombre: string }
+): Promise<void> {
+  if (!emailConfigurado()) return
+  const { html, text } = renderEmailRODAID({
+    asunto: 'Nuevo Remito de Embalaje y Despacho',
+    titulo: 'Nuevo Remito de Embalaje y Despacho',
+    parrafos: [
+      `${datos.vendedorNombre} confirmó el pago de una venta de CIT Completo — la bici ${datos.bicicletaSerial} está lista para embalar.`,
+      `Descargá el remito (N° ${datos.numero}) desde tu Panel de Taller Aliado en RODAID y confirmá el despacho una vez embalada.`,
+    ],
+    cta: { label: 'Ingresar a RODAID', url: appUrl('/taller') },
+  })
+  await enviarEmail({ para: email, asunto: 'Nuevo Remito de Embalaje y Despacho', html, text }).catch(
+    (error) => console.error('[notif] fallo el email directo de REMITO_GENERADO', error)
+  )
+}
+
+/**
+ * REMITO_DESPACHADO — el Taller confirmó el embalaje y despacho. El
+ * comprador siempre tiene cuenta (es requisito para haber comprado), asi que
+ * usa el motor normal directamente.
+ */
+export function notificarRemitoDespachado(
+  compradorId: string,
+  datos: { remitoId: string; numero: string; bicicletaSerial: string }
+) {
+  return emitirNotificacion({
+    usuarioId: compradorId,
+    tipo: 'REMITO_DESPACHADO',
+    titulo: 'Tu bici ya fue despachada',
+    cuerpo: `El Taller Aliado confirmó el embalaje y despacho de la bici ${datos.bicicletaSerial}. Está en camino.`,
+    cta: { label: 'Ver mis compras', url: appUrl('/garaje') },
+    detalles: [{ etiqueta: 'Remito', valor: datos.numero }],
+    data: { remitoId: datos.remitoId, numero: datos.numero },
   })
 }

@@ -15,6 +15,11 @@ import {
   leerRemitoPdfDeBlobs,
   type RemitoDatos,
 } from '@/src/services/pdf.service'
+import {
+  notificarRemitoGenerado,
+  notificarRemitoGeneradoSinCuenta,
+  notificarRemitoDespachado,
+} from '@/src/services/notif.service'
 
 /**
  * RODAID — Remito de Embalaje y Despacho (Fase 6b, CIT Completo).
@@ -199,13 +204,15 @@ export interface RemitoGenerado {
   /** usuario_id del Taller (null si el aliado no vinculo cuenta) + su email, para notificar. */
   tallerUsuarioId: string | null
   tallerEmail: string
+  vendedorNombre: string
+  bicicletaSerial: string
 }
 
 export async function generarRemito(input: {
   transaccionId: string
   vendedorId: string
 }): Promise<RemitoGenerado> {
-  return withTx(async (client) => {
+  const resultado = await withTx(async (client) => {
     const tx = await lockTransaccion(client, input.transaccionId)
 
     if (tx.vendedor_id !== input.vendedorId) {
@@ -268,14 +275,28 @@ export async function generarRemito(input: {
       pdf: pdfGenerado.pdf,
       tallerUsuarioId,
       tallerEmail,
+      vendedorNombre: pdfDatos.vendedor.nombre,
+      bicicletaSerial: pdfDatos.bici.numeroSerie,
     }
   })
-  // NOTA: la notificacion al Taller (in-app + email) se dispara desde el
-  // endpoint que llama a esta funcion, una vez confirmada la transaccion --
-  // requiere los valores REMITO_GENERADO/REMITO_RECORDATORIO/REMITO_DESPACHADO
-  // de notif_tipo (20260712000002_notif_tipo_remitos.sql), que tiene que estar
-  // `ready` en produccion antes de que ese codigo se mergee (ver el comentario
-  // de esa migracion). Pieza siguiente, no de esta.
+
+  // Notificacion al Taller, best-effort, ya con la transaccion confirmada.
+  if (resultado.tallerUsuarioId) {
+    await notificarRemitoGenerado(resultado.tallerUsuarioId, {
+      remitoId: resultado.remito.id,
+      numero: resultado.remito.numero,
+      bicicletaSerial: resultado.bicicletaSerial,
+      vendedorNombre: resultado.vendedorNombre,
+    }).catch((error) => console.error('[remito] fallo notificar REMITO_GENERADO', error))
+  } else {
+    await notificarRemitoGeneradoSinCuenta(resultado.tallerEmail, {
+      numero: resultado.remito.numero,
+      bicicletaSerial: resultado.bicicletaSerial,
+      vendedorNombre: resultado.vendedorNombre,
+    }).catch((error) => console.error('[remito] fallo email directo REMITO_GENERADO', error))
+  }
+
+  return resultado
 }
 
 // ── 2. confirmarDespachoRemito (Taller, firma con su wallet) ────────────────
@@ -311,7 +332,7 @@ export async function confirmarDespachoRemito(input: {
   numero: string
   actorId: string
 }): Promise<RemitoDespachado> {
-  return withTx(async (client) => {
+  const resultado = await withTx(async (client) => {
     const res = await client.query<RemitoRow>(
       `SELECT * FROM remitos WHERE numero = $1 FOR UPDATE`,
       [input.numero]
@@ -421,8 +442,28 @@ export async function confirmarDespachoRemito(input: {
       compradorId: tx.comprador_id,
     }
   })
-  // NOTA: notificacion al comprador ("tu bici fue despachada") -- misma
-  // dependencia de notif_tipo que generarRemito(), pieza siguiente.
+
+  // Notificacion al comprador ("tu bici fue despachada"), best-effort, ya
+  // con la transaccion confirmada. La bici no viaja en el resultado del
+  // withTx (confirmarDespachoRemito nunca la consulto) -- lectura extra de
+  // solo lectura, no necesita ser atomica con el despacho en si.
+  const bici = await getPool().query<{ numero_serie: string }>(
+    `
+      SELECT b.numero_serie
+      FROM escrow_transacciones tx
+      JOIN marketplace_publicaciones mp ON mp.id = tx.publicacion_id
+      JOIN bicicletas b ON b.id = mp.bicicleta_id
+      WHERE tx.id = $1
+    `,
+    [resultado.transaccionId]
+  )
+  await notificarRemitoDespachado(resultado.compradorId, {
+    remitoId: resultado.remito.id,
+    numero: resultado.remito.numero,
+    bicicletaSerial: bici.rows[0]?.numero_serie ?? '—',
+  }).catch((error) => console.error('[remito] fallo notificar REMITO_DESPACHADO', error))
+
+  return resultado
 }
 
 // ── 3. Lecturas ──────────────────────────────────────────────────────────────
