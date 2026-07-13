@@ -1,29 +1,17 @@
 import { ApiError, getPool, type DbClient } from '@/lib/marketplace'
 import {
-  CIT_ALGORITMO,
-  canonicalizar,
-  construirSnapshot,
-  firmarHuella,
-  huellaDeCanonico,
-  nuevoId,
   verificarSello,
   type CitBfaEstado,
   type CitEstado,
 } from '@/lib/cit'
-import {
-  extraerCoordenada,
-  verificarGeofencing,
-  RADIO_GEOCERCA_DEFECTO_METROS,
-} from '@/lib/geo'
 import { notificarCITAprobado } from '@/src/services/notif.service'
 
 /**
  * RODAID — Modulo 4: maquina de estados del Certificado de Identidad Tecnica.
  *
- *   iniciarCIT()            -> PENDIENTE_VALIDACION  (intake sellado, ventana 72 hs)
- *   validarCIT()            -> ACTIVO                (RODAID valida; fija vigencia)
- *   (vencimiento ventana)   -> VENCIDO
- *   revocarCIT()            -> REVOCADO
+ *   (creacion, en minuscula)  -> 'pendiente'  (ver validation.service.ts)
+ *   (aprobacion, en minuscula) -> 'activo'    (ver inspeccion.service.ts / validation.service.ts)
+ *   revocarCIT()               -> REVOCADO
  *
  * El anclaje en la Blockchain Federal Argentina (BFA) NO vive en este archivo --
  * ver blockchain.service.ts (unico mecanismo real, conectado al pipeline de
@@ -33,28 +21,26 @@ import { notificarCITAprobado } from '@/src/services/notif.service'
  * frontend ni de otro backend) una vez que blockchain.service.ts paso a ser el
  * camino conectado al pipeline automatico.
  *
+ * Este archivo tuvo ademas una generacion anterior del PROPIO pipeline de
+ * emision/validacion del CIT (iniciarCIT()/validarCIT(), en MAYUSCULA:
+ * PENDIENTE_VALIDACION -> PROCESANDO_CRUCE -> ACTIVO/VENCIDO/RECHAZADO/
+ * ANOMALIA_DETECTADA, mas el worker netlify/functions/cron-pipeline-cit.mts que
+ * la recorria cada hora), retirada 2026-07-13. Se confirmo que ninguna de las
+ * dos funciones tenia llamador real: sus unicas rutas (POST /api/v1/cit/iniciar,
+ * POST /api/v1/cit/:id/validar) no eran invocadas desde ningun componente ni
+ * otro backend. El flujo real de emision es
+ * app/api/v1/bicicletas/[id]/verificar/route.ts, que inserta el CIT directo en
+ * minuscula ('pendiente'::cit_estado) y lo encola con
+ * validation.service.ts::encolarValidacion() -- una convencion de casing
+ * distinta y ya consistente con el resto del sistema (ver la auditoria de
+ * casing de cits.estado/cits.bfa_estado, 2026-07-11/12). El cron llevaba
+ * corriendo cada hora sin encontrar jamas una fila real que mover, mismo patron
+ * que la Generacion 1 de BFA de arriba.
+ *
  * La inmutabilidad es el corazon del modulo: la huella y la firma se calculan en
  * el intake y el trigger `cit_proteger_payload` impide alterar los datos
  * certificados; la huella permite detectar cualquier manipulacion posterior.
  */
-
-const VENTANA_VALIDACION_HORAS = 72
-const VIGENCIA_ANIOS = 2
-
-export interface BicicletaRow {
-  id: string
-  propietario_id: string
-  marca: string | null
-  modelo: string | null
-  anio: number | null
-  tipo: string | null
-  numero_serie: string
-  numero_cuadro: string | null
-  color: string | null
-  rodado: string | null
-  created_at: string
-  updated_at: string
-}
 
 export interface CitRow {
   id: string
@@ -231,336 +217,6 @@ async function logEvento(
       JSON.stringify(evento.metadata ?? {}),
     ]
   )
-}
-
-function esViolacionUnicidad(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { code?: string }).code === '23505'
-  )
-}
-
-/**
- * Control de anomalias (fase temprana): geocercado real del intake.
- *
- * Cruza las coordenadas levantadas por el mecanico contra la ubicacion
- * registrada del taller aliado emisor (tabla `talleres`) usando la formula de
- * Haversine. Si el intake quedo fuera del radio permitido, levanta la bandera
- * `alerta_gps`, que el worker del pipeline traduce luego a ANOMALIA_DETECTADA.
- *
- * Si el aliado no tiene una geocerca registrada o el intake no trae coordenadas,
- * no se puede evaluar: no se levanta la alerta (no se penaliza al ciclista por
- * una omision de configuracion del taller) y el motivo queda asentado para la
- * auditoria.
- */
-export interface ResultadoGeocercaTaller {
-  alertaGps: boolean
-  evaluado: boolean
-  motivo:
-    | 'DENTRO_DEL_RADIO'
-    | 'FUERA_DEL_RADIO'
-    | 'SIN_REFERENCIA_TALLER'
-    | 'SIN_COORDENADAS_INTAKE'
-    | 'COORDENADAS_INTAKE_INVALIDAS'
-  distanciaMetros: number | null
-  radioMetros: number | null
-}
-
-interface TallerGeocercaRow {
-  lat: number
-  lng: number
-  radio_metros: number
-}
-
-export async function evaluarGeocercaTaller(
-  client: DbClient,
-  aliadoId: string,
-  coordenadasGps: Record<string, unknown> | null
-): Promise<ResultadoGeocercaTaller> {
-  const intake = extraerCoordenada(coordenadasGps)
-  if (coordenadasGps === null) {
-    return {
-      alertaGps: false,
-      evaluado: false,
-      motivo: 'SIN_COORDENADAS_INTAKE',
-      distanciaMetros: null,
-      radioMetros: null,
-    }
-  }
-  if (intake === null) {
-    return {
-      alertaGps: false,
-      evaluado: false,
-      motivo: 'COORDENADAS_INTAKE_INVALIDAS',
-      distanciaMetros: null,
-      radioMetros: null,
-    }
-  }
-
-  const taller = await client.query<TallerGeocercaRow>(
-    `SELECT lat, lng, radio_metros FROM talleres WHERE id = $1`,
-    [aliadoId]
-  )
-  const referencia = taller.rows[0]
-  if (!referencia) {
-    return {
-      alertaGps: false,
-      evaluado: false,
-      motivo: 'SIN_REFERENCIA_TALLER',
-      distanciaMetros: null,
-      radioMetros: null,
-    }
-  }
-
-  const radioMetros = referencia.radio_metros ?? RADIO_GEOCERCA_DEFECTO_METROS
-  const { esValido, distanciaMetros } = verificarGeofencing(
-    referencia.lat,
-    referencia.lng,
-    intake.lat,
-    intake.lng,
-    radioMetros
-  )
-
-  return {
-    alertaGps: !esValido,
-    evaluado: true,
-    motivo: esValido ? 'DENTRO_DEL_RADIO' : 'FUERA_DEL_RADIO',
-    distanciaMetros,
-    radioMetros,
-  }
-}
-
-// ── Tipos de entrada ─────────────────────────────────────────────────────────
-
-export interface IniciarCitInput {
-  aliadoId: string
-  ciclistaId: string
-  bicicletaSerial: string
-  aliadoNombre: string | null
-  inspeccion: unknown[]
-  coordenadasGps: Record<string, unknown> | null
-  fotosHashes: Record<string, unknown> | null
-}
-
-// ── 1. iniciarCIT (intake + sello de inmutabilidad) ──────────────────────────
-
-export async function iniciarCIT(input: IniciarCitInput) {
-  return withTx(async (client) => {
-    // Geocercado real (Haversine) contra la ubicacion registrada del taller.
-    const geocerca = await evaluarGeocercaTaller(
-      client,
-      input.aliadoId,
-      input.coordenadasGps
-    )
-    const alertaGps = geocerca.alertaGps
-
-    // Upsert del rodado por numero de serie (identidad fisica unica).
-    const existente = await client.query<BicicletaRow>(
-      `SELECT * FROM bicicletas WHERE numero_serie = $1 FOR UPDATE`,
-      [input.bicicletaSerial]
-    )
-
-    let bicicleta = existente.rows[0]
-    if (bicicleta) {
-      if (bicicleta.propietario_id !== input.ciclistaId) {
-        throw new ApiError(
-          409,
-          'PROPIETARIO_CONFLICTO',
-          'El numero de serie ya esta registrado a nombre de otro ciclista.'
-        )
-      }
-    } else {
-      const creada = await client.query<BicicletaRow>(
-        `
-          INSERT INTO bicicletas (propietario_id, numero_serie)
-          VALUES ($1, $2)
-          RETURNING *
-        `,
-        [input.ciclistaId, input.bicicletaSerial]
-      )
-      bicicleta = creada.rows[0]
-    }
-
-    const citId = nuevoId()
-    // La marca de tiempo del intake es autoritativa: se incrusta en el snapshot
-    // hasheado y se persiste con el mismo valor, de modo que la verificacion
-    // posterior recalcule exactamente la misma huella.
-    const capturadoEn = new Date().toISOString()
-    const expiraEn = new Date(
-      Date.parse(capturadoEn) + VENTANA_VALIDACION_HORAS * 60 * 60 * 1000
-    ).toISOString()
-
-    const snapshot = construirSnapshot({
-      citId,
-      version: 1,
-      aliadoId: input.aliadoId,
-      ciclistaId: input.ciclistaId,
-      bicicletaSerial: input.bicicletaSerial,
-      inspeccion: input.inspeccion,
-      coordenadasGps: input.coordenadasGps,
-      fotosHashes: input.fotosHashes,
-      capturadoEn,
-    })
-
-    // Se hashea la cadena canonica EXACTA y se persiste tal cual, para que la
-    // verificacion posterior recalcule la misma huella byte a byte.
-    const canonico = canonicalizar(snapshot)
-    const huella = huellaDeCanonico(canonico)
-    const firma = firmarHuella(huella)
-
-    let citRow: CitRow
-    try {
-      const insertado = await client.query<CitRow>(
-        `
-          INSERT INTO cits (
-            id, bicicleta_id, ciclista_id, aliado_id, aliado_nombre,
-            bicicleta_serial, inspeccion, coordenadas_gps, fotos_hashes, alerta_gps,
-            huella_sha256, firma_hmac, algoritmo, snapshot_canonico, sellado_en, expira_en
-          )
-          VALUES (
-            $1, $2, $3, $4, $5,
-            $6, $7::jsonb, $8::jsonb, $9::jsonb, $10,
-            $11, $12, $13, $14, $15, $16
-          )
-          RETURNING *
-        `,
-        [
-          citId,
-          bicicleta.id,
-          input.ciclistaId,
-          input.aliadoId,
-          input.aliadoNombre,
-          input.bicicletaSerial,
-          JSON.stringify(input.inspeccion ?? []),
-          input.coordenadasGps === null ? null : JSON.stringify(input.coordenadasGps),
-          input.fotosHashes === null ? null : JSON.stringify(input.fotosHashes),
-          alertaGps,
-          huella,
-          firma,
-          CIT_ALGORITMO,
-          canonico,
-          capturadoEn,
-          expiraEn,
-        ]
-      )
-      citRow = insertado.rows[0]
-    } catch (error) {
-      if (esViolacionUnicidad(error)) {
-        throw new ApiError(
-          409,
-          'CIT_DUPLICADO',
-          'Ya existe un certificado en validacion o vigente para este rodado.'
-        )
-      }
-      throw error
-    }
-
-    await logEvento(client, {
-      citId,
-      tipo: 'CIT_INTAKE_RECIBIDO',
-      estadoNuevo: 'PENDIENTE_VALIDACION',
-      actorId: input.aliadoId,
-      actorRol: 'aliado',
-      metadata: {
-        huella,
-        alertaGps,
-        expiraEn,
-        geocerca: {
-          evaluado: geocerca.evaluado,
-          motivo: geocerca.motivo,
-          distanciaMetros: geocerca.distanciaMetros,
-          radioMetros: geocerca.radioMetros,
-        },
-      },
-    })
-
-    // Si el intake quedo fuera del radio del taller, se asienta un evento de
-    // auditoria dedicado con la distancia excedida (el worker del pipeline lo
-    // resolvera luego como ANOMALIA_DETECTADA).
-    if (geocerca.alertaGps) {
-      await logEvento(client, {
-        citId,
-        tipo: 'CIT_ALERTA_GEOCERCA',
-        estadoNuevo: 'PENDIENTE_VALIDACION',
-        actorId: input.aliadoId,
-        actorRol: 'aliado',
-        metadata: {
-          motivo: 'Coordenadas del intake fuera del radio permitido del taller aliado.',
-          distanciaMetros: geocerca.distanciaMetros,
-          radioMetros: geocerca.radioMetros,
-        },
-      })
-    }
-
-    return { cit: mapCit(citRow), huella, alertaGps, expiraEn, geocerca }
-  })
-}
-
-// ── 2. validarCIT (PENDIENTE_VALIDACION -> ACTIVO) ───────────────────────────
-
-export async function validarCIT(input: { citId: string; validadorId: string | null }) {
-  return withTx(async (client) => {
-    const cit = await lockCit(client, input.citId)
-    if (cit.estado !== 'PENDIENTE_VALIDACION') {
-      throw new ApiError(
-        409,
-        'CIT_NO_VALIDABLE',
-        'El certificado no esta pendiente de validacion.'
-      )
-    }
-
-    if (Date.parse(cit.expira_en) <= Date.now()) {
-      const vencido = await client.query<CitRow>(
-        `UPDATE cits SET estado = 'VENCIDO' WHERE id = $1 RETURNING *`,
-        [cit.id]
-      )
-      await logEvento(client, {
-        citId: cit.id,
-        tipo: 'CIT_PIPELINE_VENCIDO',
-        estadoAnterior: 'PENDIENTE_VALIDACION',
-        estadoNuevo: 'VENCIDO',
-        actorId: input.validadorId,
-        actorRol: 'sistema',
-      })
-      // Devuelve el estado actualizado dentro del error para trazabilidad.
-      void vencido
-      throw new ApiError(
-        422,
-        'CIT_PIPELINE_VENCIDO',
-        'La ventana de validacion de 72 hs expiro.'
-      )
-    }
-
-    const emision = new Date().toISOString()
-    const vencimiento = new Date(emision)
-    vencimiento.setFullYear(vencimiento.getFullYear() + VIGENCIA_ANIOS)
-
-    const actualizado = await client.query<CitRow>(
-      `
-        UPDATE cits
-        SET estado = 'ACTIVO',
-            validado_por = $2,
-            validado_en = $3,
-            fecha_emision = $3,
-            fecha_vencimiento = $4
-        WHERE id = $1
-        RETURNING *
-      `,
-      [cit.id, input.validadorId, emision, vencimiento.toISOString()]
-    )
-
-    await logEvento(client, {
-      citId: cit.id,
-      tipo: 'CIT_VALIDADO',
-      estadoAnterior: 'PENDIENTE_VALIDACION',
-      estadoNuevo: 'ACTIVO',
-      actorId: input.validadorId,
-      actorRol: 'sistema',
-    })
-
-    return mapCit(actualizado.rows[0])
-  })
 }
 
 // ── 3. verificarIntegridad ───────────────────────────────────────────────────

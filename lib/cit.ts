@@ -227,9 +227,6 @@ export function construirSnapshot(datos: SnapshotInput) {
 
 // ── Validacion y normalizacion de entrada ────────────────────────────────────
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
 export function nuevoId(): string {
   return randomUUID()
 }
@@ -260,77 +257,3 @@ export function parseTextoOpcional(
   return parseTexto(value, campo, maxLength)
 }
 
-export function parseUuid(value: unknown, campo: string): string {
-  const texto = parseTexto(value, campo)
-  if (!UUID_RE.test(texto)) {
-    throw new ApiError(400, 'VALIDATION_ERROR', `${campo} debe ser un UUID valido.`)
-  }
-  return texto.toLowerCase()
-}
-
-/**
- * Normaliza el numero de serie de la bicicleta: elimina espacios y guiones y lo
- * pasa a mayusculas, para que la identidad fisica sea consistente.
- */
-export function limpiarSerial(value: unknown): string {
-  const texto = parseTexto(value, 'bicicletaSerial', 120)
-  const limpio = texto.replace(/[\s-]+/g, '').toUpperCase()
-  if (limpio.length === 0) {
-    throw new ApiError(400, 'VALIDATION_ERROR', 'bicicletaSerial es obligatorio.')
-  }
-  return limpio
-}
-
-/** Inspeccion de 20 puntos: lista de { item, estado, observacion }. */
-export function parseInspeccion(value: unknown): Array<Record<string, unknown>> {
-  if (value === undefined || value === null) {
-    return []
-  }
-  if (!Array.isArray(value)) {
-    throw new ApiError(
-      400,
-      'VALIDATION_ERROR',
-      'inspeccion20Puntos debe ser una lista de puntos de inspeccion.'
-    )
-  }
-  return value.map((punto, indice) => {
-    if (typeof punto !== 'object' || punto === null || Array.isArray(punto)) {
-      throw new ApiError(
-        400,
-        'VALIDATION_ERROR',
-        `inspeccion20Puntos[${indice}] debe ser un objeto { item, estado, observacion }.`
-      )
-    }
-    return punto as Record<string, unknown>
-  })
-}
-
-/** Coordenadas GPS del intake: { lat, lng, precision }. */
-export function parseGps(value: unknown): Record<string, unknown> | null {
-  if (value === undefined || value === null) {
-    return null
-  }
-  if (typeof value !== 'object' || Array.isArray(value)) {
-    throw new ApiError(
-      400,
-      'VALIDATION_ERROR',
-      'coordenadasGPS debe ser un objeto { lat, lng, precision }.'
-    )
-  }
-  return value as Record<string, unknown>
-}
-
-/** Referencias a las fotos: { cuadroUrl, transmisionUrl, hashFotos }. */
-export function parseFotosHashes(value: unknown): Record<string, unknown> | null {
-  if (value === undefined || value === null) {
-    return null
-  }
-  if (typeof value !== 'object' || Array.isArray(value)) {
-    throw new ApiError(
-      400,
-      'VALIDATION_ERROR',
-      'fotosHashes debe ser un objeto { cuadroUrl, transmisionUrl, hashFotos }.'
-    )
-  }
-  return value as Record<string, unknown>
-}
