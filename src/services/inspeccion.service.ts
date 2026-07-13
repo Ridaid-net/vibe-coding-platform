@@ -721,7 +721,7 @@ export async function aprobarInspeccionFisica(opts: {
       `
         UPDATE cits
         SET metadata_json = metadata_json || $2::jsonb,
-            actualizado_en = NOW()
+            updated_at = NOW()
         WHERE id = $1
       `,
       [
@@ -1044,7 +1044,7 @@ export async function reportarDiscrepancia(opts: {
         UPDATE cits
         SET estado = 'rechazado',
             metadata_json = metadata_json || $2::jsonb,
-            actualizado_en = NOW()
+            updated_at = NOW()
         WHERE id = $1
       `,
       [

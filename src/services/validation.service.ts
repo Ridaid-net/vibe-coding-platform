@@ -459,7 +459,7 @@ export async function procesarJob(
             SET estado = 'activo',
                 hash_sha256 = $2,
                 metadata_json = metadata_json || $3::jsonb,
-                actualizado_en = NOW()
+                updated_at = NOW()
             WHERE id = $1
           `,
           [
@@ -549,7 +549,7 @@ export async function procesarJob(
           UPDATE cits
           SET estado = 'bloqueado',
               metadata_json = metadata_json || $2::jsonb,
-              actualizado_en = NOW()
+              updated_at = NOW()
           WHERE id = $1
         `,
         [
