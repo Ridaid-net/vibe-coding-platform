@@ -111,6 +111,43 @@ export async function buscarBici(
   )
 }
 
+/**
+ * Certificado Digital de Propiedad y Verificacion (PDF firmado). El endpoint
+ * (/api/v1/cit/:id/certificado) exige Authorization: Bearer -- un <a href>
+ * comun nunca lo autentica, asi que se trae el blob con authedFetch y se
+ * abre/descarga desde una URL de objeto temporal (mismo patron que
+ * lib/remitos.ts::descargarRemitoPdf()).
+ */
+async function obtenerCertificadoBlob(citId: string): Promise<Blob> {
+  const res = await authedFetch(`/api/v1/cit/${citId}/certificado`)
+  if (!res.ok) {
+    const detalle = (await res.json().catch(() => null)) as { message?: string } | null
+    throw new Error(detalle?.message ?? `HTTP ${res.status}`)
+  }
+  return res.blob()
+}
+
+export async function abrirCertificadoCit(citId: string): Promise<void> {
+  const blob = await obtenerCertificadoBlob(citId)
+  const url = URL.createObjectURL(blob)
+  window.open(url, '_blank')
+}
+
+export async function descargarCertificadoCit(
+  citId: string,
+  numeroSerie: string
+): Promise<void> {
+  const blob = await obtenerCertificadoBlob(citId)
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `CIT-${numeroSerie}.pdf`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 export interface ActaFirmaRespuesta {
   algoritmo: string
   valor: string
