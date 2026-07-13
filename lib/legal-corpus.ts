@@ -229,6 +229,25 @@ export const CORPUS_LEGAL: SeccionLegal[] = [
       },
     ],
   },
+  {
+    id: 'talleres-aliados',
+    titulo: 'Talleres Aliados',
+    resumen:
+      'Naturaleza voluntaria de la vinculación como Taller Aliado y su relación ' +
+      'con las obligaciones regulatorias propias del rubro.',
+    clausulas: [
+      {
+        id: 'ALIADO-1',
+        titulo: 'Carácter voluntario y no sustitutivo de obligaciones regulatorias',
+        texto:
+          'El uso de RODAID es un complemento voluntario y no reemplaza ninguna ' +
+          'obligación de registro que la normativa vigente (incluida la Ley ' +
+          'Provincial N° 9.556) exija al Taller Aliado ante organismos estatales. ' +
+          'El Taller Aliado es responsable de cumplir con sus obligaciones ' +
+          'regulatorias de forma independiente.',
+      },
+    ],
+  },
 ]
 
 /** Respuesta EXACTA exigida ante consultas fuera de alcance (regla de restricción). */
