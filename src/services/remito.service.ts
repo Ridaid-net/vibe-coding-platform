@@ -19,6 +19,7 @@ import {
   notificarRemitoGenerado,
   notificarRemitoGeneradoSinCuenta,
   notificarRemitoDespachado,
+  notificarRemitoRecordatorio,
 } from '@/src/services/notif.service'
 
 /**
@@ -590,4 +591,97 @@ export async function obtenerVerificacionPublicaRemito(
     bici: { marca: row.marca, modelo: row.modelo, tipo: row.tipo },
     codigoCit: row.codigo_cit,
   }
+}
+
+// ── 5. Recordatorios al vendedor (worker) ────────────────────────────────────
+
+const RECORDATORIO_IN_APP_MS = 2 * 60 * 60 * 1000
+const RECORDATORIO_EMAIL_MS = 8 * 60 * 60 * 1000
+const RECORDATORIOS_LIMITE = 200
+
+interface RemitoPendienteRow {
+  transaccion_id: string
+  vendedor_id: string
+  saldo_confirmado_en: string
+  remito_recordatorio_in_app_en: string | null
+  remito_recordatorio_email_en: string | null
+  numero_serie: string
+}
+
+/**
+ * Barrido del worker de recordatorios: para cada venta de CIT Completo con
+ * el saldo ya confirmado y sin Remito generado todavia, recuerda al
+ * VENDEDOR (nunca al Taller -- ese es un caso distinto, sin recordatorio
+ * disenado). Dos relojes independientes por transaccion: in-app cada 2hs
+ * (sin tope), email cada 8hs (mas espaciado, para no danar la reputacion de
+ * envio del dominio). El in-app siempre se dispara cuando toca -- el email
+ * viaja adentro de esa misma llamada solo cuando tambien vencio su propio
+ * reloj (8 > 2, asi que nunca queda un email pendiente sin un in-app que lo
+ * acompane). Indefinido: no hay cancelacion automatica de la venta por esto.
+ */
+export async function procesarRecordatoriosRemito(): Promise<{
+  procesados: number
+  recordadosInApp: number
+  recordadosEmail: number
+}> {
+  const pool = getPool()
+  const pendientes = await pool.query<RemitoPendienteRow>(
+    `
+      SELECT
+        et.id AS transaccion_id,
+        et.vendedor_id,
+        et.saldo_confirmado_en,
+        et.remito_recordatorio_in_app_en,
+        et.remito_recordatorio_email_en,
+        b.numero_serie
+      FROM escrow_transacciones et
+      JOIN marketplace_publicaciones mp ON mp.id = et.publicacion_id
+      JOIN bicicletas b ON b.id = mp.bicicleta_id
+      WHERE et.estado = 'FONDOS_RETENIDOS'
+        AND et.aliado_id IS NOT NULL
+        AND et.saldo_confirmado_en IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM remitos r WHERE r.transaccion_id = et.id)
+      ORDER BY et.saldo_confirmado_en ASC
+      LIMIT ${RECORDATORIOS_LIMITE}
+    `
+  )
+
+  let recordadosInApp = 0
+  let recordadosEmail = 0
+  const ahora = Date.now()
+
+  for (const row of pendientes.rows) {
+    const desdeInApp = new Date(row.remito_recordatorio_in_app_en ?? row.saldo_confirmado_en).getTime()
+    const inAppDue = ahora - desdeInApp >= RECORDATORIO_IN_APP_MS
+    if (!inAppDue) continue
+
+    const desdeEmail = new Date(row.remito_recordatorio_email_en ?? row.saldo_confirmado_en).getTime()
+    const emailDue = ahora - desdeEmail >= RECORDATORIO_EMAIL_MS
+
+    try {
+      await notificarRemitoRecordatorio(
+        row.vendedor_id,
+        { transaccionId: row.transaccion_id, bicicletaSerial: row.numero_serie },
+        emailDue
+      )
+      recordadosInApp++
+      if (emailDue) recordadosEmail++
+
+      await pool.query(
+        `
+          UPDATE escrow_transacciones
+          SET remito_recordatorio_in_app_en = NOW()
+              ${emailDue ? ', remito_recordatorio_email_en = NOW()' : ''}
+          WHERE id = $1
+        `,
+        [row.transaccion_id]
+      )
+    } catch (error) {
+      // No actualiza los timestamps: se reintenta en la proxima corrida en
+      // vez de perder el recordatorio en silencio.
+      console.error('[remito] fallo el recordatorio', row.transaccion_id, error)
+    }
+  }
+
+  return { procesados: pendientes.rows.length, recordadosInApp, recordadosEmail }
 }
