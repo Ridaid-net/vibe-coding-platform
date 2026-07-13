@@ -35,7 +35,7 @@ export function LoginForm() {
   const returnTo = sanitizeReturnTo(params.get('next') ?? params.get('returnTo'))
   const mxmError = params.get('mxm_error')
 
-  const [modo, setModo] = useState<Modo>('login')
+  const [modo, setModo] = useState<Modo>(params.get('modo') === 'registro' ? 'registro' : 'login')
   const [identificador, setIdentificador] = useState('')
   const [password, setPassword] = useState('')
   const [nombre, setNombre] = useState('')
