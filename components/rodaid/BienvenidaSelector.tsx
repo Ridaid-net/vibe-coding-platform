@@ -1,16 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import {
-  ArrowRight,
-  Bike,
-  MessageCircle,
-  Package,
-  ShieldCheck,
-  Store,
-  Wallet,
-  Wrench,
-} from 'lucide-react'
+import { ArrowRight, Bike, ShieldCheck, Store, Wallet } from 'lucide-react'
+import { PropuestaValorTaller } from '@/components/rodaid/PropuestaValorTaller'
 
 const ITEMS_CICLISTA = [
   { icon: ShieldCheck, texto: 'Garaje Digital — toda la identidad de tus bicis, en un solo lugar.' },
@@ -18,14 +10,6 @@ const ITEMS_CICLISTA = [
   { icon: Store, texto: 'Vendé protegido en el Marketplace — el pago queda retenido hasta que la bici llega.' },
   { icon: ShieldCheck, texto: 'Denunciá un robo en segundos y sumá tu bici a la red de alerta.' },
   { icon: Wallet, texto: 'Bici-Salud (mantenimiento predictivo) y tu saldo SUBE, a un toque.' },
-]
-
-const ITEMS_TALLER = [
-  { icon: Wrench, texto: 'Certificás bicis con el checklist físico de 20 puntos.' },
-  { icon: ShieldCheck, texto: '$33.000 garantizados por cada CIT sellado, más el 50% si la venta se concreta.' },
-  { icon: Package, texto: 'Remitos de embalaje digitales — sin papeleo, firmados con tu identidad.' },
-  { icon: Store, texto: 'Publicá tus propios servicios y sumá otro canal de ingresos (a partir de 6 CITs/día).' },
-  { icon: MessageCircle, texto: 'Tu WhatsApp visible para que nuevos clientes te encuentren.' },
 ]
 
 export function BienvenidaSelector() {
@@ -58,15 +42,15 @@ export function BienvenidaSelector() {
           cta="Continuar como Ciclista"
           ctaClase="bg-ink text-paper hover:bg-ink-soft"
         />
-        <PerfilCard
-          titulo="Soy taller o tienda"
-          desc="Sumate como Taller Aliado: certificá bicis, generá ingresos garantizados y sumá clientes."
-          items={ITEMS_TALLER}
-          acento="border-l-[#F47B20]"
-          href="/aliados"
-          cta="Sumar mi Taller o Tienda"
-          ctaClase="bg-[#F47B20] text-white hover:bg-[#F47B20]/90"
-        />
+        <PropuestaValorTaller>
+          <Link
+            href="/aliados"
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F47B20] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#F47B20]/90"
+          >
+            Sumar mi Taller o Tienda
+            <ArrowRight className="size-4" />
+          </Link>
+        </PropuestaValorTaller>
       </div>
     </div>
   )
