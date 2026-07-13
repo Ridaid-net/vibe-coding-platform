@@ -12,7 +12,7 @@ export const metadata = {
 
 export default async function PublicarPage() {
   const cookieStore = await cookies()
-  const token = cookieStore.get('token') ?? cookieStore.get('auth_token') ?? cookieStore.get('session')
+  const token = cookieStore.get('nf_jwt')
 
   if (!token) {
     redirect('/ingresar?next=/publicar')
