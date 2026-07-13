@@ -258,6 +258,31 @@ export interface MapaInstitucional {
   totales: { consultas: number; denuncias: number; celdas: number }
 }
 
+export interface RemitoAdminItem {
+  id: string
+  numero: string
+  bici: { marca: string; modelo: string; numeroSerie: string }
+  codigoCit: string
+  tallerNombre: string
+  vendedorNombre: string
+  estado: 'GENERADO' | 'DESPACHADO'
+  generadoEn: string
+  despachadoEn: string | null
+  horasEnEspera: number | null
+}
+export interface RemitosAdminResumen {
+  generadoEn: string
+  dias: number
+  resumen: {
+    totalGenerados: number
+    totalDespachados: number
+    totalPendientes: number
+    tiempoPromedioDespachoHoras: number | null
+  }
+  talleres: { id: string; nombre: string }[]
+  remitos: RemitoAdminItem[]
+}
+
 export interface InspectorAdmin {
   id: string
   emailMasked: string | null
@@ -328,6 +353,20 @@ export const obtenerAnalitica = () => getJson<AnaliticaEcosistema>('/api/v1/admi
 
 export const obtenerMapaInstitucional = (dias: number) =>
   getJson<MapaInstitucional>(`/api/v1/admin/panel/analitica/mapa-institucional?dias=${dias}`)
+
+export interface RemitosAdminFiltrosCliente {
+  estado?: 'GENERADO' | 'DESPACHADO'
+  aliadoId?: string | null
+  dias?: number
+}
+
+export const obtenerRemitosAdmin = (filtros: RemitosAdminFiltrosCliente = {}) => {
+  const qs = new URLSearchParams()
+  if (filtros.estado) qs.set('estado', filtros.estado)
+  if (filtros.aliadoId) qs.set('aliadoId', filtros.aliadoId)
+  qs.set('dias', String(filtros.dias ?? 30))
+  return getJson<RemitosAdminResumen>(`/api/v1/admin/panel/analitica/remitos?${qs.toString()}`)
+}
 
 export const obtenerInspectores = () =>
   getJson<{ inspectores: InspectorAdmin[]; talleres: TallerOpcion[] }>(

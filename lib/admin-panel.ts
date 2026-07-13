@@ -1115,6 +1115,164 @@ export async function mapaInstitucional(dias: number): Promise<MapaInstitucional
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
+// MODULO 3b — Remitos de Embalaje y Despacho (Fase 6b, CIT Completo).
+// Sub-vista de Analitica: panorama consolidado de TODOS los Remitos del
+// sistema (a diferencia de listarRemitosPorAliado() en remito.service.ts,
+// que solo ve los de un Taller). Escribe su propia query SQL, siguiendo la
+// convencion ya establecida en este archivo (lib/admin-panel.ts no delega a
+// los *.service.ts para sus vistas agregadas).
+// ───────────────────────────────────────────────────────────────────────────────
+
+export interface RemitoAdminItem {
+  id: string
+  numero: string
+  bici: { marca: string; modelo: string; numeroSerie: string }
+  codigoCit: string
+  tallerNombre: string
+  vendedorNombre: string
+  estado: 'GENERADO' | 'DESPACHADO'
+  generadoEn: string
+  despachadoEn: string | null
+  /** Horas desde que se genero, sin despachar todavia. null si ya se despacho. */
+  horasEnEspera: number | null
+}
+
+export interface RemitosAdminResumen {
+  generadoEn: string
+  dias: number
+  resumen: {
+    totalGenerados: number
+    totalDespachados: number
+    totalPendientes: number
+    /** Solo sobre los DESPACHADOS del rango filtrado. null si no hay ninguno. */
+    tiempoPromedioDespachoHoras: number | null
+  }
+  talleres: { id: string; nombre: string }[]
+  remitos: RemitoAdminItem[]
+}
+
+export interface RemitosAdminFiltros {
+  estado?: 'GENERADO' | 'DESPACHADO'
+  aliadoId?: string | null
+  dias?: number
+}
+
+interface RemitoAdminRow {
+  id: string
+  numero: string
+  marca: string
+  modelo: string
+  numero_serie: string
+  codigo_cit: string
+  taller_nombre: string
+  vendedor_nombre: string | null
+  vendedor_email: string
+  estado: 'GENERADO' | 'DESPACHADO'
+  generado_en: string
+  despachado_en: string | null
+}
+
+/**
+ * Vista consolidada de Remitos para el Dashboard de Administracion. El
+ * resumen numerico se calcula con una query agregada aparte (COUNT/AVG con
+ * FILTER, mismo patron que analiticaEcosistema()), NO sobre el LIMIT 500 del
+ * detalle -- si algun dia hay mas de 500 remitos en la ventana filtrada, el
+ * resumen sigue siendo exacto aunque la lista de abajo este recortada.
+ */
+export async function remitosAdminResumen(
+  filtros: RemitosAdminFiltros
+): Promise<RemitosAdminResumen> {
+  const dias = Math.min(
+    365,
+    Math.max(1, Math.floor(Number.isFinite(filtros.dias) ? Number(filtros.dias) : 30))
+  )
+  const pool = getPool()
+
+  const condiciones: string[] = [`r.generado_en >= NOW() - ($1 || ' days')::interval`]
+  const params: unknown[] = [String(dias)]
+  if (filtros.estado) {
+    params.push(filtros.estado)
+    condiciones.push(`r.estado = $${params.length}`)
+  }
+  if (filtros.aliadoId) {
+    params.push(filtros.aliadoId)
+    condiciones.push(`r.aliado_id = $${params.length}`)
+  }
+  const where = condiciones.join(' AND ')
+
+  const [agregado, filas, talleres] = await Promise.all([
+    pool.query<{ total: string; despachados: string; horas_prom: string | null }>(
+      `
+        SELECT
+          COUNT(*) AS total,
+          COUNT(*) FILTER (WHERE r.estado = 'DESPACHADO') AS despachados,
+          AVG(EXTRACT(EPOCH FROM (r.despachado_en - r.generado_en)) / 3600.0)
+            FILTER (WHERE r.estado = 'DESPACHADO') AS horas_prom
+        FROM remitos r
+        WHERE ${where}
+      `,
+      params
+    ),
+    pool.query<RemitoAdminRow>(
+      `
+        SELECT
+          r.id, r.numero, r.estado, r.generado_en, r.despachado_en,
+          b.marca, b.modelo, b.numero_serie, c.codigo_cit,
+          al.nombre AS taller_nombre,
+          v.datos_perfil->>'nombre' AS vendedor_nombre, v.email AS vendedor_email
+        FROM remitos r
+        JOIN escrow_transacciones tx ON tx.id = r.transaccion_id
+        JOIN marketplace_publicaciones mp ON mp.id = tx.publicacion_id
+        JOIN bicicletas b ON b.id = mp.bicicleta_id
+        JOIN cits c ON c.id = mp.cit_id
+        JOIN aliados al ON al.id = r.aliado_id
+        JOIN usuarios v ON v.id = r.vendedor_id
+        WHERE ${where}
+        ORDER BY (r.estado = 'GENERADO') DESC, r.generado_en DESC
+        LIMIT 500
+      `,
+      params
+    ),
+    pool.query<{ id: string; nombre: string }>(
+      `SELECT DISTINCT al.id, al.nombre FROM remitos r JOIN aliados al ON al.id = r.aliado_id ORDER BY al.nombre`
+    ),
+  ])
+
+  const remitos: RemitoAdminItem[] = filas.rows.map((row: RemitoAdminRow) => ({
+    id: row.id,
+    numero: row.numero,
+    bici: { marca: row.marca, modelo: row.modelo, numeroSerie: row.numero_serie },
+    codigoCit: row.codigo_cit,
+    tallerNombre: row.taller_nombre,
+    vendedorNombre: row.vendedor_nombre?.trim() || row.vendedor_email,
+    estado: row.estado,
+    generadoEn: row.generado_en,
+    despachadoEn: row.despachado_en,
+    horasEnEspera:
+      row.estado === 'GENERADO'
+        ? (Date.now() - new Date(row.generado_en).getTime()) / 3_600_000
+        : null,
+  }))
+
+  const a = agregado.rows[0]
+  const totalGenerados = Number(a?.total ?? 0)
+  const totalDespachados = Number(a?.despachados ?? 0)
+
+  return {
+    generadoEn: new Date().toISOString(),
+    dias,
+    resumen: {
+      totalGenerados,
+      totalDespachados,
+      totalPendientes: totalGenerados - totalDespachados,
+      tiempoPromedioDespachoHoras: a?.horas_prom != null ? Number(a.horas_prom) : null,
+    },
+    talleres: talleres.rows,
+    remitos,
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 // MODULO 4 — Gestion de Identidades y Roles.
 // ───────────────────────────────────────────────────────────────────────────────
 
