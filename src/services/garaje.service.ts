@@ -335,6 +335,11 @@ export interface MiPublicacion {
     precioARS: number
     montoVendedor: number
     comisionRodaid: number
+    /** Fase 6 (CIT Completo): presente solo en ese flujo -- ver aliado_id en escrow_transacciones. */
+    aliadoId: string | null
+    tallerNombre: string | null
+    /** Fase 6b: null hasta que el vendedor genera el Remito de Embalaje y Despacho. */
+    remito: { numero: string; estado: 'GENERADO' | 'DESPACHADO' } | null
   } | null
 }
 
@@ -360,6 +365,10 @@ interface PublicacionRow {
   tx_precio: string | null
   tx_monto_vendedor: string | null
   tx_comision: string | null
+  tx_aliado_id: string | null
+  taller_nombre: string | null
+  remito_numero: string | null
+  remito_estado: string | null
 }
 
 /**
@@ -382,11 +391,15 @@ export async function obtenerMisPublicaciones(
         tx.estado AS tx_estado,
         tx.precio_ars AS tx_precio,
         tx.monto_vendedor AS tx_monto_vendedor,
-        tx.comision_rodaid AS tx_comision
+        tx.comision_rodaid AS tx_comision,
+        tx.aliado_id AS tx_aliado_id,
+        al.nombre AS taller_nombre,
+        r.numero AS remito_numero,
+        r.estado AS remito_estado
       FROM marketplace_publicaciones mp
       INNER JOIN bicicletas b ON b.id = mp.bicicleta_id
       LEFT JOIN LATERAL (
-        SELECT id, estado, precio_ars, monto_vendedor, comision_rodaid
+        SELECT id, estado, precio_ars, monto_vendedor, comision_rodaid, aliado_id
         FROM escrow_transacciones et
         WHERE et.publicacion_id = mp.id
         ORDER BY
@@ -397,6 +410,8 @@ export async function obtenerMisPublicaciones(
           et.created_at DESC
         LIMIT 1
       ) tx ON TRUE
+      LEFT JOIN aliados al ON al.id = tx.aliado_id
+      LEFT JOIN remitos r ON r.transaccion_id = tx.id
       WHERE mp.vendedor_id = $1
       ORDER BY mp.publicado_en DESC
     `,
@@ -429,6 +444,11 @@ export async function obtenerMisPublicaciones(
           precioARS: Number(row.tx_precio ?? 0),
           montoVendedor: Number(row.tx_monto_vendedor ?? 0),
           comisionRodaid: Number(row.tx_comision ?? 0),
+          aliadoId: row.tx_aliado_id,
+          tallerNombre: row.taller_nombre,
+          remito: row.remito_numero
+            ? { numero: row.remito_numero, estado: row.remito_estado as 'GENERADO' | 'DESPACHADO' }
+            : null,
         }
       : null,
   }))
@@ -457,6 +477,18 @@ export interface MiCompra {
     numeroSerie: string | null
     tipo: string | null
   }
+  /** Fase 6 (CIT Completo): presente solo en ese flujo. */
+  aliadoId: string | null
+  /** Fase 6b: null hasta que el vendedor genera el Remito. */
+  remito: { numero: string; estado: 'GENERADO' | 'DESPACHADO' } | null
+  /**
+   * true si pasaron 7 dias desde que se confirmo el saldo sin que el
+   * vendedor generara el Remito. Habilita el boton de reclamo del comprador
+   * (Esquema 1 de disputas, CLAUDE.md) -- hoy ese boton solo ofrece contacto
+   * directo (mismo criterio honesto que BotonDisputa.tsx), no un flujo de
+   * disputa real: ese sistema todavia no esta construido.
+   */
+  remitoVencido: boolean
 }
 
 interface CompraRow {
@@ -466,6 +498,8 @@ interface CompraRow {
   tx_precio: string
   tx_reserva_vence_en: string | null
   tx_created_at: string
+  tx_aliado_id: string | null
+  tx_saldo_confirmado_en: string | null
   pub_id: string
   slug: string
   titulo: string
@@ -474,7 +508,11 @@ interface CompraRow {
   modelo: string | null
   numero_serie: string | null
   tipo: string | null
+  remito_numero: string | null
+  remito_estado: string | null
 }
+
+const REMITO_VENCIDO_MS = 7 * 24 * 60 * 60 * 1000
 
 /**
  * Compras/reservas del usuario como COMPRADOR: tanto el flujo generico de
@@ -489,12 +527,15 @@ export async function obtenerMisCompras(userId: string): Promise<MiCompra[]> {
       SELECT
         et.id AS tx_id, et.estado AS tx_estado, et.plan AS tx_plan,
         et.precio_ars AS tx_precio, et.reserva_vence_en AS tx_reserva_vence_en,
-        et.created_at AS tx_created_at,
+        et.created_at AS tx_created_at, et.aliado_id AS tx_aliado_id,
+        et.saldo_confirmado_en AS tx_saldo_confirmado_en,
         mp.id AS pub_id, mp.slug, mp.titulo, mp.fotos_urls,
-        b.marca, b.modelo, b.numero_serie, b.tipo
+        b.marca, b.modelo, b.numero_serie, b.tipo,
+        r.numero AS remito_numero, r.estado AS remito_estado
       FROM escrow_transacciones et
       INNER JOIN marketplace_publicaciones mp ON mp.id = et.publicacion_id
       INNER JOIN bicicletas b ON b.id = mp.bicicleta_id
+      LEFT JOIN remitos r ON r.transaccion_id = et.id
       WHERE et.comprador_id = $1
       ORDER BY et.created_at DESC
     `,
@@ -508,6 +549,15 @@ export async function obtenerMisCompras(userId: string): Promise<MiCompra[]> {
     precioARS: Number(row.tx_precio),
     reservaVenceEn: row.tx_reserva_vence_en,
     creadoEn: row.tx_created_at,
+    aliadoId: row.tx_aliado_id,
+    remito: row.remito_numero
+      ? { numero: row.remito_numero, estado: row.remito_estado as 'GENERADO' | 'DESPACHADO' }
+      : null,
+    remitoVencido:
+      !!row.tx_aliado_id &&
+      !row.remito_numero &&
+      !!row.tx_saldo_confirmado_en &&
+      Date.now() - new Date(row.tx_saldo_confirmado_en).getTime() > REMITO_VENCIDO_MS,
     publicacion: {
       id: row.pub_id,
       slug: row.slug,

@@ -5,6 +5,7 @@ import { Nav } from '@/components/rodaid/nav'
 import { Footer } from '@/components/rodaid/footer'
 import { Inspecciones } from '@/components/rodaid/inspecciones'
 import { PublicarServicioTaller } from '@/components/rodaid/PublicarServicioTaller'
+import { RemitosTaller } from '@/components/rodaid/RemitosTaller'
 import { ShieldCheck, DollarSign, Clock, Award, LogOut } from 'lucide-react'
 import { authedFetch } from '@/lib/session'
 
@@ -82,6 +83,8 @@ export default function TallerPage() {
         </div>
 
         <PublicarServicioTaller />
+
+        <RemitosTaller />
 
         {/* Panel de inspecciones */}
         <Inspecciones />

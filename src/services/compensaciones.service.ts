@@ -203,10 +203,15 @@ export interface LiquidacionAliadoFeeLogisticaInput {
 
 /**
  * Registra la deuda de RODAID hacia el Taller Aliado por el Fee de Logistica
- * (embalaje) del CIT Completo. Se llama desde confirmarEntregaCitCompleto
- * (escrow.service.ts) — el monto ya viene congelado desde la reserva
- * (escrow_transacciones.fee_logistica_pagado_taller_ars). Idempotente, mismo
- * indice unico que el resto de las liquidaciones.
+ * (embalaje) del CIT Completo. Se llama desde confirmarDespachoRemito()
+ * (remito.service.ts), en el momento exacto en que el Taller confirma que
+ * embalo y despacho la bici (boton "Despacho a Logistica") -- NUNCA desde
+ * confirmarEntregaCitCompleto (comprador): el Taller cobra por el trabajo que
+ * el efectivamente hizo, sin depender de que un tercero confirme la entrega
+ * final dias despues. Mismo criterio que el Fee de Verificacion, que ya se
+ * paga al sellar el checklist, no al cerrarse la venta. El monto ya viene
+ * congelado desde la reserva (escrow_transacciones.fee_logistica_pagado_taller_ars).
+ * Idempotente, mismo indice unico que el resto de las liquidaciones.
  */
 export async function registrarLiquidacionAliadoFeeLogistica(
   client: DbClient,
