@@ -1,6 +1,7 @@
 import { Footer } from '@/components/rodaid/footer'
 import { Nav } from '@/components/rodaid/nav'
 import { AliadoForm } from '@/components/rodaid/aliado-form'
+import { PropuestaValorTaller } from '@/components/rodaid/PropuestaValorTaller'
 
 export const metadata = {
   title: 'Aliados — RODAID',
@@ -20,6 +21,9 @@ export default function AliadosPage() {
           <h1 className="mt-2 font-display text-4xl font-bold tracking-tight text-white">
             Aliados RODAID
           </h1>
+        </div>
+        <div className="mb-6">
+          <PropuestaValorTaller />
         </div>
         <AliadoForm />
       </main>
