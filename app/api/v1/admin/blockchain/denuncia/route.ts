@@ -51,7 +51,7 @@ export async function POST(req: Request) {
     await pool.query(
       `
         UPDATE cits c
-        SET estado = $2::cit_estado, actualizado_en = NOW()
+        SET estado = $2::cit_estado, updated_at = NOW()
         FROM bicicletas b
         WHERE c.bicicleta_id = b.id
           AND b.numero_serie = $1

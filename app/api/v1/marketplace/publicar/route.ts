@@ -249,7 +249,7 @@ export async function POST(req: Request) {
         throw error
       }
       await client.query(
-        `UPDATE bicicletas SET foto_url = $1, actualizado_en = NOW() WHERE id = $2`,
+        `UPDATE bicicletas SET foto_url = $1, updated_at = NOW() WHERE id = $2`,
         [subida.url, bici.id]
       )
       fotosUrls.unshift(subida.url)
