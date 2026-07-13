@@ -127,6 +127,7 @@ interface ActivoRow {
   job_creado_en: string | null
   tiene_publicacion_activa: boolean
   publicacion_slug: string | null
+  cit_metadata: Record<string, unknown> | null
 }
 
 interface ActaRow {
@@ -141,6 +142,23 @@ interface ActaRow {
   created_at: string
 }
 
+/**
+ * ¿Este CIT paso por la inspeccion fisica de 20 puntos (CIT Completo /
+ * Transferencia)? Mismo marcador que ya usa pdf.service.ts::inspeccionNota()
+ * para el certificado -- lo sella aprobarInspeccionFisica() en
+ * `cits.metadata_json.inspeccionFisica.resultado`. Su vigencia real es "hasta
+ * la transferencia de dominio", sin fecha fija -- a diferencia de CIT
+ * Express, nunca debe considerarse "vencido" por tiempo.
+ */
+function esCitCompleto(metadata: Record<string, unknown> | null): boolean {
+  const insp = (metadata ?? {}).inspeccionFisica
+  return (
+    !!insp &&
+    typeof insp === 'object' &&
+    (insp as Record<string, unknown>).resultado === 'APROBADA'
+  )
+}
+
 function derivarEstado(row: ActivoRow): EstadoActivo {
   if (!row.cit_id || !row.cit_estado) return 'sin_verificar'
   if (row.cit_estado === 'bloqueado') return 'bloqueado'
@@ -148,7 +166,11 @@ function derivarEstado(row: ActivoRow): EstadoActivo {
   if (row.cit_activo) return 'verificado'
   // CIT pendiente: si el pipeline ya resolvio pero el CIT aun no se reflejo, o
   // simplemente esta esperando la ventana, lo mostramos como pendiente.
-  if (row.cit_estado === 'activo') return 'vencido' // activo pero no vigente
+  if (row.cit_estado === 'activo') {
+    // CIT Completo: jamas "vencido" por tiempo, sea cual sea fecha_vencimiento.
+    if (esCitCompleto(row.cit_metadata)) return 'verificado'
+    return 'vencido' // CIT Express activo pero con fecha_vencimiento real ya pasada
+  }
   return 'pendiente'
 }
 
@@ -172,7 +194,16 @@ export async function obtenerActivosUsuario(
         NULL AS codigo_cit,
         c.huella_sha256 AS hash_sha256,
         c.fecha_vencimiento AS cit_vencimiento,
-        COALESCE(c.estado = 'activo' AND c.fecha_vencimiento > NOW(), FALSE) AS cit_activo,
+        -- fecha_vencimiento NULL significa "sin fecha fija registrada" (el
+        -- pipeline real de aprobacion no la fija hoy, y CIT Completo directamente
+        -- no tiene fecha fija por diseno -- vence con la transferencia de dominio,
+        -- no con el tiempo) -- NO es lo mismo que vencido. Solo cuenta como no
+        -- vigente si hay una fecha real y ya paso.
+        COALESCE(
+          c.estado = 'activo' AND (c.fecha_vencimiento IS NULL OR c.fecha_vencimiento > NOW()),
+          FALSE
+        ) AS cit_activo,
+        c.metadata_json AS cit_metadata,
         c.bfa_estado, c.bfa_tx_hash, c.bfa_token_id, c.bfa_anclado_en, c.bfa_modo,
         job.estado AS job_estado,
         job.ejecutar_en AS job_ejecutar_en,

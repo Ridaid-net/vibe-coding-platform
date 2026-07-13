@@ -54,8 +54,11 @@ export async function GET(req: Request) {
           c.id AS cit_id,
           c.estado AS cit_estado,
           c.fecha_vencimiento AS cit_vencimiento,
+          -- fecha_vencimiento NULL significa "sin fecha fija registrada" (el
+          -- pipeline real de aprobacion no la fija hoy) -- NO es lo mismo que
+          -- vencido. Mismo fix que garaje.service.ts::obtenerActivosUsuario().
           COALESCE(
-            c.estado = 'activo' AND c.fecha_vencimiento > NOW(),
+            c.estado = 'activo' AND (c.fecha_vencimiento IS NULL OR c.fecha_vencimiento > NOW()),
             FALSE
           ) AS cit_activo,
           EXISTS (
