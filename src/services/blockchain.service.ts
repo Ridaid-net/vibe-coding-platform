@@ -290,7 +290,7 @@ async function reclamarAnclaje(citId: string): Promise<ClaimResultado> {
     if (cit.bfa_estado === 'ACUNADO' || cit.bfa_tx_hash) return 'ya-anclado'
 
     await client.query(
-      `UPDATE cits SET bfa_estado = 'PENDIENTE', bfa_intentos = bfa_intentos + 1, actualizado_en = NOW() WHERE id = $1`,
+      `UPDATE cits SET bfa_estado = 'PENDIENTE', bfa_intentos = bfa_intentos + 1, updated_at = NOW() WHERE id = $1`,
       [citId]
     )
     return 'reclamado'
@@ -308,7 +308,7 @@ async function marcarAnclado(citId: string, txHash: string, tokenId: bigint, mod
           bfa_anclado_en = NOW(),
           bfa_ultimo_error = NULL,
           metadata_json = metadata_json || $4::jsonb,
-          actualizado_en = NOW()
+          updated_at = NOW()
       WHERE id = $1
     `,
     [
@@ -338,7 +338,7 @@ async function registrarFalloAnclaje(
     if (!cit) return 'ERROR'
     const estadoFinal = cit.bfa_intentos >= MAX_INTENTOS_ANCLAJE ? 'ERROR' : 'PENDIENTE'
     await client.query(
-      `UPDATE cits SET bfa_estado = $2, bfa_ultimo_error = $3, actualizado_en = NOW() WHERE id = $1`,
+      `UPDATE cits SET bfa_estado = $2, bfa_ultimo_error = $3, updated_at = NOW() WHERE id = $1`,
       [citId, estadoFinal, motivo.slice(0, 500)]
     )
     return estadoFinal
@@ -406,7 +406,7 @@ export async function anclarPendientes(limite = 25): Promise<{
       WHERE c.estado = 'activo'
         AND c.hash_sha256 IS NOT NULL
         AND c.bfa_estado IN ('NO_INICIADA', 'PENDIENTE')
-      ORDER BY c.actualizado_en ASC
+      ORDER BY c.updated_at ASC
       LIMIT $1
     `,
     [limite]

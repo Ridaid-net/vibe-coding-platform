@@ -489,7 +489,7 @@ export async function procesarRecupero(
         UPDATE cits
         SET estado = 'activo',
             metadata_json = metadata_json || $2::jsonb,
-            actualizado_en = NOW()
+            updated_at = NOW()
         WHERE bicicleta_id = $3 AND estado = 'bloqueado'
         RETURNING id
       `,

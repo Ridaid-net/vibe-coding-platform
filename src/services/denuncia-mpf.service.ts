@@ -947,7 +947,7 @@ async function aplicarBloqueo(
         UPDATE cits
         SET estado = 'bloqueado',
             metadata_json = metadata_json || $2::jsonb,
-            actualizado_en = NOW()
+            updated_at = NOW()
         WHERE bicicleta_id = $1 AND estado IN ('activo', 'pendiente')
       `,
       [
