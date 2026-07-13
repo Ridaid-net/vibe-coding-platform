@@ -16,11 +16,13 @@ import {
   Loader2,
   Lock,
   LogOut,
+  Package,
   RefreshCw,
   ScrollText,
   Server,
   ShieldCheck,
   Store,
+  Truck,
   Unlock,
   UserCog,
   Users,
@@ -45,6 +47,7 @@ import {
   obtenerIntegridad,
   obtenerMapaInstitucional,
   obtenerPublicaciones,
+  obtenerRemitosAdmin,
   puede,
   revelarDatos,
   rolActual,
@@ -60,6 +63,8 @@ import {
   type IntegridadSistema,
   type MapaInstitucional,
   type PublicacionDisputa,
+  type RemitoAdminItem,
+  type RemitosAdminResumen,
   type SaludEstado,
   type TallerOpcion,
 } from '@/lib/admin-panel-client'
@@ -700,6 +705,31 @@ function ModeracionPublicaciones() {
 // ── TAB 3: Analítica ───────────────────────────────────────────────────────────
 
 function TabAnalitica() {
+  const [sub, setSub] = useState<'ecosistema' | 'remitos'>('ecosistema')
+  return (
+    <>
+      <div className="mb-5 flex gap-2">
+        {[
+          { id: 'ecosistema' as const, label: 'Ecosistema' },
+          { id: 'remitos' as const, label: 'Remitos' },
+        ].map((s) => (
+          <button
+            key={s.id}
+            onClick={() => setSub(s.id)}
+            className={`rounded-full px-4 py-1.5 text-sm font-semibold transition-colors ${
+              sub === s.id ? 'bg-lime text-ink' : 'border border-ink/15 bg-white text-ink hover:border-ink/40'
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {sub === 'ecosistema' ? <AnaliticaEcosistemaPanel /> : <RemitosAdminPanel />}
+    </>
+  )
+}
+
+function AnaliticaEcosistemaPanel() {
   const { data, error, recargar } = useCarga<AnaliticaEcosistema>(obtenerAnalitica)
   return (
     <>
@@ -802,6 +832,164 @@ function MapaInstitucionalPanel() {
         </>
       )}
     </div>
+  )
+}
+
+// ── Sub-tab de Analítica: Remitos de Embalaje y Despacho (Fase 6b) ─────────────
+
+function RemitosAdminPanel() {
+  const [estado, setEstado] = useState<'GENERADO' | 'DESPACHADO' | undefined>(undefined)
+  const [aliadoId, setAliadoId] = useState('')
+  const [dias, setDias] = useState(30)
+  const { data, error, recargar } = useCarga<RemitosAdminResumen>(
+    () => obtenerRemitosAdmin({ estado, aliadoId: aliadoId || null, dias }),
+    [estado, aliadoId, dias]
+  )
+
+  return (
+    <>
+      <CabeceraSeccion
+        titulo="Remitos de Embalaje y Despacho"
+        desc="Panorama consolidado de las órdenes de embalaje de CIT Completo en todo el sistema."
+        onRefresh={recargar}
+      />
+      {error ? (
+        <ErrorBox msg={error} />
+      ) : !data ? (
+        <Cargando />
+      ) : (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Metric
+              titulo="Generados"
+              valor={fmtNum(data.resumen.totalGenerados)}
+              sub={`Últimos ${data.dias} días`}
+              icon={Package}
+            />
+            <Metric
+              titulo="Despachados"
+              valor={fmtNum(data.resumen.totalDespachados)}
+              sub="Confirmados por el taller"
+              icon={Truck}
+            />
+            <Metric
+              titulo="Pendientes"
+              valor={fmtNum(data.resumen.totalPendientes)}
+              sub="Sin despachar todavía"
+              icon={Clock}
+            />
+            <Metric
+              titulo="Tiempo promedio de despacho"
+              valor={
+                data.resumen.tiempoPromedioDespachoHoras != null
+                  ? `${data.resumen.tiempoPromedioDespachoHoras.toFixed(1)} h`
+                  : '—'
+              }
+              sub="Desde generado hasta despachado"
+              icon={Gauge}
+            />
+          </div>
+
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            {[
+              { id: undefined, label: 'Todos' },
+              { id: 'GENERADO' as const, label: 'Pendientes' },
+              { id: 'DESPACHADO' as const, label: 'Despachados' },
+            ].map((op) => (
+              <button
+                key={op.label}
+                onClick={() => setEstado(op.id)}
+                className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                  estado === op.id
+                    ? 'bg-ink text-paper'
+                    : 'border border-ink/15 bg-white text-ink hover:border-ink/40'
+                }`}
+              >
+                {op.label}
+              </button>
+            ))}
+            <select
+              value={aliadoId}
+              onChange={(e) => setAliadoId(e.target.value)}
+              className="rounded-full border border-ink/15 bg-white px-3 py-1.5 text-xs font-semibold text-ink"
+            >
+              <option value="">Todos los talleres</option>
+              {data.talleres.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.nombre}
+                </option>
+              ))}
+            </select>
+            <div className="ml-auto flex gap-1.5">
+              {[7, 30, 90].map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setDias(d)}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                    dias === d
+                      ? 'bg-ink text-paper'
+                      : 'border border-ink/15 bg-white text-ink hover:border-ink/40'
+                  }`}
+                >
+                  {d}d
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {data.remitos.length === 0 ? (
+            <div className="mt-6">
+              <Vacio icon={Package} texto="No hay remitos en este rango." />
+            </div>
+          ) : (
+            <ul className="mt-5 space-y-3">
+              {data.remitos.map((r) => (
+                <RemitoAdminCard key={r.id} remito={r} />
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </>
+  )
+}
+
+function RemitoAdminCard({ remito }: { remito: RemitoAdminItem }) {
+  const demorado = remito.estado === 'GENERADO' && (remito.horasEnEspera ?? 0) > 24
+  return (
+    <li
+      className={`rounded-2xl border p-4 ${
+        demorado ? 'border-amber-300 bg-amber-50' : 'border-ink/12 bg-white'
+      }`}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-display font-semibold text-ink">
+            {remito.bici.marca} {remito.bici.modelo} <EstadoPill estado={remito.estado} />
+          </p>
+          <p className="mt-1 text-xs text-slate-warm">
+            N° {remito.bici.numeroSerie} · {remito.codigoCit} · {remito.numero}
+          </p>
+          <p className="mt-1 text-xs text-slate-warm">
+            Taller: {remito.tallerNombre} · Vendedor: {remito.vendedorNombre}
+          </p>
+          <p className="mt-2 text-xs text-slate-warm">
+            Generado: {fmtFecha(remito.generadoEn)}
+            {remito.despachadoEn && ` · Despachado: ${fmtFecha(remito.despachadoEn)}`}
+          </p>
+        </div>
+        {remito.estado === 'GENERADO' && remito.horasEnEspera != null && (
+          <span
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+              demorado ? 'bg-amber-200/70 text-amber-800' : 'bg-paper-dim text-slate-warm'
+            }`}
+          >
+            {demorado && <AlertTriangle className="size-3" />}
+            en espera hace {Math.round(remito.horasEnEspera)}h
+          </span>
+        )}
+      </div>
+    </li>
   )
 }
 
@@ -1179,6 +1367,8 @@ function EstadoPill({ estado }: { estado: string }) {
     EN_REVISION: 'bg-amber-100 text-amber-700',
     DENUNCIA_JUDICIAL_ACTIVA: 'bg-clay/15 text-clay',
     ANULADA: 'bg-paper-dim text-slate-warm',
+    GENERADO: 'bg-amber-100 text-amber-700',
+    DESPACHADO: 'bg-[#0a7d5a]/12 text-[#0a7d5a]',
   }
   return (
     <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${map[estado] ?? 'bg-paper-dim text-slate-warm'}`}>
