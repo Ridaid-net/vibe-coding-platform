@@ -30,6 +30,7 @@ export type EstadoActivo =
   | 'pendiente' // en el pipeline de 72hs (PENDIENTE / EN_PROCESO)
   | 'rechazado' // CIT rechazado
   | 'vencido' // CIT activo pero vencido (debe renovarse)
+  | 'pago_pendiente' // solicito CIT Express, esperando confirmacion de pago (MercadoPago)
   | 'sin_verificar' // sin CIT todavia
 
 export interface AnclajeBfa {
@@ -96,6 +97,9 @@ export interface ActivoGaraje {
 
   tienePublicacionActiva: boolean
   publicacionSlug: string | null
+
+  /** Presente solo si estado === 'pago_pendiente' (solicitud de CIT Express sin confirmar). */
+  solicitudPago: { montoARS: number; initPoint: string } | null
 }
 
 interface ActivoRow {
@@ -128,6 +132,8 @@ interface ActivoRow {
   tiene_publicacion_activa: boolean
   publicacion_slug: string | null
   cit_metadata: Record<string, unknown> | null
+  solicitud_pago_monto: string | null
+  solicitud_pago_init_point: string | null
 }
 
 interface ActaRow {
@@ -160,7 +166,11 @@ function esCitCompleto(metadata: Record<string, unknown> | null): boolean {
 }
 
 function derivarEstado(row: ActivoRow): EstadoActivo {
-  if (!row.cit_id || !row.cit_estado) return 'sin_verificar'
+  if (!row.cit_id || !row.cit_estado) {
+    // Sin CIT todavia: si hay una solicitud de pago vigente sin confirmar,
+    // no es "sin verificar" a secas -- el ciclista ya inicio el tramite.
+    return row.solicitud_pago_init_point ? 'pago_pendiente' : 'sin_verificar'
+  }
   if (row.cit_estado === 'bloqueado') return 'bloqueado'
   if (row.cit_estado === 'rechazado') return 'rechazado'
   if (row.cit_activo) return 'verificado'
@@ -213,7 +223,9 @@ export async function obtenerActivosUsuario(
           SELECT 1 FROM marketplace_publicaciones mp
           WHERE mp.bicicleta_id = b.id AND mp.estado IN ('ACTIVA', 'PAUSADA')
         ) AS tiene_publicacion_activa,
-        pub.slug AS publicacion_slug
+        pub.slug AS publicacion_slug,
+        solicitud.monto_ars AS solicitud_pago_monto,
+        solicitud.fee_init_point AS solicitud_pago_init_point
       FROM bicicletas b
       LEFT JOIN LATERAL (
         SELECT *
@@ -243,6 +255,15 @@ export async function obtenerActivosUsuario(
         ORDER BY mp.publicado_en DESC
         LIMIT 1
       ) pub ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT monto_ars, fee_init_point
+        FROM solicitudes_cit_express sce
+        WHERE sce.bicicleta_id = b.id
+          AND sce.estado = 'pago_pendiente'
+          AND sce.created_at > NOW() - INTERVAL '48 hours'
+        ORDER BY sce.created_at DESC
+        LIMIT 1
+      ) solicitud ON TRUE
       WHERE b.propietario_id = $1
       ORDER BY b.created_at DESC
     `,
@@ -288,6 +309,12 @@ export async function obtenerActivosUsuario(
     actas: [],
     tienePublicacionActiva: row.tiene_publicacion_activa,
     publicacionSlug: row.publicacion_slug,
+    solicitudPago: row.solicitud_pago_init_point
+      ? {
+          montoARS: Number(row.solicitud_pago_monto),
+          initPoint: row.solicitud_pago_init_point,
+        }
+      : null,
   }))
 
   if (activos.length === 0) return activos

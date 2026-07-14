@@ -45,27 +45,25 @@ export function SolicitarVerificacionModal({
       }
       const data = (await res.json()) as {
         estado: string
-        pendienteRevision?: boolean
+        initPoint?: string
+        montoARS?: number
+        reanudada?: boolean
       }
-      if (data.estado === 'activo') {
-        esRenovacion
-          ? toast.success('¡CIT Renovado exitosamente!', {
-              description: `${etiquetaBici(bici)} tiene su CIT renovado por 12 meses más. Revisá tu email para el certificado actualizado.`,
-            })
-          : toast.success('¡Identidad verificada!', {
-              description: `${etiquetaBici(bici)} ya tiene su CIT activo. Podés publicarla.`,
-            })
-      } else {
-        esRenovacion
-          ? toast.info('Solicitud de renovación enviada', {
-              description: 'Tu bicicleta quedó en revisión para renovación del CIT. Un taller aliado realizará la inspección y recibirás un email cuando esté listo.',
-            })
-          : toast.info('Solicitud enviada', {
-              description: 'Tu bicicleta quedó en revisión. Te avisamos cuando el CIT esté activo.',
-            })
+      if (data.estado === 'pago_pendiente' && data.initPoint) {
+        toast.info(
+          data.reanudada ? 'Continuando tu pago pendiente' : 'Redirigiendo al pago',
+          {
+            description: `Te llevamos a MercadoPago para pagar el CIT Express de ${etiquetaBici(bici)}. El CIT se activa apenas confirmemos el pago.`,
+          }
+        )
+        onOpenChange(false)
+        window.location.href = data.initPoint
+        return
       }
-      onOpenChange(false)
-      onVerificada()
+      // Respuesta inesperada (sin initPoint): no hay a donde redirigir.
+      toast.error(esRenovacion ? 'No pudimos renovar el CIT' : 'No pudimos verificar tu bicicleta', {
+        description: 'No recibimos el link de pago. Probá de nuevo en unos segundos.',
+      })
     } catch {
       toast.error(esRenovacion ? 'No pudimos renovar el CIT' : 'No pudimos verificar tu bicicleta', {
         description: 'Revisá tu conexión e intentá nuevamente.',
@@ -95,7 +93,7 @@ export function SolicitarVerificacionModal({
                 <div>
                   <p className="text-sm font-semibold text-amber-800">CIT Vencido</p>
                   <p className="text-xs text-amber-700 mt-1 leading-relaxed">
-                    Tu Certificado de Identidad Técnica venció. Para renovarlo, un taller aliado RODAID realizará una nueva inspección de 20 puntos. El costo es de <strong>$18.000 ARS</strong>.
+                    Tu Certificado de Identidad Técnica venció. Pagás el CIT Express y, apenas confirmemos el pago, arranca automáticamente la validación de tu identidad.
                   </p>
                 </div>
               </div>
@@ -105,9 +103,9 @@ export function SolicitarVerificacionModal({
               <div className="flex items-start gap-3">
                 <Fingerprint className="size-5 text-[#2BBCB8] shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-semibold text-[#0F1E35]">Solicitar CIT</p>
+                  <p className="text-sm font-semibold text-[#0F1E35]">Solicitar CIT Express</p>
                   <p className="text-xs text-slate-warm mt-1 leading-relaxed">
-                    Un taller aliado RODAID inspeccionará tu bicicleta en 20 puntos y emitirá el Certificado de Identidad Técnica. Válido por 12 meses.
+                    Verificación automática de identidad (sin inspección presencial), válida por 12 meses. Pagás ahora y, apenas se confirme el pago, arranca la validación.
                   </p>
                 </div>
               </div>
@@ -115,10 +113,10 @@ export function SolicitarVerificacionModal({
           )}
 
           <div className="rounded-xl bg-slate-50 p-3 space-y-1.5 text-xs text-slate-warm">
-            <p className="flex items-center gap-1.5"><ShieldCheck className="size-3 text-[#2BBCB8]" /> Inspección de 20 puntos por taller aliado certificado</p>
+            <p className="flex items-center gap-1.5"><ShieldCheck className="size-3 text-[#2BBCB8]" /> Verificación automática (sin inspección de un taller)</p>
             <p className="flex items-center gap-1.5"><ShieldCheck className="size-3 text-[#2BBCB8]" /> Hash SHA-256 anclado en Blockchain Federal Argentina</p>
-            <p className="flex items-center gap-1.5"><ShieldCheck className="size-3 text-[#2BBCB8]" /> Vigencia 12 meses · Costo $18.000 ARS</p>
-            <p className="flex items-center gap-1.5"><ShieldCheck className="size-3 text-[#2BBCB8]" /> Email de confirmación al completarse</p>
+            <p className="flex items-center gap-1.5"><ShieldCheck className="size-3 text-[#2BBCB8]" /> Vigencia 12 meses</p>
+            <p className="flex items-center gap-1.5"><ShieldCheck className="size-3 text-[#2BBCB8]" /> Vas a ver el monto exacto en el checkout de MercadoPago</p>
           </div>
 
           <button
@@ -134,10 +132,10 @@ export function SolicitarVerificacionModal({
               <Fingerprint className="size-4" />
             )}
             {enviando
-              ? 'Enviando solicitud...'
+              ? 'Redirigiendo a MercadoPago...'
               : esRenovacion
-                ? 'Solicitar renovación del CIT'
-                : 'Solicitar verificación CIT'}
+                ? 'Ir a pagar la renovación'
+                : 'Ir a pagar el CIT Express'}
           </button>
         </div>
       </DialogContent>

@@ -20,9 +20,12 @@ export async function GET(req: Request) {
     return NextResponse.json(
       {
         activos,
-        // Atajo: si hay algun activo todavia en el pipeline, el cliente sabe que
-        // debe seguir refrescando (polling).
-        hayPendientes: activos.some((a) => a.estado === 'pendiente'),
+        // Atajo: si hay algun activo todavia en el pipeline (o esperando que el
+        // webhook de MercadoPago confirme el pago del CIT Express), el cliente
+        // sabe que debe seguir refrescando (polling).
+        hayPendientes: activos.some(
+          (a) => a.estado === 'pendiente' || a.estado === 'pago_pendiente'
+        ),
       },
       { headers: { 'cache-control': 'no-store' } }
     )
