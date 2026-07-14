@@ -396,6 +396,62 @@ Encontrado investigando por qué la Raleigh Mojave 5.0 de Federico apareció "Ve
 
 **Confirmado explícitamente: el CIT Express se emite y se "renueva" hoy 100% gratis, sin excepción.** El precio de $5.100 ARS documentado como "vigente" en este mismo archivo (sección de precios del CIT Transferencia/Express) es un precio de lista real, correctamente usado como referencia en la tarifa de denuncias, pero **no está conectado a ningún cobro en el flujo de emisión**. Esto es una decisión de negocio pendiente, no un bug de código a corregir sin más — retomar cuando Federico decida si/cómo conectar el cobro real (vía MercadoPago, mismo patrón que ya usan `escrow.service.ts`/`pricing-cit.service.ts` para CIT Completo).
 
+**Actualización 2026-07-13 (misma fecha, sesión posterior): cobro conectado.** Ver la sección "FIXED 2026-07-13: cobro real del CIT Express conectado" más abajo.
+
+### FIXED 2026-07-13: cobro real del CIT Express conectado (tabla `solicitudes_cit_express` + webhook dedicado)
+
+Regla de negocio confirmada por Federico: el pago se cobra ANTES de iniciar el trámite — si no paga, no debe existir ni siquiera una fila en `cits` todavía. Mismo patrón reusado de `denuncia-mpf.service.ts` (su tarifa de denuncia paga), no el de CIT Completo (que es un escrow de dos partes, no aplica acá): crear el "trámite" en un estado `pago_pendiente`, cobrar via `crearPreferencia()`, y recién activar la acción real cuando el webhook confirme el pago contra la API real de MercadoPago (`consultarPago()`, nunca el payload del webhook solo).
+
+**Piezas nuevas:**
+- `netlify/database/migrations/20260713000001_create_solicitudes_cit_express.sql` — tabla nueva `solicitudes_cit_express` + enum nuevo `solicitud_cit_express_estado` (`pago_pendiente`/`pagada`/`rechazada`/`vencida`), creados juntos en la misma migración (sin el problema de `ALTER TYPE ... ADD VALUE`). Deliberadamente NO se extendió `cits` ni su enum: mientras el pago está pendiente no debe existir ninguna fila en `cits` — nada que pausar, nada que limpiar si el pago nunca llega. Índice único parcial (`WHERE estado = 'pago_pendiente'`) evita dos solicitudes cobrables en simultáneo para la misma bici.
+- `src/services/cit-express-pago.service.ts` (nuevo) — `solicitarCitExpressConPago()` (crea o reanuda la solicitud + preferencia de MercadoPago, nunca toca `cits`) y `webhookPagoCitExpress()` (re-consulta el pago real; solo si `approved`, crea el CIT en `'pendiente'` y lo encola en `validation.service.ts::encolarValidacion()` — exactamente lo que antes hacía `POST /verificar` de forma inmediata y gratuita). Preserva el atajo de modo DEMO (procesar el job al instante fuera de LIVE).
+- `app/api/v1/cit-express/webhook/mp/route.ts` (nuevo) — calco exacto de `app/api/v1/denuncias/webhook/mp/route.ts`: captura raw body, valida firma X-Signature, responde 200 en <500ms, procesa en background con `after()`.
+
+**Nombre del servicio, a propósito distinto del ya existente `cit-express.service.ts`** (ver hallazgo separado abajo) — para no pisar ese módulo, que es una cosa completamente distinta.
+
+**Piezas modificadas:**
+- `app/api/v1/bicicletas/[id]/verificar/route.ts` — antes creaba el CIT y arrancaba el pipeline directo; ahora solo llama a `solicitarCitExpressConPago()` y devuelve `{ estado: 'pago_pendiente', initPoint, montoARS, reanudada }`.
+- `src/services/garaje.service.ts` — nuevo estado `EstadoActivo = 'pago_pendiente'`, con un `LEFT JOIN LATERAL` contra `solicitudes_cit_express` (solo filas `pago_pendiente` vigentes, dentro de las 48hs) y un campo nuevo `ActivoGaraje.solicitudPago: { montoARS, initPoint } | null`.
+- `app/api/usuario/bicicletas/route.ts` — `hayPendientes` (el flag de polling) ahora también es `true` mientras hay una `pago_pendiente`, para que el Garaje se refresque solo apenas el webhook confirme.
+- `lib/garaje-digital.ts` + `components/rodaid/garaje-digital.tsx` — mismo estado/campo espejados en el cliente, badge "Pago pendiente" y botón "Continuar pago (monto)" que reabre `solicitudPago.initPoint` directo (sin volver a pegarle al endpoint).
+- `components/rodaid/solicitar-verificacion-modal.tsx` — ya no muestra "¡Identidad verificada!" al toque (eso ahora depende del webhook); redirige (`window.location.href`) al checkout de MercadoPago. Se sacaron las menciones a "$18.000 ARS" e "inspección de 20 puntos por taller aliado" que eran copiadas de CIT Completo y no aplican a este flujo — el monto real ahora se ve en el checkout de MercadoPago, no hardcodeado en el modal.
+
+### Hallazgo aparte, encontrado al construir lo de arriba: `src/services/cit-express.service.ts` (`clasificarNivelCIT()`, Fase 2) no tiene ningún llamador real
+
+Al crear el servicio de cobro, se descubrió que ya existía un archivo `cit-express.service.ts` — pero es un módulo completamente distinto, no relacionado con el pago: `clasificarNivelCIT()` (mock/determinístico via `seguridad.mock.ts::ejecutarCrossReference`) decide si una bici entra a CIT Express en nivel **AMARILLO** (serie legible + cross-reference limpio contra la base de robadas del Ministerio → autoregistro con declaración jurada) o **ROJO** (serie adulterada/ilegible, o con denuncia activa, o el cross-reference no se pudo verificar — bloquea el autoregistro, exige turno en Taller Aliado). El nivel VERDE (factura de compra digital, sin declaración jurada) está deshabilitado a propósito desde 2026-07-08 por falta de un validador real de facturas (documentado en el propio archivo).
+
+**Confirmado con un grep exhaustivo de `clasificarNivelCIT` en todo el repo: cero llamadores reales.** Las únicas coincidencias son el propio archivo y comentarios que lo mencionan conceptualmente en otros dos archivos (`lib/auth.ts`, `denuncia-tercero.service.ts`) — ninguno lo invoca. `app/api/v1/bicicletas/[id]/verificar/route.ts` (el único punto de entrada real de CIT Express, antes y después del cobro que se conectó hoy) nunca lo llamó. Mismo patrón exacto que el resto de los hallazgos de hoy: una pieza diseñada con cuidado (incluye hasta un comentario `TODO(Ministerio real)` sobre qué hacer cuando el cross-reference deje de ser mock) que nunca se conectó al flujo real.
+
+**Candidato natural para conectar: el mismo lugar donde se armó el cobro hoy.** Conceptualmente la secuencia completa sería *pagás → se clasifica el riesgo (AMARILLO/ROJO) → arranca el pipeline* — es decir, `cit-express-pago.service.ts::webhookPagoCitExpress()` (el punto donde, tras confirmarse el pago, se crea el CIT y se llama a `encolarValidacion()`) es el lugar más natural para invocar `clasificarNivelCIT()` antes o junto con la creación del CIT, en vez de dejar que el pipeline de 72hs sea la única puerta de clasificación de riesgo. No se tocó en esta pasada — queda para una sesión dedicada, ya que integrar la clasificación implica decidir qué pasa con un ROJO (¿se bloquea el pago ya cobrado? ¿se reembolsa? ¿deriva a turno en Taller Aliado como dice el diseño original?) — decisiones de negocio que no estaban en el alcance de conectar el cobro.
+
+### CRÍTICO, sin resolver 2026-07-13: el pago a vendedores y Talleres Aliados de CIT Completo (Fee de Verificación, Fee de Logística, Fee de Éxito, y el monto del vendedor) es hoy un stub — se registra la deuda, nunca se transfiere el dinero real
+
+Encontrado en la misma auditoría que confirmó el hallazgo de arriba (CIT Express sin cobro conectado) — Federico pidió explícitamente no asumir que el lado de CIT Completo estaba bien solo porque el diseño se pensó con cuidado, y auditarlo con el mismo rigor. Se rastreó la cadena completa de dinero (reserva → seña → verificación → saldo → remito → despacho → confirmación de recepción), no solo el diseño.
+
+**El lado de COBRO (comprador → RODAID) está confirmado sano, con evidencia real:**
+- `iniciarReservaCitCompleto()` y `confirmarPagoCitCompleto()` (`escrow.service.ts`) llaman a `crearPreferencia()` real (MercadoPago Checkout Pro) para la seña y el saldo respectivamente.
+- `webhookPago()` (`escrow.service.ts:650-847`) re-consulta `consultarPago()` contra la API real de MercadoPago antes de mover cualquier estado — nunca confía en el payload del webhook solo.
+- `procesarReservasVencidas()` reconcilia contra MercadoPago (`buscarPagosPorExternalReference`) antes de revertir una reserva, para no cancelar un pago que en realidad se acreditó.
+
+**El lado de PAGO (RODAID → vendedor / Taller Aliado) es, en su totalidad, un stub que nunca mueve dinero real.** Las cuatro funciones de liquidación documentadas en sesiones anteriores —`registrarLiquidacionVendedor()` (llamada desde `liberarFondos()`, disparada por `confirmarEntrega()`/`confirmarEntregaCitCompleto()`/`resolverDisputa()`/`procesarAutoReleases()`), `registrarLiquidacionAliadoFeeVerificacion()` (desde `aprobarInspeccionFisica()`, `inspeccion.service.ts`), `registrarLiquidacionAliadoFeeLogistica()` (desde `confirmarDespachoRemito()`, `remito.service.ts`) y `registrarLiquidacionAliadoFeeExito()` (desde `confirmarEntregaCitCompleto()`, `escrow.service.ts:1376`)— hacen, las cuatro, exactamente lo mismo: `INSERT INTO pagos_liquidaciones (..., estado, ...) VALUES (..., 'PENDIENTE', ...)` (`compensaciones.service.ts`). Registran correctamente el monto y el beneficiario. Ninguna transfiere nada.
+
+La transferencia real vive en un único punto, `compensaciones.service.ts:442-447`:
+```ts
+async function ejecutarTransferencia(liq: LiquidacionRow): Promise<string> {
+  // Punto de integracion del payout real. Hoy registra la transferencia como
+  // agendada (la conciliacion la hace finanzas contra este libro). Una integracion
+  // futura podria lanzar aqui ante un fallo del proveedor para forzar la disputa.
+  return `payout-${liq.tipo.toLowerCase()}-${liq.id}`
+}
+```
+Esta función no llama a MercadoPago ni a ningún banco — devuelve un string fabricado, y `procesarLiquidacionesPendientes()` marca la liquidación como `'PAGADA'` con esa referencia falsa. Un grep exhaustivo del repo por cualquier llamada real de payout (`money_request`, `transferencia_bancaria`, `bank_transfer`, `payout`, `collector_id`, `marketplace_fee`) no encontró nada fuera de este mismo comentario, que ya admite el hueco.
+
+**Ni siquiera ese stub se ejecuta automáticamente hoy:** `procesarLiquidacionesPendientes()` solo se invoca desde `POST /api/v1/admin/pagos/liquidar` (`requireStaff`) — confirmado que no hay ningún cron en `netlify/functions/` ni ningún botón en el panel admin (grepeado `pagos-dashboard.tsx` y componentes relacionados: cero resultados) que lo llame. En la práctica, las liquidaciones se acumulan correctamente como `PENDIENTE` — el libro contable (`pagos_liquidaciones`/`resumenFinanciero()`) es honesto y refleja la deuda real, no falsea nada por sí solo. El riesgo concreto es que si alguna vez se invoca ese endpoint pensando que "liquida" de verdad (el nombre invita a pensarlo), **marca todo como pagado sin haber pagado nada**.
+
+**Distinción importante respecto al hallazgo de CIT Express (arriba): esto NO es un descuido silencioso.** El propio código ya declara el hueco por escrito, con una nota explícita de qué haría falta para cerrarlo. El diseño de fondo es correcto y deliberado (el dinero nunca se toca de forma síncrona; toda liquidación nace como deuda, la transferencia se resuelve aparte) — es una pieza de la arquitectura que se pensó a propósito y conscientemente se dejó para una integración posterior, que nunca se retomó. El efecto práctico es el mismo que el del Express: hoy, ningún vendedor ni ningún Taller Aliado cobra un peso real de forma automática por ninguna venta de CIT Completo — todo queda como deuda pendiente de pago manual/fuera del sistema.
+
+**Prioridad: alta, pero deliberadamente no tocado en esta sesión** — Federico pidió dejarlo documentado para una sesión dedicada aparte (integrar un payout real de MercadoPago, o definir el mecanismo de transferencia bancaria manual/reconciliación, es un cambio de alcance mayor que excede el diagnóstico de esta sesión).
+
 ### FIXED 2026-07-13: badge "Vencido" y botón "Renovar CIT" aparecían para cualquier CIT real recién aprobado (Express o Completo)
 
 Reportado por Federico: la Raleigh Mojave 5.0 apareció "CIT Vencido" en el Garaje Digital minutos después de aprobarse su inspección física de 20 puntos (certificado PDF real descargado, confirmando que el CIT sí estaba activo).

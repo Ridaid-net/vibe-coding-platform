@@ -367,6 +367,22 @@ function ActivoCard({
           </button>
         )}
 
+        {activo.estado === 'pago_pendiente' && activo.solicitudPago && (
+          <a
+            href={activo.solicitudPago.initPoint}
+            className="inline-flex items-center gap-1.5 rounded-full bg-lime px-3.5 py-2 text-xs font-semibold text-ink transition-colors hover:bg-lime-deep"
+          >
+            <Clock className="size-3.5" />
+            Continuar pago (
+            {activo.solicitudPago.montoARS.toLocaleString('es-AR', {
+              style: 'currency',
+              currency: 'ARS',
+              maximumFractionDigits: 0,
+            })}
+            )
+          </a>
+        )}
+
         {/* Verificar Estado (Hito 7) — verificador público por serial */}
         {activo.estado !== 'sin_verificar' && (
           <Link

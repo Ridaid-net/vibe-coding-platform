@@ -17,6 +17,7 @@ export type EstadoActivo =
   | 'pendiente'
   | 'rechazado'
   | 'vencido'
+  | 'pago_pendiente'
   | 'sin_verificar'
 
 export interface AnclajeBfa {
@@ -70,6 +71,8 @@ export interface ActivoGaraje {
   actas: ActaFirmada[]
   tienePublicacionActiva: boolean
   publicacionSlug: string | null
+  /** Presente solo si estado === 'pago_pendiente' (solicitud de CIT Express sin confirmar). */
+  solicitudPago: { montoARS: number; initPoint: string } | null
 }
 
 export interface ActivosResponse {
@@ -233,6 +236,12 @@ export const ESTADO_VISUAL: Record<EstadoActivo, EstadoVisual> = {
     badge: 'bg-clay/15 text-clay',
     acento: 'border-clay/40',
     tono: 'rojo',
+  },
+  pago_pendiente: {
+    label: 'Pago pendiente',
+    badge: 'bg-amber-100 text-amber-700',
+    acento: 'border-amber-300/70',
+    tono: 'amarillo',
   },
   sin_verificar: {
     label: 'Sin verificar',
