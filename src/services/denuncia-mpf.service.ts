@@ -1006,6 +1006,10 @@ export async function webhookPagoDenuncia(
   const pago = await consultarPago(input.paymentId)
   const denunciaId = pago.externalReference ?? input.externalReferenceHint ?? null
   if (!denunciaId) {
+    console.error(
+      '[denuncia-mpf][webhook] no se pudo resolver la denuncia del pago (external_reference ausente)',
+      { paymentId: input.paymentId, status: pago.status }
+    )
     return { accion: 'IGNORADO', denunciaId: null }
   }
 

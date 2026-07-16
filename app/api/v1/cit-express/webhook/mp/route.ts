@@ -34,18 +34,39 @@ export async function POST(req: Request) {
   }
 
   const paymentId = extractPaymentId(rawBody, url)
+  const externalReferenceHint = extractExternalReferenceHint(rawBody, url)
 
   if (paymentId) {
     after(async () => {
       try {
-        await webhookPagoCitExpress({ paymentId })
+        await webhookPagoCitExpress({ paymentId, externalReferenceHint })
       } catch (error) {
-        console.error('[cit-express][webhook] fallo el procesamiento en background', error)
+        console.error('[cit-express][webhook] fallo el procesamiento en background', { paymentId }, error)
       }
     })
   }
 
   return NextResponse.json({ received: true }, { status: 200 })
+}
+
+/**
+ * Pista de external_reference disponible directamente en el request del
+ * webhook (querystring o el propio body), sin depender de re-consultar el
+ * pago a MercadoPago. Mismo mecanismo en las tres rutas de webhook
+ * (escrow/cit-express/denuncia) para que las tres sean consistentes.
+ */
+function extractExternalReferenceHint(rawBody: string, url: URL): string | null {
+  const deQuery = url.searchParams.get('external_reference')
+  if (deQuery) return deQuery
+  try {
+    const parsed = JSON.parse(rawBody) as {
+      external_reference?: string
+      data?: { external_reference?: string }
+    }
+    return parsed.external_reference ?? parsed.data?.external_reference ?? null
+  } catch {
+    return null
+  }
 }
 
 /** Extrae el id del pago del payload IPN (body o querystring). */

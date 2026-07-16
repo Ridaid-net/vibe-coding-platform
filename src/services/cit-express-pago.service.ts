@@ -215,6 +215,10 @@ export async function webhookPagoCitExpress(input: {
   const pago = await consultarPago(input.paymentId)
   const solicitudId = pago.externalReference ?? input.externalReferenceHint ?? null
   if (!solicitudId) {
+    console.error(
+      '[cit-express][webhook] no se pudo resolver la solicitud del pago (external_reference ausente)',
+      { paymentId: input.paymentId, status: pago.status }
+    )
     return { accion: 'IGNORADO', solicitudId: null }
   }
 
@@ -225,6 +229,10 @@ export async function webhookPagoCitExpress(input: {
   )
   const solicitud = res.rows[0]
   if (!solicitud) {
+    console.error(
+      '[cit-express][webhook] el pago resuelve a una solicitud que no existe',
+      { paymentId: input.paymentId, solicitudId, status: pago.status }
+    )
     return { accion: 'IGNORADO', solicitudId: null }
   }
 
