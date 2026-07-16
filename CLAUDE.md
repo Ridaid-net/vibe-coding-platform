@@ -270,6 +270,8 @@ Cerrado el hallazgo CRÍTICO documentado más arriba (2026-07-13): `ejecutarTran
 
 **Deliberadamente fuera de esta pasada:** la transferencia por lote bancario (un archivo/API real de pagos masivos contra la cuenta empresa de RODAID, cuando exista una) queda como evolución futura — no urgente mientras el volumen de liquidaciones sea manejable a mano. `GET /api/v1/admin/pagos/liquidaciones` (la Cola de Pagos) es admin-only a propósito, no expuesto a `aliado` — es una operación interna de finanzas, no algo que un Taller deba ver sobre otros beneficiarios.
 
+**Known gap, preexistente, revisado y dejado tal cual a propósito:** una liquidación que queda `FALLIDA` no tiene ningún camino automático de vuelta a la Cola de Pagos — `procesarLiquidacionesPendientes()` solo barre `estado = 'PENDIENTE'`, nunca `FALLIDA` (mismo comportamiento que ya tenía el diseño anterior, no algo que cambió este PR). `resumenFinanciero()` la sigue contando como deuda viva, pero nada la reintenta automáticamente — hoy solo se destraba con un `UPDATE` manual en la base (`estado = 'PENDIENTE'` de nuevo, para que el próximo barrido la recoja). Cuando se construya un flujo real de reintentos, ahí se revisa; documentado ahora para que no sea sorpresa el día que aparezca una liquidación `FALLIDA` real.
+
 ### Auth / admin RBAC
 
 There is no root `middleware.ts`. Admin route protection is enforced at the edge by `netlify/edge-functions/auth-admin.ts`, bound in `netlify.toml` via `[[edge_functions]]` to `path = "/api/v1/admin/*"` — it runs before any redirect or the origin function (defense in depth), in addition to in-route `requireUser`/`requireRole` checks.
