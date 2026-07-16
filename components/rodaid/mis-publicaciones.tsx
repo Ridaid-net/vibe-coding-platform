@@ -228,6 +228,13 @@ function PublicacionItem({ pub }: { pub: MiPublicacion }) {
             {pub.transaccion?.aliadoId && pub.transaccion.estado === 'FONDOS_RETENIDOS' && (
               <RemitoAccion transaccion={pub.transaccion} />
             )}
+            {(pub.transaccion?.estado === 'RESERVA_VENCIDA' ||
+              pub.transaccion?.estado === 'CANCELADA') && (
+              <p className="mt-1.5 text-[11px] leading-relaxed text-slate-warm">
+                Tu bici y su CIT no se vieron afectados — podés volver a
+                publicarla con otro comprador sin ningún trámite adicional.
+              </p>
+            )}
           </div>
         )}
       </div>

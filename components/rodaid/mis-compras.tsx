@@ -174,6 +174,12 @@ function CompraItem({ compra }: { compra: MiCompra }) {
         {compra.aliadoId && compra.estado === 'FONDOS_RETENIDOS' && (
           <RemitoEstadoCompra compra={compra} />
         )}
+        {compra.estado === 'FONDOS_RETENIDOS' && (
+          <p className="mt-1.5 text-[11px] leading-relaxed text-slate-warm">
+            La bici pasa a tu nombre recién cuando confirmes que la
+            recibiste — hasta entonces, tu pago sigue protegido.
+          </p>
+        )}
       </div>
 
       <Link
