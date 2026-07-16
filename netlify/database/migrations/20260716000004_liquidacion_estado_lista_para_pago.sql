@@ -1,0 +1,19 @@
+-- RODAID — Nuevo estado de liquidacion: LISTA_PARA_PAGO.
+--
+-- Prerrequisito para reemplazar el stub de ejecutarTransferencia()
+-- (compensaciones.service.ts) por un flujo de pago manual real: MercadoPago no
+-- expone ninguna API publica para que un comercio transfiera dinero a un
+-- CBU/alias de un tercero (verificado 2026-07-16 -- ver CLAUDE.md), asi que el
+-- barrido de liquidaciones pasa a marcar la deuda como LISTA_PARA_PAGO
+-- (exponiendo el destino ya congelado: cbu_destino/alias_destino/
+-- titular_destino) en vez de simular una transferencia exitosa. Un empleado de
+-- cuentas hace la transferencia real por fuera del sistema y confirma el
+-- resultado a mano (PAGADA o FALLIDA) desde la Cola de Pagos.
+--
+-- Migracion aislada a proposito, sin ningun codigo en el mismo PR que lea o
+-- escriba este valor -- Postgres no permite usar un valor agregado por
+-- ALTER TYPE ... ADD VALUE hasta que esa transaccion haya commiteado, y este
+-- repo ya paso por ese error dos veces (ver la regla de los dos deploys en
+-- CLAUDE.md). Este PR se mergea y se confirma `ready` en produccion antes de
+-- que cualquier PR que use 'LISTA_PARA_PAGO' pueda mergearse.
+ALTER TYPE liquidacion_estado ADD VALUE IF NOT EXISTS 'LISTA_PARA_PAGO';
