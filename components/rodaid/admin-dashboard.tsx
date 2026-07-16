@@ -1,11 +1,13 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
   Activity,
   AlertTriangle,
   BadgeCheck,
   Ban,
+  Banknote,
   CheckCircle2,
   Clock,
   Eye,
@@ -30,6 +32,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { clearSession } from '@/lib/session'
+import { PagosDashboard } from '@/components/rodaid/pagos-dashboard'
 import {
   accionarApiKey,
   accionarDenuncia,
@@ -104,7 +107,14 @@ const SALUD_LABEL: Record<SaludEstado, string> = {
 
 // ── Componente raiz ──────────────────────────────────────────────────────────
 
-type Pestana = 'integridad' | 'moderacion' | 'analitica' | 'identidades' | 'bitacora' | 'gobierno'
+type Pestana =
+  | 'integridad'
+  | 'moderacion'
+  | 'analitica'
+  | 'identidades'
+  | 'bitacora'
+  | 'gobierno'
+  | 'finanzas'
 
 const PESTANAS: { id: Pestana; label: string; icon: typeof Activity; permiso: AdminPermiso }[] = [
   { id: 'integridad', label: 'Integridad', icon: Activity, permiso: 'integridad:ver' },
@@ -113,6 +123,7 @@ const PESTANAS: { id: Pestana; label: string; icon: typeof Activity; permiso: Ad
   { id: 'identidades', label: 'Identidades', icon: UserCog, permiso: 'identidades:ver' },
   { id: 'bitacora', label: 'Bitácora', icon: ScrollText, permiso: 'bitacora:ver' },
   { id: 'gobierno', label: 'Gobierno', icon: ShieldCheck, permiso: 'identidades:ver' },
+  { id: 'finanzas', label: 'Finanzas', icon: Banknote, permiso: 'finanzas:ver' },
 ]
 
 export function AdminDashboard() {
@@ -271,7 +282,11 @@ function MfaGate({ onReady }: { onReady: (rol: AdminRol) => void }) {
 
 function Panel({ rol, onLogout }: { rol: AdminRol | null; onLogout: () => void }) {
   const visibles = PESTANAS.filter((p) => puede(p.permiso))
-  const [pestana, setPestana] = useState<Pestana>(visibles[0]?.id ?? 'integridad')
+  const params = useSearchParams()
+  const tabInicial = params.get('tab') as Pestana | null
+  const [pestana, setPestana] = useState<Pestana>(
+    tabInicial && visibles.some((p) => p.id === tabInicial) ? tabInicial : visibles[0]?.id ?? 'integridad'
+  )
 
   return (
     <>
@@ -334,6 +349,7 @@ function Panel({ rol, onLogout }: { rol: AdminRol | null; onLogout: () => void }
         {pestana === 'analitica' && <TabAnalitica />}
         {pestana === 'identidades' && <TabIdentidades />}
         {pestana === 'bitacora' && <TabBitacora />}
+        {pestana === 'finanzas' && <TabFinanzas />}
       </div>
     </>
   )
@@ -1321,6 +1337,19 @@ function TabBitacora() {
       )}
     </>
   )
+}
+
+// ── TAB 6: Finanzas ────────────────────────────────────────────────────────────
+//
+// Reusa PagosDashboard tal cual (Dashboard Financiero + Cola de Pagos) — antes
+// vivia en su propia ruta /admin/pagos, accesible tanto por admin como por un
+// dueño de Taller Aliado (rol='aliado', su propio resumen acotado). Esa ruta
+// sigue viva para el aliado sin cambios; para admin, /admin/pagos ahora
+// redirige aca. finanzas:accion (solo superadmin) habilita las acciones que
+// mutan estado (barrido + confirmar pago/fallo); auditor con finanzas:ver ve
+// todo en modo lectura, igual que el resto de sus tabs.
+function TabFinanzas() {
+  return <PagosDashboard puedeAccionar={puede('finanzas:accion')} />
 }
 
 // ── Atomos compartidos ──────────────────────────────────────────────────────────

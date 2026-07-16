@@ -34,8 +34,19 @@ const ARS = new Intl.NumberFormat('es-AR', {
  * Comisiones RODAID, Pagos a Aliados y Disputas abiertas. El admin ve el resumen
  * global y puede ejecutar el barrido de transferencias pendientes; un dueño de
  * taller ve unicamente lo suyo.
+ *
+ * `puedeAccionar` (default true) gatea las acciones que mutan estado --
+ * Marcar listas para pago / Confirmar pago / Reportar fallo -- por encima del
+ * chequeo de rol admin. Lo pasa en `false` el tab Finanzas del Admin Dashboard
+ * cuando el sub-rol es `auditor` (finanzas:ver sin finanzas:accion); en el uso
+ * standalone (/admin/pagos, un dueño de Taller viendo lo suyo) queda en su
+ * valor por defecto, sin cambios de comportamiento.
  */
-export function PagosDashboard() {
+export function PagosDashboard({
+  puedeAccionar = true,
+}: {
+  puedeAccionar?: boolean
+} = {}) {
   const [resumen, setResumen] = useState<ResumenFinanciero | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [rol, setRol] = useState<string | null>(null)
@@ -103,7 +114,7 @@ export function PagosDashboard() {
           >
             <RefreshCw className="size-4" /> Actualizar
           </button>
-          {rol === 'admin' && (
+          {rol === 'admin' && puedeAccionar && (
             <button
               onClick={liquidar}
               disabled={liquidando}
@@ -190,7 +201,9 @@ export function PagosDashboard() {
               </dl>
             </div>
 
-            {rol === 'admin' && <ColaPagos cola={cola} onCambio={cargar} />}
+            {rol === 'admin' && (
+              <ColaPagos cola={cola} onCambio={cargar} puedeAccionar={puedeAccionar} />
+            )}
           </>
         )}
       </div>
@@ -208,9 +221,11 @@ export function PagosDashboard() {
 function ColaPagos({
   cola,
   onCambio,
+  puedeAccionar,
 }: {
   cola: LiquidacionListaParaPago[] | null
   onCambio: () => void
+  puedeAccionar: boolean
 }) {
   return (
     <div className="mt-6 rounded-3xl border border-ink/12 bg-white p-6">
@@ -233,7 +248,12 @@ function ColaPagos({
       ) : (
         <ul className="mt-4 space-y-3">
           {cola.map((liq) => (
-            <ColaPagosItem key={liq.id} liq={liq} onConfirmado={onCambio} />
+            <ColaPagosItem
+              key={liq.id}
+              liq={liq}
+              onConfirmado={onCambio}
+              puedeAccionar={puedeAccionar}
+            />
           ))}
         </ul>
       )}
@@ -244,9 +264,11 @@ function ColaPagos({
 function ColaPagosItem({
   liq,
   onConfirmado,
+  puedeAccionar,
 }: {
   liq: LiquidacionListaParaPago
   onConfirmado: () => void
+  puedeAccionar: boolean
 }) {
   const [modo, setModo] = useState<'ver' | 'pagada' | 'fallida'>('ver')
   const [texto, setTexto] = useState('')
@@ -308,7 +330,7 @@ function ColaPagosItem({
           </p>
         </div>
 
-        {modo === 'ver' && (
+        {modo === 'ver' && puedeAccionar && (
           <div className="flex gap-2">
             <button
               onClick={() => setModo('pagada')}
@@ -326,7 +348,7 @@ function ColaPagosItem({
         )}
       </div>
 
-      {modo !== 'ver' && (
+      {modo !== 'ver' && puedeAccionar && (
         <div className="mt-3 rounded-xl bg-paper-dim px-3 py-2.5">
           <label className="text-xs font-semibold text-slate-warm">
             {modo === 'pagada'
