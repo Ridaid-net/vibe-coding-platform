@@ -34,19 +34,43 @@ export async function POST(req: Request) {
 
   // 3. Determinar el paymentId del payload y responder 200 cuanto antes.
   const paymentId = extractPaymentId(rawBody, url)
+  const externalReferenceHint = extractExternalReferenceHint(rawBody, url)
 
   if (paymentId) {
     // 4. Procesamiento en background: no bloquea la respuesta.
     after(async () => {
       try {
-        await webhookPago({ paymentId })
+        await webhookPago({ paymentId, externalReferenceHint })
       } catch (error) {
-        console.error('[escrow][webhook] fallo el procesamiento en background', error)
+        console.error('[escrow][webhook] fallo el procesamiento en background', { paymentId }, error)
       }
     })
   }
 
   return NextResponse.json({ received: true }, { status: 200 })
+}
+
+/**
+ * Pista de external_reference disponible directamente en el request del
+ * webhook (querystring o el propio body de la notificacion), sin depender de
+ * re-consultar el pago a MercadoPago. Hoy MP no suele incluirlo aca (hay que
+ * pedirlo via GET /v1/payments/:id), pero si alguna vez lo hace -- o si el
+ * body trae un external_reference a nivel superior -- esta funcion lo toma
+ * como respaldo antes de caer en null. Mismo mecanismo en las tres rutas de
+ * webhook (escrow/cit-express/denuncia) para que las tres sean consistentes.
+ */
+function extractExternalReferenceHint(rawBody: string, url: URL): string | null {
+  const deQuery = url.searchParams.get('external_reference')
+  if (deQuery) return deQuery
+  try {
+    const parsed = JSON.parse(rawBody) as {
+      external_reference?: string
+      data?: { external_reference?: string }
+    }
+    return parsed.external_reference ?? parsed.data?.external_reference ?? null
+  } catch {
+    return null
+  }
 }
 
 /** Extrae el id del pago del payload IPN (body o querystring). */
