@@ -226,6 +226,36 @@ const HITOS: { tema: string; detalle: string }[] = [
       'confirmar.',
   },
   {
+    tema: 'Permanencia del CIT y cuándo cambia la titularidad',
+    detalle:
+      'El CIT queda anclado para siempre al rodado —como el número de chasis ' +
+      'de un auto—, nunca a la persona: al vender la bici, el CIT no se pierde ' +
+      'ni se vuelve a emitir. El comprador recibe la misma identidad ' +
+      'certificada de siempre; lo único que cambia es quién figura como dueño. ' +
+      'Ese cambio de titularidad ocurre recién cuando el vendedor confirma la ' +
+      'entrega (o se libera automáticamente) y el saldo ya fue pagado en su ' +
+      'totalidad —antes de eso, el dinero queda retenido en RODAID PAY como ' +
+      'garantía para las dos partes—. Si el comprador se arrepiente antes de ' +
+      'pagar el saldo, la bici y su CIT no se ven afectados: el vendedor puede ' +
+      'volver a publicarla con otro comprador sin ningún trámite adicional.',
+  },
+  {
+    tema: 'BiciSalud — historial mecánico que viaja con la bici, nunca los datos personales del dueño anterior',
+    detalle:
+      'BiciSalud es el historial de mantenimiento de una bici: alertas sobre ' +
+      'el estado de cadena, cubiertas y necesidad de service, generadas ' +
+      'automáticamente a partir de los datos de uso. Un comprador que adquiere ' +
+      'una bici usada ve el estado mecánico más reciente (por ejemplo, si la ' +
+      'cadena o las cubiertas necesitan revisión) —esa información viaja con ' +
+      'el rodado, porque es útil para decidir la compra—. Lo que nunca ve es ' +
+      'la actividad personal del dueño anterior: sus rutas, ubicaciones o ' +
+      'hábitos de uso quedan siempre privados y no se comparten con nadie. El ' +
+      'diagnóstico mostrado refleja el último análisis disponible: si la bici ' +
+      'tuvo un arreglo reciente que todavía no generó un nuevo análisis, la ' +
+      'alerta visible podría ser anterior a ese arreglo —ante la duda, siempre ' +
+      'se puede confirmar el estado real con un Taller Aliado RODAID.',
+  },
+  {
     tema: 'Consecuencias de actuar de mala fe',
     detalle:
       'RODAID tiene mecanismos de detección y sanción para conductas de mala fe, ' +
