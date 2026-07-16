@@ -4,17 +4,22 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   AlertTriangle,
   Banknote,
+  CheckCircle2,
   Loader2,
   PiggyBank,
   RefreshCw,
   Store,
   Wallet,
+  XCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
+  confirmarPagoLiquidacion,
   ensurePagosSession,
   liquidarPendientes,
+  obtenerColaPagos,
   obtenerResumen,
+  type LiquidacionListaParaPago,
   type ResumenFinanciero,
 } from '@/lib/pagos'
 
@@ -35,6 +40,7 @@ export function PagosDashboard() {
   const [error, setError] = useState<string | null>(null)
   const [rol, setRol] = useState<string | null>(null)
   const [liquidando, setLiquidando] = useState(false)
+  const [cola, setCola] = useState<LiquidacionListaParaPago[] | null>(null)
 
   const cargar = useCallback(async () => {
     setResumen(null)
@@ -43,6 +49,9 @@ export function PagosDashboard() {
       const session = await ensurePagosSession()
       setRol(session.rol)
       setResumen(await obtenerResumen())
+      if (session.rol === 'admin') {
+        setCola((await obtenerColaPagos()).liquidaciones)
+      }
     } catch (err) {
       setError((err as Error).message)
     }
@@ -56,12 +65,12 @@ export function PagosDashboard() {
     setLiquidando(true)
     try {
       const r = await liquidarPendientes()
-      toast.success('Pagos procesados', {
-        description: `${r.pagadas.length} pagada(s), ${r.fallidas.length} en revisión.`,
+      toast.success('Liquidaciones marcadas', {
+        description: `${r.listas.length} de ${r.procesadas} quedaron listas para pago manual.`,
       })
       cargar()
     } catch (err) {
-      toast.error('No pudimos procesar los pagos', {
+      toast.error('No pudimos marcar las liquidaciones', {
         description: (err as Error).message,
       })
     } finally {
@@ -105,7 +114,7 @@ export function PagosDashboard() {
               ) : (
                 <Banknote className="size-4 text-lime" />
               )}
-              Procesar pagos pendientes
+              Marcar listas para pago
             </button>
           )}
         </div>
@@ -180,10 +189,179 @@ export function PagosDashboard() {
                 />
               </dl>
             </div>
+
+            {rol === 'admin' && <ColaPagos cola={cola} onCambio={cargar} />}
           </>
         )}
       </div>
     </>
+  )
+}
+
+/**
+ * Cola de Pagos: liquidaciones LISTA_PARA_PAGO, con su destino ya congelado
+ * (cbu_destino/alias_destino/titular_destino). MercadoPago no expone ninguna
+ * API de payout a un CBU/alias de tercero, así que la transferencia real la
+ * ejecuta un empleado de cuentas por fuera del sistema — esta lista es donde
+ * confirma el resultado.
+ */
+function ColaPagos({
+  cola,
+  onCambio,
+}: {
+  cola: LiquidacionListaParaPago[] | null
+  onCambio: () => void
+}) {
+  return (
+    <div className="mt-6 rounded-3xl border border-ink/12 bg-white p-6">
+      <h2 className="font-display text-lg font-bold text-ink">
+        Cola de Pagos
+      </h2>
+      <p className="mt-1 text-sm text-slate-warm">
+        Transferí manualmente (MercadoPago o home banking) y confirmá el
+        resultado acá.
+      </p>
+
+      {cola === null ? (
+        <div className="mt-4 flex items-center gap-2 text-sm text-slate-warm">
+          <Loader2 className="size-4 animate-spin" /> Cargando…
+        </div>
+      ) : cola.length === 0 ? (
+        <p className="mt-4 text-sm text-slate-warm">
+          No hay liquidaciones esperando pago manual.
+        </p>
+      ) : (
+        <ul className="mt-4 space-y-3">
+          {cola.map((liq) => (
+            <ColaPagosItem key={liq.id} liq={liq} onConfirmado={onCambio} />
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function ColaPagosItem({
+  liq,
+  onConfirmado,
+}: {
+  liq: LiquidacionListaParaPago
+  onConfirmado: () => void
+}) {
+  const [modo, setModo] = useState<'ver' | 'pagada' | 'fallida'>('ver')
+  const [texto, setTexto] = useState('')
+  const [enviando, setEnviando] = useState(false)
+
+  const destino = liq.cbuDestino
+    ? `CBU ${liq.cbuDestino}`
+    : liq.aliasDestino
+      ? `Alias ${liq.aliasDestino}`
+      : null
+
+  const confirmar = async (resultado: 'PAGADA' | 'FALLIDA') => {
+    setEnviando(true)
+    try {
+      await confirmarPagoLiquidacion(liq.id, {
+        resultado,
+        referencia: resultado === 'PAGADA' ? texto || undefined : undefined,
+        motivo: resultado === 'FALLIDA' ? texto || undefined : undefined,
+      })
+      toast.success(
+        resultado === 'PAGADA' ? 'Pago confirmado' : 'Fallo reportado',
+        {
+          description:
+            resultado === 'FALLIDA' && liq.tipo === 'VENDEDOR'
+              ? 'El escrow del vendedor pasó a disputa para revisión.'
+              : undefined,
+        }
+      )
+      onConfirmado()
+    } catch (err) {
+      toast.error('No pudimos registrar la confirmación', {
+        description: (err as Error).message,
+      })
+    } finally {
+      setEnviando(false)
+      setModo('ver')
+      setTexto('')
+    }
+  }
+
+  return (
+    <li className="rounded-2xl border border-ink/12 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="font-display text-sm font-semibold text-ink">
+            {liq.tipo} · {ARS.format(liq.monto)}
+          </p>
+          <p className="mt-0.5 text-xs text-slate-warm">
+            {destino ? (
+              <>
+                {destino}
+                {liq.titularDestino ? ` — ${liq.titularDestino}` : ''}
+              </>
+            ) : (
+              <span className="font-semibold text-clay">
+                Sin datos bancarios cargados
+              </span>
+            )}
+          </p>
+        </div>
+
+        {modo === 'ver' && (
+          <div className="flex gap-2">
+            <button
+              onClick={() => setModo('pagada')}
+              className="inline-flex items-center gap-1.5 rounded-full bg-ink px-3 py-1.5 text-xs font-semibold text-paper transition-colors hover:bg-ink-soft"
+            >
+              <CheckCircle2 className="size-3.5 text-lime" /> Confirmar pago
+            </button>
+            <button
+              onClick={() => setModo('fallida')}
+              className="inline-flex items-center gap-1.5 rounded-full border border-clay/30 px-3 py-1.5 text-xs font-semibold text-clay transition-colors hover:bg-clay/5"
+            >
+              <XCircle className="size-3.5" /> Reportar fallo
+            </button>
+          </div>
+        )}
+      </div>
+
+      {modo !== 'ver' && (
+        <div className="mt-3 rounded-xl bg-paper-dim px-3 py-2.5">
+          <label className="text-xs font-semibold text-slate-warm">
+            {modo === 'pagada'
+              ? 'Referencia / comprobante (opcional)'
+              : 'Motivo del fallo (opcional)'}
+          </label>
+          <input
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-ink/15 bg-white px-3 py-1.5 text-sm text-ink"
+            placeholder={modo === 'pagada' ? 'Ej. comprobante #1234' : 'Ej. CBU inexistente'}
+          />
+          <div className="mt-2 flex gap-2">
+            <button
+              onClick={() => confirmar(modo === 'pagada' ? 'PAGADA' : 'FALLIDA')}
+              disabled={enviando}
+              className="inline-flex items-center gap-1.5 rounded-full bg-ink px-3 py-1.5 text-xs font-semibold text-paper disabled:opacity-50"
+            >
+              {enviando && <Loader2 className="size-3 animate-spin" />}
+              Confirmar
+            </button>
+            <button
+              onClick={() => {
+                setModo('ver')
+                setTexto('')
+              }}
+              disabled={enviando}
+              className="rounded-full border border-ink/15 px-3 py-1.5 text-xs font-semibold text-ink disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+    </li>
   )
 }
 

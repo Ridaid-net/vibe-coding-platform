@@ -1,4 +1,4 @@
-import { getPool, type DbClient } from '@/lib/marketplace'
+import { ApiError, getPool, type DbClient } from '@/lib/marketplace'
 import { getParametroPricing } from '@/src/services/parametros-pricing.service'
 
 /**
@@ -16,18 +16,26 @@ import { getParametroPricing } from '@/src/services/parametros-pricing.service'
  *     configuracion del sistema) y deja registrada la deuda. Se llama DENTRO de la
  *     transaccion de aprobacion del CIT (atomico con la decision del pipeline).
  *
- *   - procesarLiquidacionesPendientes()         -> barrido ASINCRONO que ejecuta
- *     las transferencias pendientes. Si la transferencia al VENDEDOR falla, el
- *     escrow vuelve a DISPUTADA (el dinero queda para revision humana), tal como
- *     exige el hito.
+ *   - procesarLiquidacionesPendientes()         -> barrido que marca las deudas
+ *     PENDIENTE como LISTA_PARA_PAGO. NO ejecuta ningun pago real: MercadoPago
+ *     no expone ninguna API publica de payout a un CBU/alias de tercero
+ *     (verificado 2026-07-16), asi que el pago real lo hace un empleado de
+ *     cuentas por fuera del sistema, usando el destino ya congelado
+ *     (cbu_destino/alias_destino/titular_destino).
+ *
+ *   - confirmarPagoLiquidacion()                -> el empleado confirma a mano
+ *     el resultado (PAGADA/FALLIDA) de una liquidacion LISTA_PARA_PAGO. Si
+ *     falla la transferencia al VENDEDOR, el escrow vuelve a DISPUTADA (el
+ *     dinero queda para revision humana), tal como exige el hito.
  *
  *   - resumenFinanciero()                       -> Dashboard Financiero: Total
  *     Recaudado, Comisiones RODAID, Pagos a Aliados y Disputas abiertas. Admin ve
  *     todo; un dueño de taller (aliado) ve solo lo suyo.
  *
  * Principio del hito: el dinero NUNCA lo toca la logica de negocio de forma
- * sincrona. Las liquidaciones nacen como deuda (PENDIENTE) y la transferencia se
- * resuelve aparte, de modo asincrono respecto al flujo de negocio.
+ * sincrona. Las liquidaciones nacen como deuda (PENDIENTE), pasan por
+ * LISTA_PARA_PAGO, y solo llegan a PAGADA cuando un humano confirma que la
+ * transferencia real ya se hizo.
  */
 
 // ── Configuracion del sistema (parametros_pricing_cit, Fase 0) ───────────────
@@ -515,31 +523,42 @@ export async function registrarRetribucionAliado(
   return { registrada: true, liquidacionId: id, aliadoId: aliado.aliadoId, monto }
 }
 
-// ── Ejecucion de transferencias (barrido asincrono) ───────────────────────────
+// ── Cola de pagos (pago manual real) ──────────────────────────────────────────
+//
+// MercadoPago no expone ninguna API publica para que un comercio transfiera
+// dinero a un CBU/alias de un tercero (verificado 2026-07-16 -- la unica forma
+// real y documentada de "pagarle automaticamente a otra cuenta" es Split
+// Payments, que reparte en el momento del pago y no encaja con el modelo de
+// escrow de RODAID). Por eso esta plataforma NO ejecuta ningun payout real:
+// procesarLiquidacionesPendientes() marca la deuda como LISTA_PARA_PAGO,
+// exponiendo el destino ya congelado (cbu_destino/alias_destino/
+// titular_destino, ver datos_bancarios_payout) para que un empleado de cuentas
+// haga la transferencia real por fuera del sistema (MercadoPago, home
+// banking) y despues confirme el resultado con confirmarPagoLiquidacion().
 
 interface LiquidacionRow {
   id: string
-  tipo: 'VENDEDOR' | 'ALIADO_RETRIBUCION'
+  tipo:
+    | 'VENDEDOR'
+    | 'ALIADO_RETRIBUCION'
+    | 'ALIADO_FEE_VERIFICACION'
+    | 'ALIADO_FEE_LOGISTICA'
+    | 'ALIADO_FEE_EXITO'
   beneficiario_id: string
   beneficiario_tipo: string
   transaccion_id: string | null
   cit_id: string | null
   monto: string
+  estado: string
+  cbu_destino: string | null
+  alias_destino: string | null
+  titular_destino: string | null
 }
 
-/**
- * Ejecuta la transferencia real de una liquidacion. En esta plataforma no hay un
- * payout automatico real configurado: la transferencia se "agenda" como deuda a
- * pagar y se marca como ejecutada (modo registro). Si en el futuro se integra un
- * payout de MercadoPago / transferencia bancaria, este es el unico punto a
- * cambiar. Devuelve la referencia de la transferencia o lanza si falla.
- */
-async function ejecutarTransferencia(liq: LiquidacionRow): Promise<string> {
-  // Punto de integracion del payout real. Hoy registra la transferencia como
-  // agendada (la conciliacion la hace finanzas contra este libro). Una integracion
-  // futura podria lanzar aqui ante un fallo del proveedor para forzar la disputa.
-  return `payout-${liq.tipo.toLowerCase()}-${liq.id}`
-}
+const LIQUIDACION_ROW_COLUMNAS = `
+  id, tipo, beneficiario_id, beneficiario_tipo, transaccion_id, cit_id, monto,
+  estado, cbu_destino, alias_destino, titular_destino
+`
 
 async function withTx<T>(fn: (client: DbClient) => Promise<T>): Promise<T> {
   const client = await getPool().connect()
@@ -558,15 +577,14 @@ async function withTx<T>(fn: (client: DbClient) => Promise<T>): Promise<T> {
 
 export interface ProcesarLiquidacionesResultado {
   procesadas: number
-  pagadas: string[]
-  fallidas: string[]
+  listas: string[]
 }
 
 /**
- * Barre las liquidaciones PENDIENTE y ejecuta sus transferencias. Cada
+ * Barre las liquidaciones PENDIENTE y las marca LISTA_PARA_PAGO -- no ejecuta
+ * ningun pago real (ver la nota arriba sobre por que no existe tal cosa). Cada
  * liquidacion se aisla en su propia transaccion con lock `FOR UPDATE`
- * (idempotente: dos worker no la pagan dos veces). Si la transferencia al
- * VENDEDOR falla, el escrow asociado vuelve a DISPUTADA para revision humana.
+ * (idempotente: dos barridos no la marcan dos veces).
  */
 export async function procesarLiquidacionesPendientes(
   limite = 100
@@ -581,123 +599,210 @@ export async function procesarLiquidacionesPendientes(
     [limite]
   )
 
-  const pagadas: string[] = []
-  const fallidas: string[] = []
+  const listas: string[] = []
 
   for (const { id } of pendientes.rows) {
     try {
-      const resultado = await withTx(async (client) => {
+      const marcada = await withTx(async (client) => {
         const res = await client.query<LiquidacionRow>(
-          `SELECT id, tipo, beneficiario_id, beneficiario_tipo, transaccion_id, cit_id, monto
-           FROM pagos_liquidaciones WHERE id = $1 FOR UPDATE`,
+          `SELECT ${LIQUIDACION_ROW_COLUMNAS} FROM pagos_liquidaciones WHERE id = $1 FOR UPDATE`,
           [id]
         )
         const liq = res.rows[0]
-        if (!liq) {
-          return 'SALTEADA' as const
+        if (!liq || liq.estado !== 'PENDIENTE') {
+          return false
         }
-        // Re-chequear el estado bajo lock (idempotencia).
-        const estadoRes = await client.query<{ estado: string }>(
-          `SELECT estado FROM pagos_liquidaciones WHERE id = $1`,
+
+        await client.query(
+          `
+            UPDATE pagos_liquidaciones
+            SET estado = 'LISTA_PARA_PAGO', updated_at = NOW()
+            WHERE id = $1
+          `,
           [id]
         )
-        if (estadoRes.rows[0]?.estado !== 'PENDIENTE') {
-          return 'SALTEADA' as const
-        }
-
-        try {
-          const ref = await ejecutarTransferencia(liq)
-          await client.query(
-            `
-              UPDATE pagos_liquidaciones
-              SET estado = 'PAGADA', transferencia_ref = $2, intentos = intentos + 1,
-                  ultimo_error = NULL, pagado_en = NOW(), updated_at = NOW()
-              WHERE id = $1
-            `,
-            [id, ref]
-          )
-          await registrarPagoLog(client, {
-            evento:
-              liq.tipo === 'VENDEDOR'
-                ? 'LIQUIDACION_VENDEDOR_PAGADA'
-                : 'RETRIBUCION_ALIADO_PAGADA',
-            origenTipo: liq.cit_id ? 'CIT' : 'ESCROW',
-            origenId: liq.cit_id ?? liq.transaccion_id,
-            monto: Number(liq.monto),
-            beneficiarioId: liq.beneficiario_id,
-            actorRol: 'sistema',
-            metadata: { transferenciaRef: ref },
-          })
-          return 'PAGADA' as const
-        } catch (transferError) {
-          const mensaje =
-            transferError instanceof Error
-              ? transferError.message
-              : String(transferError)
-          await client.query(
-            `
-              UPDATE pagos_liquidaciones
-              SET estado = 'FALLIDA', intentos = intentos + 1,
-                  ultimo_error = $2, updated_at = NOW()
-              WHERE id = $1
-            `,
-            [id, mensaje.slice(0, 480)]
-          )
-          await registrarPagoLog(client, {
-            evento:
-              liq.tipo === 'VENDEDOR'
-                ? 'LIQUIDACION_VENDEDOR_FALLIDA'
-                : 'RETRIBUCION_ALIADO_FALLIDA',
-            origenTipo: liq.cit_id ? 'CIT' : 'ESCROW',
-            origenId: liq.cit_id ?? liq.transaccion_id,
-            monto: Number(liq.monto),
-            beneficiarioId: liq.beneficiario_id,
-            actorRol: 'sistema',
-            metadata: { error: mensaje.slice(0, 480) },
-          })
-
-          // Restriccion del hito: si falla la transferencia al VENDEDOR, el dinero
-          // del escrow debe quedar en disputa para revision humana.
-          if (liq.tipo === 'VENDEDOR' && liq.transaccion_id) {
-            await client.query(
-              `
-                UPDATE escrow_transacciones
-                SET estado = 'DISPUTADA',
-                    disputa_motivo = COALESCE(disputa_motivo,
-                      'Fallo la transferencia al vendedor; en revision.'),
-                    updated_at = NOW()
-                WHERE id = $1 AND estado = 'COMPLETADA'
-              `,
-              [liq.transaccion_id]
-            )
-            await client.query(
-              `
-                INSERT INTO escrow_eventos
-                  (transaccion_id, tipo, estado_nuevo, actor_rol, metadata)
-                VALUES ($1, 'TRANSFERENCIA_VENDEDOR_FALLIDA', 'DISPUTADA', 'sistema', $2::jsonb)
-              `,
-              [
-                liq.transaccion_id,
-                JSON.stringify({ liquidacionId: id, error: mensaje.slice(0, 480) }),
-              ]
-            )
-          }
-          return 'FALLIDA' as const
-        }
+        await registrarPagoLog(client, {
+          evento: 'LIQUIDACION_LISTA_PARA_PAGO',
+          origenTipo: liq.cit_id ? 'CIT' : 'ESCROW',
+          origenId: liq.cit_id ?? liq.transaccion_id,
+          monto: Number(liq.monto),
+          beneficiarioId: liq.beneficiario_id,
+          actorRol: 'sistema',
+        })
+        return true
       })
-      if (resultado === 'PAGADA') pagadas.push(id)
-      else if (resultado === 'FALLIDA') fallidas.push(id)
+      if (marcada) listas.push(id)
     } catch (error) {
-      console.error('[compensaciones] no se pudo procesar la liquidacion', id, error)
-      fallidas.push(id)
+      console.error('[compensaciones] no se pudo marcar la liquidacion como lista para pago', id, error)
     }
   }
 
   return {
     procesadas: pendientes.rows.length,
-    pagadas,
-    fallidas,
+    listas,
   }
+}
+
+export interface LiquidacionListaParaPago {
+  id: string
+  tipo: LiquidacionRow['tipo']
+  beneficiarioId: string
+  beneficiarioTipo: string
+  monto: number
+  cbuDestino: string | null
+  aliasDestino: string | null
+  titularDestino: string | null
+  createdAt: string
+}
+
+/** Lista las liquidaciones LISTA_PARA_PAGO para la Cola de Pagos (admin). */
+export async function listarLiquidacionesListasParaPago(): Promise<
+  LiquidacionListaParaPago[]
+> {
+  interface Row {
+    id: string
+    tipo: LiquidacionRow['tipo']
+    beneficiario_id: string
+    beneficiario_tipo: string
+    monto: string
+    cbu_destino: string | null
+    alias_destino: string | null
+    titular_destino: string | null
+    created_at: string
+  }
+  const res = await getPool().query<Row>(
+    `
+      SELECT id, tipo, beneficiario_id, beneficiario_tipo, monto,
+             cbu_destino, alias_destino, titular_destino, created_at
+      FROM pagos_liquidaciones
+      WHERE estado = 'LISTA_PARA_PAGO'
+      ORDER BY created_at ASC
+    `
+  )
+  return res.rows.map((r: Row) => ({
+    id: r.id,
+    tipo: r.tipo,
+    beneficiarioId: r.beneficiario_id,
+    beneficiarioTipo: r.beneficiario_tipo,
+    monto: Number(r.monto),
+    cbuDestino: r.cbu_destino,
+    aliasDestino: r.alias_destino,
+    titularDestino: r.titular_destino,
+    createdAt: r.created_at,
+  }))
+}
+
+export interface ConfirmarPagoLiquidacionInput {
+  liquidacionId: string
+  resultado: 'PAGADA' | 'FALLIDA'
+  referencia?: string | null
+  motivo?: string | null
+  actorId?: string | null
+}
+
+export interface ConfirmarPagoLiquidacionResultado {
+  estado: 'PAGADA' | 'FALLIDA'
+}
+
+/**
+ * Confirma a mano el resultado de una liquidacion LISTA_PARA_PAGO -- el
+ * empleado de cuentas ya ejecuto (o intento ejecutar) la transferencia real
+ * por fuera del sistema. Si resultado='FALLIDA' y la liquidacion es del
+ * VENDEDOR, el escrow asociado vuelve a DISPUTADA para revision humana --
+ * mismo resguardo que antes disparaba un fallo automatico de la transferencia,
+ * ahora lo dispara la confirmacion manual del empleado.
+ */
+export async function confirmarPagoLiquidacion(
+  input: ConfirmarPagoLiquidacionInput
+): Promise<ConfirmarPagoLiquidacionResultado> {
+  return withTx(async (client) => {
+    const res = await client.query<LiquidacionRow>(
+      `SELECT ${LIQUIDACION_ROW_COLUMNAS} FROM pagos_liquidaciones WHERE id = $1 FOR UPDATE`,
+      [input.liquidacionId]
+    )
+    const liq = res.rows[0]
+    if (!liq) {
+      throw new ApiError(404, 'LIQUIDACION_NOT_FOUND', 'No se encontró la liquidación.')
+    }
+    if (liq.estado !== 'LISTA_PARA_PAGO') {
+      throw new ApiError(
+        409,
+        'LIQUIDACION_ESTADO_INVALIDO',
+        `La liquidación está en estado ${liq.estado}, no LISTA_PARA_PAGO.`
+      )
+    }
+
+    if (input.resultado === 'PAGADA') {
+      await client.query(
+        `
+          UPDATE pagos_liquidaciones
+          SET estado = 'PAGADA', transferencia_ref = $2, intentos = intentos + 1,
+              ultimo_error = NULL, pagado_en = NOW(), updated_at = NOW()
+          WHERE id = $1
+        `,
+        [liq.id, input.referencia ?? null]
+      )
+      await registrarPagoLog(client, {
+        evento:
+          liq.tipo === 'VENDEDOR' ? 'LIQUIDACION_VENDEDOR_PAGADA' : 'LIQUIDACION_ALIADO_PAGADA',
+        origenTipo: liq.cit_id ? 'CIT' : 'ESCROW',
+        origenId: liq.cit_id ?? liq.transaccion_id,
+        monto: Number(liq.monto),
+        beneficiarioId: liq.beneficiario_id,
+        actorId: input.actorId ?? null,
+        actorRol: 'admin',
+        metadata: { referencia: input.referencia ?? null, confirmacion: 'manual' },
+      })
+      return { estado: 'PAGADA' }
+    }
+
+    const mensaje = (
+      input.motivo ?? 'Transferencia manual reportada como fallida.'
+    ).slice(0, 480)
+    await client.query(
+      `
+        UPDATE pagos_liquidaciones
+        SET estado = 'FALLIDA', intentos = intentos + 1, ultimo_error = $2, updated_at = NOW()
+        WHERE id = $1
+      `,
+      [liq.id, mensaje]
+    )
+    await registrarPagoLog(client, {
+      evento:
+        liq.tipo === 'VENDEDOR' ? 'LIQUIDACION_VENDEDOR_FALLIDA' : 'LIQUIDACION_ALIADO_FALLIDA',
+      origenTipo: liq.cit_id ? 'CIT' : 'ESCROW',
+      origenId: liq.cit_id ?? liq.transaccion_id,
+      monto: Number(liq.monto),
+      beneficiarioId: liq.beneficiario_id,
+      actorId: input.actorId ?? null,
+      actorRol: 'admin',
+      metadata: { motivo: mensaje, confirmacion: 'manual' },
+    })
+
+    if (liq.tipo === 'VENDEDOR' && liq.transaccion_id) {
+      await client.query(
+        `
+          UPDATE escrow_transacciones
+          SET estado = 'DISPUTADA',
+              disputa_motivo = COALESCE(disputa_motivo,
+                'Fallo la transferencia manual al vendedor; en revision.'),
+              updated_at = NOW()
+          WHERE id = $1 AND estado = 'COMPLETADA'
+        `,
+        [liq.transaccion_id]
+      )
+      await client.query(
+        `
+          INSERT INTO escrow_eventos
+            (transaccion_id, tipo, estado_nuevo, actor_rol, metadata)
+          VALUES ($1, 'TRANSFERENCIA_VENDEDOR_FALLIDA', 'DISPUTADA', 'admin', $2::jsonb)
+        `,
+        [liq.transaccion_id, JSON.stringify({ liquidacionId: liq.id, motivo: mensaje })]
+      )
+    }
+
+    return { estado: 'FALLIDA' }
+  })
 }
 
 // ── Dashboard Financiero ──────────────────────────────────────────────────────
@@ -814,7 +919,11 @@ export async function resumenFinanciero(opts: {
   for (const row of retrib.rows) {
     const monto = Number(row.total)
     if (row.estado === 'PAGADA') aliadosPagado += monto
-    else if (row.estado === 'PENDIENTE' || row.estado === 'FALLIDA') {
+    else if (
+      row.estado === 'PENDIENTE' ||
+      row.estado === 'FALLIDA' ||
+      row.estado === 'LISTA_PARA_PAGO'
+    ) {
       aliadosPendiente += monto
     }
   }
@@ -839,11 +948,11 @@ export async function resumenFinanciero(opts: {
   const liqVend = esAdmin
     ? await pool.query<{ total: string }>(
         `SELECT COALESCE(SUM(monto), 0) AS total FROM pagos_liquidaciones
-         WHERE tipo = 'VENDEDOR' AND estado IN ('PENDIENTE', 'FALLIDA')`
+         WHERE tipo = 'VENDEDOR' AND estado IN ('PENDIENTE', 'FALLIDA', 'LISTA_PARA_PAGO')`
       )
     : await pool.query<{ total: string }>(
         `SELECT COALESCE(SUM(monto), 0) AS total FROM pagos_liquidaciones
-         WHERE tipo = 'VENDEDOR' AND estado IN ('PENDIENTE', 'FALLIDA')
+         WHERE tipo = 'VENDEDOR' AND estado IN ('PENDIENTE', 'FALLIDA', 'LISTA_PARA_PAGO')
            AND beneficiario_id = $1`,
         [opts.usuarioId]
       )
@@ -883,7 +992,7 @@ export async function cancelarLiquidacionesDeTransaccion(
     `
       UPDATE pagos_liquidaciones
       SET estado = 'CANCELADA', ultimo_error = $2, updated_at = NOW()
-      WHERE transaccion_id = $1 AND estado IN ('PENDIENTE', 'FALLIDA')
+      WHERE transaccion_id = $1 AND estado IN ('PENDIENTE', 'FALLIDA', 'LISTA_PARA_PAGO')
       RETURNING id, monto, beneficiario_id
     `,
     [transaccionId, motivo.slice(0, 480)]

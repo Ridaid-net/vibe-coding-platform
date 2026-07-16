@@ -26,8 +26,36 @@ export interface ResumenFinanciero {
 
 export interface LiquidarResultado {
   procesadas: number
-  pagadas: string[]
-  fallidas: string[]
+  listas: string[]
+}
+
+/**
+ * Cola de Pagos: liquidaciones LISTA_PARA_PAGO con su destino ya congelado.
+ * MercadoPago no expone ninguna API de payout a un CBU/alias de tercero (ver
+ * compensaciones.service.ts), así que el pago real lo ejecuta un empleado de
+ * cuentas por fuera del sistema, y confirma el resultado desde acá.
+ */
+export interface LiquidacionListaParaPago {
+  id: string
+  tipo:
+    | 'VENDEDOR'
+    | 'ALIADO_RETRIBUCION'
+    | 'ALIADO_FEE_VERIFICACION'
+    | 'ALIADO_FEE_LOGISTICA'
+    | 'ALIADO_FEE_EXITO'
+  beneficiarioId: string
+  beneficiarioTipo: string
+  monto: number
+  cbuDestino: string | null
+  aliasDestino: string | null
+  titularDestino: string | null
+  createdAt: string
+}
+
+export interface ConfirmarPagoInput {
+  resultado: 'PAGADA' | 'FALLIDA'
+  referencia?: string
+  motivo?: string
 }
 
 async function leer<T>(res: Response): Promise<T> {
@@ -50,5 +78,24 @@ export async function obtenerResumen(): Promise<ResumenFinanciero> {
 export async function liquidarPendientes(): Promise<LiquidarResultado> {
   return leer(
     await authedFetch('/api/v1/admin/pagos/liquidar', { method: 'POST' })
+  )
+}
+
+export async function obtenerColaPagos(): Promise<{
+  liquidaciones: LiquidacionListaParaPago[]
+}> {
+  return leer(await authedFetch('/api/v1/admin/pagos/liquidaciones'))
+}
+
+export async function confirmarPagoLiquidacion(
+  liquidacionId: string,
+  input: ConfirmarPagoInput
+): Promise<{ estado: 'PAGADA' | 'FALLIDA' }> {
+  return leer(
+    await authedFetch(`/api/v1/admin/pagos/liquidaciones/${liquidacionId}/confirmar`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    })
   )
 }
