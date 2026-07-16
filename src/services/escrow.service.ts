@@ -112,6 +112,45 @@ export type EscrowEstado =
   | 'SALDO_PENDIENTE'
   | 'RESERVA_VENCIDA'
 
+/**
+ * Mapeo conceptual EXPRESS / EN_TRANSFERENCIA / TRANSFERIDO (auditoria de
+ * modelo de datos, 2026-07-16) -- vocabulario de negocio para describir la
+ * titularidad de UN RODADO, NO una tabla ni un enum nuevo. Decision explicita:
+ * no crear una tabla/enum "Token" separada -- se deriva enteramente de
+ * `escrow_transacciones.estado` (mas `bicicletas.propietario_id`, que solo
+ * cambia en la liquidacion final, ver liberarFondos() abajo). Si en el futuro
+ * el frontend necesita exponer este mapeo repetidamente, evaluar una VISTA
+ * SQL sobre estas mismas tablas -- no una tabla nueva a mantener sincronizada.
+ *
+ * NO CONFUNDIR con "CIT Express" (el producto comercial, cit-express*.service.ts)
+ * -- es una coincidencia de nombre, sin relacion conceptual alguna.
+ *
+ *   EXPRESS         -> no existe ninguna fila de escrow_transacciones en un
+ *                      estado no-terminal para este rodado (o la mas reciente
+ *                      ya es terminal). El rodado no tiene ninguna venta en
+ *                      curso; su titular puede publicarlo o transferirlo
+ *                      libremente.
+ *   EN_TRANSFERENCIA -> existe una fila de escrow_transacciones en un estado
+ *                      no-terminal: DEPOSITO_PENDIENTE, RESERVA_PENDIENTE,
+ *                      RESERVADA, SALDO_PENDIENTE, FONDOS_RETENIDOS,
+ *                      EN_CAMINO o DISPUTADA. Hay una venta en curso.
+ *   TRANSFERIDO     -> esa transaccion llego a COMPLETADA: liberarFondos() ya
+ *                      corrio, bicicletas.propietario_id ya refleja al nuevo
+ *                      dueno y cit_transferencias tiene el registro inmutable
+ *                      del cambio (ver transferencia-dominio.service.ts). El
+ *                      CIT en si nunca cambia de id ni se re-emite.
+ *   Reversion EN_TRANSFERENCIA -> EXPRESS -> CANCELADA o RESERVA_VENCIDA (o
+ *                      DISPUTADA resuelta a favor del comprador/reembolso): la
+ *                      publicacion vuelve a estar disponible SIN que
+ *                      bicicletas.propietario_id se haya tocado nunca, porque
+ *                      transferirTitularidadBicicleta() -- vía liberarFondos()
+ *                      -- solo se llama desde los caminos de cierre exitoso
+ *                      (confirmarEntrega/confirmarEntregaCitCompleto/
+ *                      resolverDisputa a favor del vendedor/procesarAutoReleases),
+ *                      nunca antes. Una cancelacion nunca revierte una
+ *                      escritura ya hecha, porque todavia no se escribio nada.
+ */
+
 // Comision de RODAID por plan. El Plan Libre cobra 2.5%.
 const COMISIONES: Record<string, number> = {
   LIBRE: 0.025,
