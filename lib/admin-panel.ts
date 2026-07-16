@@ -55,6 +55,8 @@ export type AdminPermiso =
   | 'datos-personales:ver'
   | 'bitacora:ver'
   | 'roles:gestionar'
+  | 'finanzas:ver'
+  | 'finanzas:accion'
 
 const TODOS: AdminPermiso[] = [
   'integridad:ver',
@@ -66,22 +68,28 @@ const TODOS: AdminPermiso[] = [
   'datos-personales:ver',
   'bitacora:ver',
   'roles:gestionar',
+  'finanzas:ver',
+  'finanzas:accion',
 ]
 
 /** Matriz de permisos por sub-rol. */
 const MATRIZ: Record<AdminRol, ReadonlySet<AdminPermiso>> = {
   // Control total.
   superadmin: new Set(TODOS),
-  // Solo lectura (incluye la bitacora). No ejecuta modificaciones.
+  // Solo lectura (incluye la bitacora). No ejecuta modificaciones. Mismo
+  // criterio que moderacion:ver/moderacion:accion: ve el Dashboard Financiero
+  // y la Cola de Pagos, pero no puede barrer liquidaciones ni confirmar pagos.
   auditor: new Set<AdminPermiso>([
     'integridad:ver',
     'moderacion:ver',
     'analitica:ver',
     'identidades:ver',
     'bitacora:ver',
+    'finanzas:ver',
   ]),
   // Moderacion / soporte. Acceso justificado a datos personales para soporte
-  // oficial. No gestiona roles de administracion.
+  // oficial. No gestiona roles de administracion. Finanzas fuera de su
+  // alcance (ni ver ni accionar).
   soporte: new Set<AdminPermiso>([
     'integridad:ver',
     'moderacion:ver',

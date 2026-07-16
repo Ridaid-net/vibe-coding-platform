@@ -32,6 +32,8 @@ export type AdminPermiso =
   | 'datos-personales:ver'
   | 'bitacora:ver'
   | 'roles:gestionar'
+  | 'finanzas:ver'
+  | 'finanzas:accion'
 
 function readStepUp(): StepUpStored | null {
   if (typeof window === 'undefined') return null
