@@ -49,6 +49,80 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
+// ── Datos bancarios de payout (CBU/alias) ─────────────────────────────────────
+
+interface DatosBancariosVigentes {
+  cbu: string | null
+  alias: string | null
+  titular: string | null
+}
+
+/**
+ * Lee el destino bancario VIGENTE del beneficiario al momento de crear una
+ * liquidacion, para congelarlo en pagos_liquidaciones (cbu_destino/
+ * alias_destino/titular_destino) -- si despues el beneficiario cambia su CBU,
+ * una liquidacion ya emitida conserva el dato con el que se emitio. Puede
+ * devolver todo null (el beneficiario todavia no cargo sus datos bancarios);
+ * la liquidacion igual se registra, la deuda es real independientemente de si
+ * ya se puede pagar.
+ */
+async function obtenerDatosBancariosVigentes(
+  client: DbClient,
+  beneficiarioTipo: 'usuario' | 'aliado',
+  beneficiarioId: string
+): Promise<DatosBancariosVigentes> {
+  const res = await client.query<{
+    cbu: string | null
+    alias: string | null
+    titular_declarado: string
+  }>(
+    `SELECT cbu, alias, titular_declarado FROM datos_bancarios_payout
+     WHERE beneficiario_tipo = $1 AND beneficiario_id = $2`,
+    [beneficiarioTipo, beneficiarioId]
+  )
+  const row = res.rows[0]
+  return {
+    cbu: row?.cbu ?? null,
+    alias: row?.alias ?? null,
+    titular: row?.titular_declarado ?? null,
+  }
+}
+
+export interface GuardarDatosBancariosInput {
+  beneficiarioTipo: 'usuario' | 'aliado'
+  beneficiarioId: string
+  cbu: string | null
+  alias: string | null
+  titularDeclarado: string
+}
+
+/**
+ * Carga o actualiza el destino bancario VIGENTE de un beneficiario (una sola
+ * fila por beneficiario, ver el indice unico de datos_bancarios_payout). No
+ * toca ninguna liquidacion ya emitida -- esas quedan con la copia congelada
+ * que se les asigno al crearse (cbu_destino/alias_destino/titular_destino).
+ */
+export async function guardarDatosBancarios(
+  input: GuardarDatosBancariosInput
+): Promise<void> {
+  await getPool().query(
+    `
+      INSERT INTO datos_bancarios_payout
+        (beneficiario_tipo, beneficiario_id, cbu, alias, titular_declarado)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (beneficiario_tipo, beneficiario_id)
+      DO UPDATE SET cbu = $3, alias = $4, titular_declarado = $5, updated_at = NOW()
+    `,
+    [
+      input.beneficiarioTipo,
+      input.beneficiarioId,
+      input.cbu,
+      input.alias,
+      input.titularDeclarado,
+    ]
+  )
+}
+
 // ── Bitacora financiera inmutable ─────────────────────────────────────────────
 
 export interface PagoLogEntrada {
@@ -104,12 +178,15 @@ export async function registrarLiquidacionVendedor(
   client: DbClient,
   input: LiquidacionVendedorInput
 ): Promise<string | null> {
+  const banco = await obtenerDatosBancariosVigentes(client, 'usuario', input.vendedorId)
   const res = await client.query<{ id: string }>(
     `
       INSERT INTO pagos_liquidaciones
         (tipo, estado, beneficiario_id, beneficiario_tipo, origen_tipo, origen_id,
-         transaccion_id, monto, base_calculo, metadata)
-      VALUES ('VENDEDOR', 'PENDIENTE', $1, 'usuario', 'ESCROW', $2, $2, $3, $4, $5::jsonb)
+         transaccion_id, monto, base_calculo, metadata,
+         cbu_destino, alias_destino, titular_destino)
+      VALUES ('VENDEDOR', 'PENDIENTE', $1, 'usuario', 'ESCROW', $2, $2, $3, $4, $5::jsonb,
+              $6, $7, $8)
       ON CONFLICT (origen_tipo, origen_id, tipo, beneficiario_id) DO NOTHING
       RETURNING id
     `,
@@ -119,6 +196,9 @@ export async function registrarLiquidacionVendedor(
       input.montoVendedor,
       round2(input.montoVendedor + input.comision),
       JSON.stringify({ comision: round2(input.comision) }),
+      banco.cbu,
+      banco.alias,
+      banco.titular,
     ]
   )
   const id = res.rows[0]?.id ?? null
@@ -161,13 +241,15 @@ export async function registrarLiquidacionAliadoFeeVerificacion(
   client: DbClient,
   input: LiquidacionAliadoFeeVerificacionInput
 ): Promise<string | null> {
+  const banco = await obtenerDatosBancariosVigentes(client, 'aliado', input.aliadoId)
   const res = await client.query<{ id: string }>(
     `
       INSERT INTO pagos_liquidaciones
         (tipo, estado, beneficiario_id, beneficiario_tipo, origen_tipo, origen_id,
-         transaccion_id, monto, metadata)
+         transaccion_id, monto, metadata,
+         cbu_destino, alias_destino, titular_destino)
       VALUES ('ALIADO_FEE_VERIFICACION', 'PENDIENTE', $1, 'aliado', 'ESCROW', $2,
-              $2, $3, $4::jsonb)
+              $2, $3, $4::jsonb, $5, $6, $7)
       ON CONFLICT (origen_tipo, origen_id, tipo, beneficiario_id) DO NOTHING
       RETURNING id
     `,
@@ -176,6 +258,9 @@ export async function registrarLiquidacionAliadoFeeVerificacion(
       input.escrowTransaccionId,
       round2(input.monto),
       JSON.stringify({ concepto: 'fee_verificacion_cit_completo' }),
+      banco.cbu,
+      banco.alias,
+      banco.titular,
     ]
   )
   const id = res.rows[0]?.id ?? null
@@ -217,13 +302,15 @@ export async function registrarLiquidacionAliadoFeeLogistica(
   client: DbClient,
   input: LiquidacionAliadoFeeLogisticaInput
 ): Promise<string | null> {
+  const banco = await obtenerDatosBancariosVigentes(client, 'aliado', input.aliadoId)
   const res = await client.query<{ id: string }>(
     `
       INSERT INTO pagos_liquidaciones
         (tipo, estado, beneficiario_id, beneficiario_tipo, origen_tipo, origen_id,
-         transaccion_id, monto, metadata)
+         transaccion_id, monto, metadata,
+         cbu_destino, alias_destino, titular_destino)
       VALUES ('ALIADO_FEE_LOGISTICA', 'PENDIENTE', $1, 'aliado', 'ESCROW', $2,
-              $2, $3, $4::jsonb)
+              $2, $3, $4::jsonb, $5, $6, $7)
       ON CONFLICT (origen_tipo, origen_id, tipo, beneficiario_id) DO NOTHING
       RETURNING id
     `,
@@ -232,6 +319,9 @@ export async function registrarLiquidacionAliadoFeeLogistica(
       input.transaccionId,
       round2(input.monto),
       JSON.stringify({ concepto: 'fee_logistica_cit_completo' }),
+      banco.cbu,
+      banco.alias,
+      banco.titular,
     ]
   )
   const id = res.rows[0]?.id ?? null
@@ -267,13 +357,15 @@ export async function registrarLiquidacionAliadoFeeExito(
   client: DbClient,
   input: LiquidacionAliadoFeeExitoInput
 ): Promise<string | null> {
+  const banco = await obtenerDatosBancariosVigentes(client, 'aliado', input.aliadoId)
   const res = await client.query<{ id: string }>(
     `
       INSERT INTO pagos_liquidaciones
         (tipo, estado, beneficiario_id, beneficiario_tipo, origen_tipo, origen_id,
-         transaccion_id, monto, metadata)
+         transaccion_id, monto, metadata,
+         cbu_destino, alias_destino, titular_destino)
       VALUES ('ALIADO_FEE_EXITO', 'PENDIENTE', $1, 'aliado', 'ESCROW', $2,
-              $2, $3, $4::jsonb)
+              $2, $3, $4::jsonb, $5, $6, $7)
       ON CONFLICT (origen_tipo, origen_id, tipo, beneficiario_id) DO NOTHING
       RETURNING id
     `,
@@ -282,6 +374,9 @@ export async function registrarLiquidacionAliadoFeeExito(
       input.transaccionId,
       round2(input.monto),
       JSON.stringify({ concepto: 'fee_exito_cit_completo' }),
+      banco.cbu,
+      banco.alias,
+      banco.titular,
     ]
   )
   const id = res.rows[0]?.id ?? null

@@ -216,7 +216,27 @@ export async function POST(req: Request) {
       )
     }
 
-    // 3. Una sola publicacion activa/pausada por CIT (respaldado por indice unico).
+    // 3. Datos bancarios de payout obligatorios: sin CBU/alias cargado, RODAID
+    //    no tiene forma de transferirle al vendedor cuando se concrete la
+    //    venta (ver datos_bancarios_payout / compensaciones.service.ts).
+    const bancoResult = await client.query(
+      `
+        SELECT 1
+        FROM datos_bancarios_payout
+        WHERE beneficiario_tipo = 'usuario' AND beneficiario_id = $1
+        LIMIT 1
+      `,
+      [user.id]
+    )
+    if (!bancoResult.rowCount) {
+      throw new ApiError(
+        409,
+        'DATOS_BANCARIOS_FALTANTES',
+        'Antes de publicar necesitas cargar un CBU o alias para poder cobrar tu venta.'
+      )
+    }
+
+    // 4. Una sola publicacion activa/pausada por CIT (respaldado por indice unico).
     const duplicateResult = await client.query(
       `
         SELECT 1
@@ -235,7 +255,7 @@ export async function POST(req: Request) {
       )
     }
 
-    // 4. Foto opcional -> Netlify Blobs. Su URL publica se guarda en
+    // 5. Foto opcional -> Netlify Blobs. Su URL publica se guarda en
     //    bicicletas.foto_url y encabeza las fotos de la publicacion.
     const fotosUrls = [...(data.fotosUrls ?? [])]
     if (foto) {
@@ -258,7 +278,7 @@ export async function POST(req: Request) {
       fotosUrls.push(bici.foto_url)
     }
 
-    // 5. Registrar la publicacion.
+    // 6. Registrar la publicacion.
     const slugBase = slugify([bici.marca, bici.modelo, bici.anio])
     const slug = `${slugBase}-${bici.id.slice(0, 6)}`
 
