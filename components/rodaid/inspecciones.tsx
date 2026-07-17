@@ -476,8 +476,9 @@ function Acciones({
   cit: NonNullable<BusquedaInspeccion['cit']>
   onRefrescar: () => void
 }) {
+  const [notas, setNotas] = useState('')
   const [motivo, setMotivo] = useState('')
-  const [modo, setModo] = useState<'idle' | 'discrepancia'>('idle')
+  const [modo, setModo] = useState<'idle' | 'checklist' | 'discrepancia'>('idle')
   const [enviando, setEnviando] = useState<null | 'aprobar' | 'discrepancia'>(null)
 
   const sinWallet = !ctx.walletAddress
@@ -485,15 +486,12 @@ function Acciones({
   const yaResuelta = cit.estado === 'rechazado'
   const modoVistaActivo = ctx.modoVista !== 'propio'
 
-  const aprobar = async (
-    checklist: ChecklistInspeccion,
-    fotosPorPunto: Record<string, File>,
-    notas: string
-  ) => {
+  /** Aprobación rápida: solo veredicto + notas libres, sin checklist. */
+  const aprobarRapido = async () => {
     if (enviando) return
     setEnviando('aprobar')
     try {
-      const r = await aprobarInspeccion(cit.id, checklist, fotosPorPunto, notas.trim() || undefined)
+      const r = await aprobarInspeccion(cit.id, notas.trim() || undefined)
       if (r.bloqueadaPorSeguridad) {
         toast.warning('Aprobada, pero bloqueada por seguridad', {
           description:
@@ -504,6 +502,41 @@ function Acciones({
           description: `Acta firmada (${r.firma.algoritmo}). Pipeline acelerado. CIT: ${r.citEstado}.`,
         })
       }
+      setNotas('')
+      onRefrescar()
+    } catch (err) {
+      toast.error('No pudimos aprobar', { description: (err as Error).message })
+    } finally {
+      setEnviando(null)
+    }
+  }
+
+  /** Checklist completo de 20 puntos ("CIT Completo Plus"). */
+  const aprobarConChecklist = async (
+    checklist: ChecklistInspeccion,
+    fotosPorPunto: Record<string, File>,
+    notasChecklist: string
+  ) => {
+    if (enviando) return
+    setEnviando('aprobar')
+    try {
+      const r = await aprobarInspeccion(
+        cit.id,
+        notasChecklist.trim() || undefined,
+        checklist,
+        fotosPorPunto
+      )
+      if (r.bloqueadaPorSeguridad) {
+        toast.warning('Aprobada, pero bloqueada por seguridad', {
+          description:
+            'El cross-reference detectó una denuncia. La bici quedó BLOQUEADA.',
+        })
+      } else {
+        toast.success('Inspección aprobada y firmada', {
+          description: `Acta firmada (${r.firma.algoritmo}). Pipeline acelerado. CIT: ${r.citEstado}.`,
+        })
+      }
+      setModo('idle')
       onRefrescar()
     } catch (err) {
       toast.error('No pudimos aprobar', { description: (err as Error).message })
@@ -564,20 +597,58 @@ function Acciones({
 
       {modo === 'idle' ? (
         <>
+          <textarea
+            value={notas}
+            onChange={(e) => setNotas(e.target.value)}
+            rows={2}
+            placeholder="Notas de la inspección (opcional)"
+            className="w-full rounded-xl border border-ink/15 bg-white px-3 py-2 text-sm text-ink outline-none transition-colors placeholder:text-slate-warm/60 focus:border-ink/40 focus:ring-4 focus:ring-lime/25"
+          />
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={aprobarRapido}
+              disabled={sinWallet || enviando !== null || modoVistaActivo}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-ink px-4 py-2.5 text-sm font-semibold text-paper transition-colors hover:bg-ink-soft disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {enviando === 'aprobar' ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ShieldCheck className="size-4 text-lime" />
+              )}
+              Aprobar inspección física
+            </button>
+            <button
+              onClick={() => setModo('discrepancia')}
+              disabled={sinWallet || enviando !== null || modoVistaActivo}
+              className="inline-flex items-center justify-center gap-2 rounded-full border border-clay/40 bg-white px-4 py-2.5 text-sm font-semibold text-clay transition-colors hover:bg-clay/5 disabled:opacity-50"
+            >
+              <AlertTriangle className="size-4" />
+              Reportar discrepancia
+            </button>
+          </div>
+          <button
+            onClick={() => setModo('checklist')}
+            disabled={sinWallet || enviando !== null || modoVistaActivo}
+            className="text-xs font-semibold text-[#2BBCB8] underline decoration-dotted underline-offset-2 hover:text-[#2BBCB8]/80 disabled:opacity-50"
+          >
+            Usar checklist completo de 20 puntos (CIT Completo Plus) →
+          </button>
+        </>
+      ) : modo === 'checklist' ? (
+        <>
           {(sinWallet || modoVistaActivo) ? (
             <p className="rounded-xl bg-paper-dim px-3 py-2 text-xs font-semibold text-slate-warm">
               Completá el checklist una vez que puedas firmar (wallet configurada, fuera de modo vista previa).
             </p>
           ) : (
-            <ChecklistCIT onSubmit={aprobar} enviando={enviando === 'aprobar'} />
+            <ChecklistCIT onSubmit={aprobarConChecklist} enviando={enviando === 'aprobar'} />
           )}
           <button
-            onClick={() => setModo('discrepancia')}
-            disabled={sinWallet || enviando !== null || modoVistaActivo}
-            className="inline-flex items-center justify-center gap-2 rounded-full border border-clay/40 bg-white px-4 py-2.5 text-sm font-semibold text-clay transition-colors hover:bg-clay/5 disabled:opacity-50"
+            onClick={() => setModo('idle')}
+            disabled={enviando !== null}
+            className="text-xs font-semibold text-slate-warm underline decoration-dotted underline-offset-2 hover:text-ink disabled:opacity-50"
           >
-            <AlertTriangle className="size-4" />
-            Reportar discrepancia en su lugar
+            ← Volver a aprobación rápida
           </button>
         </>
       ) : (
