@@ -7,11 +7,14 @@ import {
   obtenerAnaliticaPersonal,
   type ActivoGaraje,
   type ActaFirmada,
+  type AnaliticaPersonal,
   type PuntoCalorPersonal,
 } from '@/src/services/garaje.service'
 import {
   construirMapaCalor,
   listarAlertas,
+  MENDOZA_BBOX,
+  MENDOZA_CENTRO,
   type AlertaSeguridad,
   type GeoJSONFeature,
 } from '@/src/services/analytics.service'
@@ -123,6 +126,10 @@ export interface ContextoRecolectado {
   contexto: ContextoUsuario
   /** Datos sensibles del perfil — SOLO para construir el mapa de anonimizacion. */
   perfil: PerfilSensible
+  /** TEMPORAL (diagnostico 2026-07-16): piezas que no respondieron a tiempo. */
+  piezasConTimeout: string[]
+  /** TEMPORAL (diagnostico 2026-07-16): piezas que fallaron con un error. */
+  piezasConError: string[]
 }
 
 interface UsuarioRow {
@@ -139,6 +146,77 @@ function textoPerfil(perfil: Record<string, unknown> | null, ...claves: string[]
   return null
 }
 
+// ── TEMPORAL (diagnostico 2026-07-16): timeout por pieza ─────────────────────
+//
+// Cada consulta que arma el contexto corre con un limite de tiempo propio y un
+// valor de respaldo -- antes, un Promise.all sin timeout por pieza dejaba que
+// una consulta lenta (ej. el mapa de calor, dos agregaciones geoespaciales)
+// colgara todo el pedido hasta que la plataforma matara la funcion, sin dejar
+// ningun error capturable por la app (por eso el [DEBUG TEMPORAL] de los catch
+// de la ruta no alcanzaba a mostrar nada -- el proceso se corta desde afuera).
+// Revertir junto con el resto del diagnostico temporal una vez confirmada la
+// causa real de la falla en produccion.
+const TIMEOUT_CONTEXTO_MS = 4000
+
+interface ResultadoConTimeout<T> {
+  valor: T
+  etiqueta: string
+  timeout: boolean
+  error: boolean
+}
+
+function conTimeout<T>(
+  promise: Promise<T>,
+  fallback: T,
+  etiqueta: string
+): Promise<ResultadoConTimeout<T>> {
+  // Evita "unhandled rejection" si la promesa original falla despues del timeout.
+  promise.catch(() => undefined)
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      console.error(
+        `[rodaid-gpt] timeout recolectando contexto: ${etiqueta} (${TIMEOUT_CONTEXTO_MS}ms)`
+      )
+      resolve({ valor: fallback, etiqueta, timeout: true, error: false })
+    }, TIMEOUT_CONTEXTO_MS)
+    promise.then(
+      (valor) => {
+        clearTimeout(timer)
+        resolve({ valor, etiqueta, timeout: false, error: false })
+      },
+      (err) => {
+        clearTimeout(timer)
+        console.error(`[rodaid-gpt] error recolectando contexto: ${etiqueta}`, err)
+        resolve({ valor: fallback, etiqueta, timeout: false, error: true })
+      }
+    )
+  })
+}
+
+const ANALITICA_FALLBACK: AnaliticaPersonal = {
+  metricas: {
+    totalBicis: 0,
+    verificadas: 0,
+    enProceso: 0,
+    bloqueadas: 0,
+    sinVerificar: 0,
+    actasFirmadas: 0,
+    certificadosDisponibles: 0,
+    publicacionesActivas: 0,
+    verificacionesRecibidas: 0,
+    verificacionesUltimos30: 0,
+    ultimaVerificacion: null,
+  },
+  mapa: {
+    centro: { ...MENDOZA_CENTRO },
+    bbox: MENDOZA_BBOX,
+    gridDeg: 0.005,
+    puntos: [],
+    suprimidasPorKAnon: 0,
+    generadoEn: new Date().toISOString(),
+  },
+}
+
 // ── Recoleccion de contexto ──────────────────────────────────────────────────
 
 /**
@@ -150,18 +228,35 @@ function textoPerfil(perfil: Record<string, unknown> | null, ...claves: string[]
 export async function recolectarContexto(userId: string): Promise<ContextoRecolectado> {
   const pool = getPool()
 
-  const [usuarioRes, activos, analitica, mapa, alertas] = await Promise.all([
-    pool.query<UsuarioRow>(
+  const obtenerUsuarioRow = async (): Promise<UsuarioRow | null> => {
+    const res = await pool.query<UsuarioRow>(
       `SELECT email, datos_perfil FROM usuarios WHERE id = $1`,
       [userId]
-    ),
-    obtenerActivosUsuario(userId),
-    obtenerAnaliticaPersonal(userId),
-    construirMapaCalor({ dias: 30 }).catch(() => null),
-    listarAlertas({ estado: 'abierta', limite: 8 }).catch(() => []),
+    )
+    return res.rows[0] ?? null
+  }
+
+  const [usuarioR, activosR, analiticaR, mapaR, alertasR] = await Promise.all([
+    conTimeout(obtenerUsuarioRow(), null, 'usuario'),
+    conTimeout(obtenerActivosUsuario(userId), [] as ActivoGaraje[], 'activos'),
+    conTimeout(obtenerAnaliticaPersonal(userId), ANALITICA_FALLBACK, 'analiticaPersonal'),
+    conTimeout(construirMapaCalor({ dias: 30 }), null, 'mapaCalor'),
+    conTimeout(listarAlertas({ estado: 'abierta', limite: 8 }), [] as AlertaSeguridad[], 'alertas'),
   ])
 
-  const fila = usuarioRes.rows[0]
+  const fila = usuarioR.valor
+  const activos = activosR.valor
+  const analitica = analiticaR.valor
+  const mapa = mapaR.valor
+  const alertas = alertasR.valor
+
+  const piezasConTimeout = [usuarioR, activosR, analiticaR, mapaR, alertasR]
+    .filter((r) => r.timeout)
+    .map((r) => r.etiqueta)
+  const piezasConError = [usuarioR, activosR, analiticaR, mapaR, alertasR]
+    .filter((r) => r.error)
+    .map((r) => r.etiqueta)
+
   const datos = fila?.datos_perfil ?? null
   const perfil: PerfilSensible = {
     nombre: textoPerfil(datos, 'nombre', 'firstName', 'first_name'),
@@ -263,7 +358,7 @@ export async function recolectarContexto(userId: string): Promise<ContextoRecole
     },
   }
 
-  return { contexto, perfil }
+  return { contexto, perfil, piezasConTimeout, piezasConError }
 }
 
 // ── System prompt dinamico con las "reglas de oro" ───────────────────────────

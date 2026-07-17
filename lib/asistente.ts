@@ -28,6 +28,10 @@ export interface MetaConsulta {
   cacheHit: boolean
   modelo: string
   cuota: EstadoCuota
+  /** TEMPORAL (diagnostico 2026-07-16): piezas del contexto que usaron su valor de respaldo. */
+  piezasConTimeout?: string[]
+  /** TEMPORAL (diagnostico 2026-07-16): piezas del contexto que fallaron con un error. */
+  piezasConError?: string[]
 }
 
 export interface ConsultaCallbacks {
@@ -91,12 +95,16 @@ export async function consultarGptStream(
         cacheHit?: boolean
         modelo?: string
         cuota?: EstadoCuota
+        piezasConTimeout?: string[]
+        piezasConError?: string[]
       }
       if (obj.type === 'meta') {
         callbacks.onMeta?.({
           cacheHit: Boolean(obj.cacheHit),
           modelo: obj.modelo ?? '',
           cuota: obj.cuota ?? { usadas: 0, limite: 0, restantes: 0, permitido: true },
+          piezasConTimeout: obj.piezasConTimeout,
+          piezasConError: obj.piezasConError,
         })
       } else if (obj.type === 'delta' && obj.text) {
         callbacks.onDelta(obj.text)

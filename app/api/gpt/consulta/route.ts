@@ -101,7 +101,9 @@ export async function POST(req: Request) {
     }
 
     // 3) Contexto controlado del usuario + seguridad de la ciudad.
-    const { contexto, perfil } = await recolectarContexto(user.id)
+    const { contexto, perfil, piezasConTimeout, piezasConError } = await recolectarContexto(
+      user.id
+    )
 
     // 4) Cache (solo en consultas de un solo turno, para no servir algo fuera de
     //    contexto conversacional).
@@ -129,6 +131,10 @@ export async function POST(req: Request) {
                   cacheHit: true,
                   modelo: hit.modelo,
                   cuota: { ...cuota }, // no consume cuota
+                  // TEMPORAL (diagnostico 2026-07-16): revertir junto con el
+                  // resto del diagnostico temporal.
+                  piezasConTimeout,
+                  piezasConError,
                 })
               )
             )
@@ -164,6 +170,10 @@ export async function POST(req: Request) {
                   usadas: cuota.usadas + 1,
                   restantes: Math.max(0, cuota.restantes - 1),
                 },
+                // TEMPORAL (diagnostico 2026-07-16): revertir junto con el
+                // resto del diagnostico temporal.
+                piezasConTimeout,
+                piezasConError,
               })
             )
           )
