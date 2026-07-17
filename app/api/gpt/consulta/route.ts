@@ -203,11 +203,16 @@ export async function POST(req: Request) {
           })
         } catch (err) {
           console.error('[rodaid-gpt] error en el stream', err)
+          // TEMPORAL (diagnostico 2026-07-16): el mensaje real del error viaja
+          // en la respuesta para que sea visible en el chat sin depender de
+          // logs de Netlify (Federico no puede usar DevTools). Revertir a un
+          // mensaje generico una vez confirmada la causa real de la falla.
+          const detalle = err instanceof Error ? err.message : String(err)
           controller.enqueue(
             enc.encode(
               sseFrame({
                 type: 'error',
-                message: 'No pudimos completar la respuesta del asistente. Intentá de nuevo.',
+                message: `[DEBUG TEMPORAL] ${detalle.slice(0, 300)}`,
               })
             )
           )
@@ -226,6 +231,18 @@ export async function POST(req: Request) {
 
     return sseResponse(stream)
   } catch (error) {
+    // TEMPORAL (diagnostico 2026-07-16): si el error no es de negocio (ApiError,
+    // ya con su propio mensaje claro), incluye el mensaje real para que sea
+    // visible en el chat sin depender de logs de Netlify. Revertir una vez
+    // confirmada la causa real de la falla en produccion.
+    if (!(error instanceof ApiError)) {
+      console.error('[rodaid-gpt] error antes de iniciar el stream', error)
+      const detalle = error instanceof Error ? error.message : String(error)
+      return NextResponse.json(
+        { error: 'INTERNAL_ERROR', message: `[DEBUG TEMPORAL] ${detalle.slice(0, 300)}` },
+        { status: 500 }
+      )
+    }
     return jsonError(error)
   }
 }
