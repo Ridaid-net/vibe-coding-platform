@@ -533,7 +533,7 @@ export async function registrarDenuncia(args: {
         SELECT id, estado FROM cits
         WHERE bicicleta_id = b.id
         ORDER BY CASE estado WHEN 'activo' THEN 0 WHEN 'pendiente' THEN 1 ELSE 2 END,
-                 creado_en DESC
+                 created_at DESC
         LIMIT 1
       ) c ON TRUE
       WHERE b.id = $1
