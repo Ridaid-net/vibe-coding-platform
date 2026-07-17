@@ -1,33 +1,77 @@
 'use client'
 import { useState } from 'react'
-import { Share2, Download, QrCode, CheckCircle } from 'lucide-react'
+import { Share2, Download, CheckCircle, Lock, Loader2 } from 'lucide-react'
+import type { EstadoCompartir } from '@/lib/garaje-digital'
 
 interface BiciSeguraShareProps {
-  codigoCit: string
   marca: string
   modelo: string
-  tipo: string
-  numeroSerie: string
   año: number | null
-  color: string | null
+  /** null mientras se carga el estado inicial desde el backend. */
+  estado: EstadoCompartir | null
+  onActivar: () => Promise<void>
+  onDesactivar: () => Promise<void>
 }
 
-export function BiciSeguraShare({ codigoCit, marca, modelo, tipo, numeroSerie, año, color }: BiciSeguraShareProps) {
-  const [copiado, setCopiado] = useState(false)
+/**
+ * Botón de "Historial Clínico" público (opt-in) de una bici. Antes de
+ * reconectarse (2026-07-18) apuntaba siempre a /verificar/:numeroSerie sin
+ * ningún opt-in y mostraba un ícono de QR decorativo, no un QR real -- ver
+ * CLAUDE.md, sección "Historial Clínico publico" para el diseño completo.
+ */
+export function BiciSeguraShare({ marca, modelo, año, estado, onActivar, onDesactivar }: BiciSeguraShareProps) {
   const [abierto, setAbierto] = useState(false)
+  const [accionando, setAccionando] = useState(false)
+  const [copiado, setCopiado] = useState(false)
 
-  const urlVerificacion = `https://rodaid.net/verificar/${numeroSerie}`
-  const textoShare = `🚲 Mi bici está verificada en RODAID\n${marca} ${modelo} ${año ?? ''}\nCIT: ${codigoCit}\nVerificá su identidad: ${urlVerificacion}`
+  if (!estado) return null
+
+  const activar = async () => {
+    setAccionando(true)
+    try {
+      await onActivar()
+      setAbierto(true)
+    } finally {
+      setAccionando(false)
+    }
+  }
+
+  const desactivar = async () => {
+    setAccionando(true)
+    try {
+      await onDesactivar()
+      setAbierto(false)
+    } finally {
+      setAccionando(false)
+    }
+  }
+
+  if (!estado.activo || !estado.url || !estado.token) {
+    return (
+      <button
+        onClick={activar}
+        disabled={accionando}
+        className="inline-flex items-center gap-2 rounded-full border border-[#2BBCB8] px-4 py-2 text-xs font-semibold text-[#2BBCB8] transition-colors hover:bg-[#2BBCB8]/5 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {accionando ? <Loader2 className="size-3.5 animate-spin" /> : <Share2 className="size-3.5" />}
+        Activar Historial Clínico público
+      </button>
+    )
+  }
+
+  const urlPublica = estado.url
+  const qrUrl = `/api/v1/historial/${estado.token}/qr`
+  const textoShare = `🚲 Mi bici está verificada en RODAID\n${marca} ${modelo} ${año ?? ''}\nHistorial completo: ${urlPublica}`
 
   const copiarLink = async () => {
-    await navigator.clipboard.writeText(urlVerificacion)
+    await navigator.clipboard.writeText(urlPublica)
     setCopiado(true)
     setTimeout(() => setCopiado(false), 2000)
   }
 
   const compartirNativo = async () => {
     if (navigator.share) {
-      await navigator.share({ title: `Mi bici verificada — RODAID`, text: textoShare, url: urlVerificacion })
+      await navigator.share({ title: 'Mi bici verificada — RODAID', text: textoShare, url: urlPublica })
     } else {
       copiarLink()
     }
@@ -40,7 +84,7 @@ export function BiciSeguraShare({ codigoCit, marca, modelo, tipo, numeroSerie, a
         className="inline-flex items-center gap-2 rounded-full border border-[#2BBCB8] px-4 py-2 text-xs font-semibold text-[#2BBCB8] hover:bg-[#2BBCB8]/5 transition-colors"
       >
         <Share2 className="size-3.5" />
-        Compartir Certificado
+        Compartir Historial Clínico
       </button>
     )
   }
@@ -48,7 +92,7 @@ export function BiciSeguraShare({ codigoCit, marca, modelo, tipo, numeroSerie, a
   return (
     <div className="rounded-2xl border border-[#2BBCB8]/30 bg-white p-5 mt-3">
       <div className="flex items-center justify-between mb-4">
-        <p className="text-sm font-semibold text-[#0F1E35]">Certificado BiciSegura</p>
+        <p className="text-sm font-semibold text-[#0F1E35]">Historial Clínico público</p>
         <button onClick={() => setAbierto(false)} className="text-xs text-slate-400 hover:text-slate-600">Cerrar</button>
       </div>
 
@@ -58,21 +102,18 @@ export function BiciSeguraShare({ codigoCit, marca, modelo, tipo, numeroSerie, a
           <span className="text-xs font-semibold uppercase tracking-widest text-[#2BBCB8]">RODAID · Verificada</span>
         </div>
         <p className="font-display text-xl font-bold">{marca} {modelo}</p>
-        <p className="text-sm text-white/70 mt-1">{tipo}{año ? ` · ${año}` : ''}{color ? ` · ${color}` : ''}</p>
-        <div className="mt-3 pt-3 border-t border-white/10">
-          <p className="text-xs text-white/50">CIT</p>
-          <p className="text-sm font-mono font-semibold text-[#F47B20]">{codigoCit}</p>
-        </div>
-        <div className="mt-3 flex items-center gap-2">
-          <QrCode className="size-10 text-white/30" />
+        <p className="text-sm text-white/70 mt-1">{año ?? ''}</p>
+        <div className="mt-3 flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={qrUrl} alt="QR del Historial Clínico" className="size-16 rounded bg-white p-1" />
           <div>
-            <p className="text-xs text-white/50">Verificar identidad</p>
-            <p className="text-xs text-[#2BBCB8] font-mono">rodaid.net/verificar</p>
+            <p className="text-xs text-white/50">Historial completo</p>
+            <p className="text-xs text-[#2BBCB8] font-mono break-all">{urlPublica.replace(/^https?:\/\//, '')}</p>
           </div>
         </div>
       </div>
 
-      <p className="text-xs text-slate-500 mb-3">Compartí tu certificado sin exponer datos personales. Solo muestra información técnica pública.</p>
+      <p className="text-xs text-slate-500 mb-3">Pegá este link en Facebook Marketplace u otros canales — muestra la identidad y el historial de tu bici, sin datos personales.</p>
 
       <div className="flex gap-2">
         <button
@@ -90,6 +131,14 @@ export function BiciSeguraShare({ codigoCit, marca, modelo, tipo, numeroSerie, a
           {copiado ? 'Link copiado' : 'Copiar link'}
         </button>
       </div>
+      <button
+        onClick={desactivar}
+        disabled={accionando}
+        className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold text-slate-400 hover:text-clay disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {accionando ? <Loader2 className="size-3.5 animate-spin" /> : <Lock className="size-3.5" />}
+        Desactivar Historial Clínico público
+      </button>
     </div>
   )
 }

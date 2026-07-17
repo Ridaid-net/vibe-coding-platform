@@ -166,7 +166,7 @@ interface ActaRow {
  * la transferencia de dominio", sin fecha fija -- a diferencia de CIT
  * Express, nunca debe considerarse "vencido" por tiempo.
  */
-function esCitCompleto(metadata: Record<string, unknown> | null): boolean {
+export function esCitCompleto(metadata: Record<string, unknown> | null): boolean {
   const insp = (metadata ?? {}).inspeccionFisica
   return (
     !!insp &&
