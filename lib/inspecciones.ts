@@ -228,15 +228,28 @@ export interface DiscrepanciaRespuesta {
   citEstado: string
 }
 
+/**
+ * Reporta una discrepancia. `checklist` es opcional -- se manda cuando el
+ * rechazo se origina en el checklist completo de 20 puntos (URGENTE, fix
+ * 2026-07-18: antes se perdía por completo al reportar discrepancia desde
+ * ese flujo). Sin archivos en este camino a propósito -- ver
+ * reportarDiscrepancia() en inspeccion.service.ts.
+ */
 export async function reportarDiscrepancia(
   citId: string,
-  motivo: string
+  motivo: string,
+  checklist?: ChecklistInspeccion | null
 ): Promise<DiscrepanciaRespuesta> {
   return leer(
     await authedFetch('/api/inspector/cit', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ accion: 'discrepancia', citId, motivo }),
+      body: JSON.stringify({
+        accion: 'discrepancia',
+        citId,
+        motivo,
+        checklist: checklist ? JSON.stringify(checklist) : undefined,
+      }),
     })
   )
 }

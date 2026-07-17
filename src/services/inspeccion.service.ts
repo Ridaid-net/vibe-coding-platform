@@ -1090,6 +1090,13 @@ export async function reportarDiscrepancia(opts: {
   inspector: InspectorContexto
   aliadoId: string | null
   motivo: string
+  /** Checklist de 20 puntos que originó la discrepancia (URGENTE, fix
+   * 2026-07-18): antes de esto, un inspector que rechazaba desde el
+   * checklist completo perdia los 20 puntos de trabajo -- se persisten
+   * igual que en aprobarInspeccionFisica(), pero deliberadamente SIN
+   * insertar en componentes_tokenizados ni subir fotos (ver comentario mas
+   * abajo, junto al INSERT). */
+  checklist?: ChecklistInspeccion | null
 }): Promise<DiscrepanciaResultado> {
   const { inspector } = opts
   const wallet = inspector.walletAddress
@@ -1125,15 +1132,22 @@ export async function reportarDiscrepancia(opts: {
     const firmaHash = firmaHashActa(payload)
     const firma: ActaFirmada = await firmarActa(payload)
 
+    // Persiste el checklist igual que aprobarInspeccionFisica(), pero
+    // deliberadamente NO inserta en componentes_tokenizados ni sube fotos:
+    // tokenizar (con UNIQUE global) el serial de un componente de una
+    // inspeccion RECHAZADA seria un vector para "ocupar" un serial legitimo
+    // via una inspeccion rechazada armada a proposito. El checklist completo
+    // igual queda preservado y auditable en checklist_detalle.
+    const moduloComponentes = Boolean(opts.checklist)
     const inserted = await client.query<{ id: string }>(
       `
         INSERT INTO inspecciones_fisicas
           (cit_id, bicicleta_id, inspector_id, aliado_id, taller_id, resultado,
            inspector_wallet, firma_hash, firma_algoritmo, firma_valor,
            firma_certificado, firma_cert_serie, firma_cert_fingerprint, firma_modo,
-           discrepancia_motivo, metadata)
+           discrepancia_motivo, metadata, checklist_detalle, modulo_componentes)
         VALUES ($1, $2, $3, $4, $5, 'DISCREPANCIA', $6, $7, $8, $9, $10, $11, $12,
-                $13, $14, $15::jsonb)
+                $13, $14, $15::jsonb, $16::jsonb, $17)
         RETURNING id
       `,
       [
@@ -1156,6 +1170,8 @@ export async function reportarDiscrepancia(opts: {
           inspectorNombre: inspector.nombre,
           canonico: firma.canonico,
         }),
+        opts.checklist ? JSON.stringify(opts.checklist) : null,
+        moduloComponentes,
       ]
     )
 

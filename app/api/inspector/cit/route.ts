@@ -38,7 +38,9 @@ interface PostBody {
   accion?: unknown
   notas?: unknown
   motivo?: unknown
-  /** Checklist de 20 puntos (JSON serializado), solo en accion 'aprobar'. */
+  /** Checklist de 20 puntos (JSON serializado). Presente en 'aprobar' (via
+   * multipart) y opcionalmente en 'discrepancia' (via JSON) cuando el
+   * rechazo se origina en el checklist completo. */
   checklist?: unknown
 }
 
@@ -74,6 +76,21 @@ async function parseBody(
   }
   const body = (await req.json().catch(() => ({}))) as PostBody
   return { body, fotosPorPunto: {} }
+}
+
+/**
+ * Parsea `body.checklist` (string JSON, tanto en multipart como en el body
+ * JSON de 'discrepancia') a `ChecklistInspeccion`. Compartido entre 'aprobar'
+ * y 'discrepancia' -- mismo formato de campo en los dos casos.
+ */
+function parseChecklist(body: PostBody): ChecklistInspeccion | null {
+  const raw = typeof body.checklist === 'string' ? body.checklist : null
+  if (!raw) return null
+  try {
+    return JSON.parse(raw) as ChecklistInspeccion
+  } catch {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'El checklist enviado no es JSON válido.')
+  }
 }
 
 export async function GET(req: Request) {
@@ -127,21 +144,12 @@ export async function POST(req: Request) {
     const { aliadoId } = await autorizarCitParaInspeccion(ctx, citId)
 
     if (accion === 'aprobar') {
-      const checklistRaw = typeof body.checklist === 'string' ? body.checklist : null
-      let checklist: ChecklistInspeccion | null = null
-      if (checklistRaw) {
-        try {
-          checklist = JSON.parse(checklistRaw) as ChecklistInspeccion
-        } catch {
-          throw new ApiError(400, 'VALIDATION_ERROR', 'El checklist enviado no es JSON válido.')
-        }
-      }
       const resultado = await aprobarInspeccionFisica({
         citId,
         inspector: ctx,
         aliadoId,
         notas: optionalText(body.notas),
-        checklist,
+        checklist: parseChecklist(body),
         fotosPorPunto,
       })
       return NextResponse.json(resultado, { status: 201 })
@@ -152,11 +160,17 @@ export async function POST(req: Request) {
       if (!motivo) {
         throw new ApiError(400, 'VALIDATION_ERROR', 'Indica el motivo de la discrepancia.')
       }
+      // URGENTE (fix 2026-07-18): preserva el checklist de 20 puntos cuando
+      // la discrepancia se reporta desde ese flujo (calcularResultadoChecklist
+      // dio aprobada=false) -- antes se perdia por completo. Deliberadamente
+      // sin fotosPorPunto acá: ver el comentario junto al INSERT en
+      // reportarDiscrepancia() sobre por que tampoco se tokenizan componentes.
       const resultado = await reportarDiscrepancia({
         citId,
         inspector: ctx,
         aliadoId,
         motivo,
+        checklist: parseChecklist(body),
       })
       return NextResponse.json(resultado, { status: 201 })
     }
