@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Bot, Loader2, Send, ShieldCheck, Sparkles, Zap } from 'lucide-react'
+import { AlertTriangle, Bot, Loader2, Send, ShieldCheck, Sparkles, Zap } from 'lucide-react'
 import { Streamdown } from 'streamdown'
 import {
   consultarGptStream,
@@ -20,6 +20,10 @@ interface Mensaje {
   role: 'user' | 'assistant'
   content: string
   cacheHit?: boolean
+  /** TEMPORAL (diagnostico 2026-07-16): piezas del contexto que usaron su valor de respaldo. */
+  piezasConTimeout?: string[]
+  /** TEMPORAL (diagnostico 2026-07-16): piezas del contexto que fallaron con un error. */
+  piezasConError?: string[]
 }
 
 const SUGERENCIAS = [
@@ -75,6 +79,14 @@ export function AsistenteGpt() {
           setCuota(meta.cuota)
           if (meta.cacheHit) {
             setMensajes((prev) => marcarUltimo(prev, { cacheHit: true }))
+          }
+          if (meta.piezasConTimeout?.length || meta.piezasConError?.length) {
+            setMensajes((prev) =>
+              marcarUltimo(prev, {
+                piezasConTimeout: meta.piezasConTimeout,
+                piezasConError: meta.piezasConError,
+              })
+            )
           }
         },
         onDelta: (delta) => {
@@ -233,6 +245,20 @@ function Burbuja({ mensaje, pensando }: { mensaje: Mensaje; pensando: boolean })
             {mensaje.cacheHit && (
               <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-lime/20 px-2 py-0.5 text-[11px] font-medium text-lime-deep">
                 <Zap className="size-3" /> respuesta en caché
+              </span>
+            )}
+            {(mensaje.piezasConTimeout?.length || mensaje.piezasConError?.length) && (
+              <span className="mt-2 flex items-start gap-1 rounded-xl bg-amber-100 px-2 py-1 text-[11px] font-medium text-amber-800">
+                <AlertTriangle className="mt-0.5 size-3 shrink-0" />
+                <span>
+                  [DEBUG TEMPORAL] contexto parcial —
+                  {mensaje.piezasConTimeout?.length
+                    ? ` timeout: ${mensaje.piezasConTimeout.join(', ')}.`
+                    : ''}
+                  {mensaje.piezasConError?.length
+                    ? ` error: ${mensaje.piezasConError.join(', ')}.`
+                    : ''}
+                </span>
               </span>
             )}
           </div>
