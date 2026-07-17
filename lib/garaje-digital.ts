@@ -47,6 +47,18 @@ export interface EstadoPipeline {
   creadoEn: string
 }
 
+/** Score de Confianza de la Bici (0-100), ver CLAUDE.md para el diseno completo. */
+export interface ScoreConfianza {
+  total: number
+  badge: 'oro' | 'bronce' | null
+  factores: {
+    cit: number
+    talleres: number
+    biciSalud: number
+    antiguedad: number
+  }
+}
+
 export interface ActivoGaraje {
   id: string
   marca: string
@@ -73,6 +85,7 @@ export interface ActivoGaraje {
   publicacionSlug: string | null
   /** Presente solo si estado === 'pago_pendiente' (solicitud de CIT Express sin confirmar). */
   solicitudPago: { montoARS: number; initPoint: string } | null
+  scoreConfianza: ScoreConfianza
 }
 
 export interface ActivosResponse {

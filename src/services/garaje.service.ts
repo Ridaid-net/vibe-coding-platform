@@ -1,5 +1,12 @@
 import { getPool } from '@/lib/marketplace'
 import { MENDOZA_BBOX, MENDOZA_CENTRO } from '@/src/services/analytics.service'
+import {
+  calcularScoresConfianza,
+  PUNTOS_CIT_COMPLETO,
+  PUNTOS_CIT_EXPRESS,
+  type InsumoScoreCit,
+  type ScoreConfianza,
+} from '@/src/services/score-confianza.service'
 
 /**
  * RODAID — Hito 14: Garaje Digital (hub central del usuario).
@@ -100,6 +107,9 @@ export interface ActivoGaraje {
 
   /** Presente solo si estado === 'pago_pendiente' (solicitud de CIT Express sin confirmar). */
   solicitudPago: { montoARS: number; initPoint: string } | null
+
+  /** Score de Confianza de la Bici (0-100), ver CLAUDE.md para el diseno completo. */
+  scoreConfianza: ScoreConfianza
 }
 
 interface ActivoRow {
@@ -315,31 +325,51 @@ export async function obtenerActivosUsuario(
           initPoint: row.solicitud_pago_init_point,
         }
       : null,
+    // Placeholder: se completa mas abajo con calcularScoresConfianza(), una
+    // vez resueltas las queries batched de talleres/BiciSalud/IoT.
+    scoreConfianza: { total: 0, badge: null, factores: { cit: 0, talleres: 0, biciSalud: 0, antiguedad: 0 } },
   }))
 
   if (activos.length === 0) return activos
 
-  // Actas de inspeccion firmadas de TODAS las bicis del usuario (una sola query).
   const ids = activos.map((a: ActivoGaraje) => a.id)
-  const actasRes = await pool.query<ActaRow>(
-    `
-      SELECT
-        i.bicicleta_id,
-        i.id,
-        i.resultado,
-        (i.firma_valor IS NOT NULL) AS firmada,
-        i.firma_algoritmo,
-        i.firma_cert_serie,
-        i.firma_modo,
-        a.nombre AS taller_nombre,
-        i.created_at
-      FROM inspecciones_fisicas i
-      LEFT JOIN aliados a ON a.id = i.taller_id
-      WHERE i.bicicleta_id = ANY($1::uuid[])
-      ORDER BY i.created_at DESC
-    `,
-    [ids]
-  )
+
+  const insumosScore = new Map<string, InsumoScoreCit>()
+  for (const row of result.rows) {
+    insumosScore.set(row.id, {
+      factorCit: !row.cit_activo
+        ? 0
+        : esCitCompleto(row.cit_metadata)
+          ? PUNTOS_CIT_COMPLETO
+          : PUNTOS_CIT_EXPRESS,
+      bicicletaCreadoEn: row.created_at,
+    })
+  }
+
+  // Actas firmadas + Score de Confianza de TODAS las bicis del usuario, en
+  // paralelo (batched por bicicleta_id, nunca N+1).
+  const [actasRes, scoresConfianza] = await Promise.all([
+    pool.query<ActaRow>(
+      `
+        SELECT
+          i.bicicleta_id,
+          i.id,
+          i.resultado,
+          (i.firma_valor IS NOT NULL) AS firmada,
+          i.firma_algoritmo,
+          i.firma_cert_serie,
+          i.firma_modo,
+          a.nombre AS taller_nombre,
+          i.created_at
+        FROM inspecciones_fisicas i
+        LEFT JOIN aliados a ON a.id = i.taller_id
+        WHERE i.bicicleta_id = ANY($1::uuid[])
+        ORDER BY i.created_at DESC
+      `,
+      [ids]
+    ),
+    calcularScoresConfianza(insumosScore),
+  ])
 
   const porBici = new Map<string, ActaFirmada[]>()
   for (const r of actasRes.rows) {
@@ -358,6 +388,7 @@ export async function obtenerActivosUsuario(
   }
   for (const a of activos) {
     a.actas = porBici.get(a.id) ?? []
+    a.scoreConfianza = scoresConfianza.get(a.id) ?? a.scoreConfianza
   }
 
   return activos
