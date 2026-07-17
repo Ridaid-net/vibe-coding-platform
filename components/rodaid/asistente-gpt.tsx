@@ -1,13 +1,14 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Bot, Loader2, Send, ShieldCheck, Sparkles, Zap } from 'lucide-react'
+import { Bot, Loader2, Send, ShieldCheck, Sparkles, Zap } from 'lucide-react'
 import { Streamdown } from 'streamdown'
 import {
   consultarGptStream,
   type EstadoCuota,
   type TurnoChat,
 } from '@/lib/asistente'
+import { getSession } from '@/lib/session'
 
 /**
  * RODAID-GPT (Hito 15) — interfaz de chat del asistente experto en seguridad y
@@ -20,10 +21,6 @@ interface Mensaje {
   role: 'user' | 'assistant'
   content: string
   cacheHit?: boolean
-  /** TEMPORAL (diagnostico 2026-07-16): piezas del contexto que usaron su valor de respaldo. */
-  piezasConTimeout?: string[]
-  /** TEMPORAL (diagnostico 2026-07-16): piezas del contexto que fallaron con un error. */
-  piezasConError?: string[]
 }
 
 const SUGERENCIAS = [
@@ -48,6 +45,11 @@ export function AsistenteGpt() {
   const [error, setError] = useState<string | null>(null)
   const [cuota, setCuota] = useState<EstadoCuota | null>(null)
   const finRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const sesion = getSession()
+    if (!sesion) window.location.replace('/ingresar?next=/asistente')
+  }, [])
 
   useEffect(() => {
     finRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -80,14 +82,6 @@ export function AsistenteGpt() {
           if (meta.cacheHit) {
             setMensajes((prev) => marcarUltimo(prev, { cacheHit: true }))
           }
-          if (meta.piezasConTimeout?.length || meta.piezasConError?.length) {
-            setMensajes((prev) =>
-              marcarUltimo(prev, {
-                piezasConTimeout: meta.piezasConTimeout,
-                piezasConError: meta.piezasConError,
-              })
-            )
-          }
         },
         onDelta: (delta) => {
           acumulado += delta
@@ -101,12 +95,8 @@ export function AsistenteGpt() {
           )
         },
       })
-    } catch (err) {
-      // TEMPORAL (diagnostico 2026-07-16): consultarGptStream() ya atrapa y
-      // reporta sus propios fallos vía onError con detalle real — si esto se
-      // dispara igual, es algo inesperado fuera de esa función.
-      const detalle = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
-      setError(`[DEBUG TEMPORAL] fallo inesperado en el cliente: ${detalle}`)
+    } catch {
+      setError('No pudimos contactar al asistente. Revisá tu conexión e intentá de nuevo.')
       setMensajes((prev) =>
         acumulado ? prev : prev.filter((_, i) => i !== prev.length - 1)
       )
@@ -249,20 +239,6 @@ function Burbuja({ mensaje, pensando }: { mensaje: Mensaje; pensando: boolean })
             {mensaje.cacheHit && (
               <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-lime/20 px-2 py-0.5 text-[11px] font-medium text-lime-deep">
                 <Zap className="size-3" /> respuesta en caché
-              </span>
-            )}
-            {(mensaje.piezasConTimeout?.length || mensaje.piezasConError?.length) && (
-              <span className="mt-2 flex items-start gap-1 rounded-xl bg-amber-100 px-2 py-1 text-[11px] font-medium text-amber-800">
-                <AlertTriangle className="mt-0.5 size-3 shrink-0" />
-                <span>
-                  [DEBUG TEMPORAL] contexto parcial —
-                  {mensaje.piezasConTimeout?.length
-                    ? ` timeout: ${mensaje.piezasConTimeout.join(', ')}.`
-                    : ''}
-                  {mensaje.piezasConError?.length
-                    ? ` error: ${mensaje.piezasConError.join(', ')}.`
-                    : ''}
-                </span>
               </span>
             )}
           </div>

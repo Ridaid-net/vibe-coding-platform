@@ -28,10 +28,6 @@ export interface MetaConsulta {
   cacheHit: boolean
   modelo: string
   cuota: EstadoCuota
-  /** TEMPORAL (diagnostico 2026-07-16): piezas del contexto que usaron su valor de respaldo. */
-  piezasConTimeout?: string[]
-  /** TEMPORAL (diagnostico 2026-07-16): piezas del contexto que fallaron con un error. */
-  piezasConError?: string[]
 }
 
 export interface ConsultaCallbacks {
@@ -52,16 +48,6 @@ export async function consultarGptStream(
   callbacks: ConsultaCallbacks,
   signal?: AbortSignal
 ): Promise<void> {
-  // TEMPORAL (diagnostico 2026-07-16): instrumentacion del lado cliente. Los
-  // timeouts que ya agregamos en el backend (recolectarContexto/streamRespuesta)
-  // solo pueden avisar del fallo si el PROCESO DE NODE sigue vivo para correr
-  // el catch y emitir el frame SSE -- si la conexion se corta antes de eso (o
-  // directamente nunca se establece), el cliente caia en mensajes 100%
-  // genericos y fijos que descartaban el status HTTP, el content-type y
-  // cuanto se alcanzo a recibir -- exactamente los datos que hacen falta para
-  // saber que esta pasando. Revertir junto con el resto del diagnostico
-  // temporal una vez confirmada la causa real de la falla.
-  const inicio = Date.now()
   let res: Response
   try {
     res = await authedFetch('/api/gpt/consulta', {
@@ -71,45 +57,30 @@ export async function consultarGptStream(
       signal,
     })
   } catch (err) {
-    const detalle = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
-    callbacks.onError(
-      `[DEBUG TEMPORAL] la conexion con el asistente fallo antes de recibir` +
-        ` respuesta (${Date.now() - inicio}ms): ${detalle}`
-    )
+    console.error('[rodaid-gpt] no se pudo conectar con el asistente', err)
+    callbacks.onError('No pudimos contactar al asistente. Revisá tu conexión e intentá de nuevo.')
     return
   }
 
   const tipo = res.headers.get('content-type') ?? ''
 
-  // Error de negocio (no es un stream): cuota agotada, validación, etc. --
-  // o una respuesta inesperada de la plataforma (ej. una pagina de error de
-  // Netlify, no JSON) si la conexion se corto antes de llegar a nuestro codigo.
+  // Error de negocio (no es un stream): cuota agotada, validación, etc.
   if (!tipo.includes('text/event-stream')) {
-    const textoBruto = await res.text().catch(() => '')
-    let data: { message?: string } | null = null
-    try {
-      data = textoBruto ? JSON.parse(textoBruto) : null
-    } catch {
-      data = null
-    }
+    const data = (await res.json().catch(() => null)) as { message?: string } | null
     callbacks.onError(
-      data?.message ??
-        `[DEBUG TEMPORAL] respuesta inesperada del servidor (status ${res.status}` +
-          ` ${res.statusText}, content-type "${tipo}", ${Date.now() - inicio}ms):` +
-          ` ${textoBruto.slice(0, 300) || '(sin cuerpo)'}`
+      data?.message ?? 'No pudimos procesar tu consulta. Intentá de nuevo.'
     )
     return
   }
 
   if (!res.body) {
-    callbacks.onError('[DEBUG TEMPORAL] el navegador no pudo abrir el stream de respuesta (res.body vacio).')
+    callbacks.onError('No pudimos abrir la respuesta del asistente.')
     return
   }
 
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
-  let caracteresRecibidos = 0
 
   const procesarEvento = (raw: string) => {
     // Un evento SSE puede tener varias líneas `data:`; las concatenamos.
@@ -127,19 +98,14 @@ export async function consultarGptStream(
         cacheHit?: boolean
         modelo?: string
         cuota?: EstadoCuota
-        piezasConTimeout?: string[]
-        piezasConError?: string[]
       }
       if (obj.type === 'meta') {
         callbacks.onMeta?.({
           cacheHit: Boolean(obj.cacheHit),
           modelo: obj.modelo ?? '',
           cuota: obj.cuota ?? { usadas: 0, limite: 0, restantes: 0, permitido: true },
-          piezasConTimeout: obj.piezasConTimeout,
-          piezasConError: obj.piezasConError,
         })
       } else if (obj.type === 'delta' && obj.text) {
-        caracteresRecibidos += obj.text.length
         callbacks.onDelta(obj.text)
       } else if (obj.type === 'done') {
         callbacks.onDone?.({ cacheHit: Boolean(obj.cacheHit) })
@@ -151,25 +117,17 @@ export async function consultarGptStream(
     }
   }
 
-  try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      // Los eventos SSE se separan por una línea en blanco.
-      let sep: number
-      while ((sep = buffer.indexOf('\n\n')) !== -1) {
-        const evento = buffer.slice(0, sep)
-        buffer = buffer.slice(sep + 2)
-        procesarEvento(evento)
-      }
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    // Los eventos SSE se separan por una línea en blanco.
+    let sep: number
+    while ((sep = buffer.indexOf('\n\n')) !== -1) {
+      const evento = buffer.slice(0, sep)
+      buffer = buffer.slice(sep + 2)
+      procesarEvento(evento)
     }
-    if (buffer.trim()) procesarEvento(buffer)
-  } catch (err) {
-    const detalle = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
-    callbacks.onError(
-      `[DEBUG TEMPORAL] el stream se cortó a los ${Date.now() - inicio}ms` +
-        ` (${caracteresRecibidos} caracteres recibidos hasta el corte): ${detalle}`
-    )
   }
+  if (buffer.trim()) procesarEvento(buffer)
 }
