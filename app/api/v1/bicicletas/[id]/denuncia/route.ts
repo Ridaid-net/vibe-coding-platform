@@ -5,6 +5,23 @@ import {
   registrarDenuncia,
 } from '@/src/services/denuncia-mpf.service'
 
+// TEMPORAL (diagnostico 2026-07-17): si el error no es de negocio (ApiError,
+// ya con su propio mensaje claro), incluye el mensaje real en la respuesta
+// para que sea visible en el modal sin depender de logs de Netlify
+// (Federico no puede usar DevTools). Revertir apenas se confirme la causa
+// real de la falla. Mismo patron que app/api/gpt/consulta/route.ts (4ca37be).
+function jsonErrorConDebug(error: unknown) {
+  if (!(error instanceof ApiError)) {
+    console.error('[denuncia] error no controlado en registrarDenuncia', error)
+    const detalle = error instanceof Error ? error.message : String(error)
+    return NextResponse.json(
+      { error: 'INTERNAL_ERROR', message: `[DEBUG TEMPORAL] ${detalle.slice(0, 300)}` },
+      { status: 500 }
+    )
+  }
+  return jsonError(error)
+}
+
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
@@ -61,7 +78,7 @@ export async function POST(
       headers: { 'cache-control': 'no-store' },
     })
   } catch (error) {
-    return jsonError(error)
+    return jsonErrorConDebug(error)
   }
 }
 

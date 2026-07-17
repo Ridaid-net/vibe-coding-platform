@@ -81,7 +81,16 @@ export async function parseApiError(
   const rawMessage =
     typeof payload.message === 'string' ? payload.message : null
 
+  // TEMPORAL (diagnostico 2026-07-17): si el backend adjunto el detalle real
+  // del error (prefijo [DEBUG TEMPORAL], ver denuncia/route.ts), se muestra
+  // tal cual en vez de enmascararlo -- Federico no puede usar DevTools ni
+  // tiene log drain de Netlify. Revertir junto con la ruta apenas se
+  // confirme la causa real de la falla.
+  const debug =
+    rawMessage && rawMessage.startsWith('[DEBUG TEMPORAL]') ? rawMessage : null
+
   const message =
+    debug ||
     (code && MENSAJES_POR_CODIGO[code]) ||
     mensajesPorStatus[res.status] ||
     (res.status >= 500
