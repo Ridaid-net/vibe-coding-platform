@@ -9,7 +9,7 @@ import {
   prepararMensajes,
   recolectarContexto,
   registrarConsulta,
-  streamRespuesta,
+  streamRespuestaConReintento,
   verificarCuota,
   type TurnoChat,
 } from '@/src/services/rodaid-gpt.service'
@@ -168,7 +168,7 @@ export async function POST(req: Request) {
             )
           )
 
-          for await (const chunk of streamRespuesta(system, mensajes)) {
+          for await (const chunk of streamRespuestaConReintento(system, mensajes)) {
             if (chunk.texto) {
               texto += chunk.texto
               controller.enqueue(enc.encode(sseFrame({ type: 'delta', text: chunk.texto })))
