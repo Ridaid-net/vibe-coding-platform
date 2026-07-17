@@ -101,8 +101,12 @@ export function AsistenteGpt() {
           )
         },
       })
-    } catch {
-      setError('No pudimos contactar al asistente. Revisá tu conexión e intentá de nuevo.')
+    } catch (err) {
+      // TEMPORAL (diagnostico 2026-07-16): consultarGptStream() ya atrapa y
+      // reporta sus propios fallos vía onError con detalle real — si esto se
+      // dispara igual, es algo inesperado fuera de esa función.
+      const detalle = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+      setError(`[DEBUG TEMPORAL] fallo inesperado en el cliente: ${detalle}`)
       setMensajes((prev) =>
         acumulado ? prev : prev.filter((_, i) => i !== prev.length - 1)
       )
