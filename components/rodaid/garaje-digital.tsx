@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import {
   ArrowRight,
+  Award,
   BadgeCheck,
   Bike,
   CheckCircle2,
@@ -326,6 +327,9 @@ function ActivoCard({
         </div>
       </div>
 
+      {/* Score de Confianza de la Bici */}
+      <ScoreConfianzaBloque activo={activo} />
+
       {/* Pipeline en vivo (72hs) */}
       {activo.estado === 'pendiente' && <PipelineEstado activo={activo} />}
 
@@ -585,6 +589,44 @@ function PipelineEstado({ activo }: { activo: ActivoGaraje }) {
           style={{ width: `${progreso}%` }}
         />
       </div>
+    </div>
+  )
+}
+
+const SCORE_MEDALLA: Record<'oro' | 'bronce', { label: string; clase: string }> = {
+  oro: { label: 'Oro', clase: 'bg-amber-100 text-amber-800 border-amber-300/70' },
+  bronce: { label: 'Bronce', clase: 'bg-orange-100 text-orange-800 border-orange-300/60' },
+}
+
+/**
+ * Score de Confianza de la Bici (0-100): CIT + historial de talleres +
+ * BiciSalud + antiguedad en la plataforma. Ver CLAUDE.md para el diseno
+ * completo y el motivo por el que Strava queda afuera por ahora.
+ */
+function ScoreConfianzaBloque({ activo }: { activo: ActivoGaraje }) {
+  const score = activo.scoreConfianza
+  const medalla = score.badge ? SCORE_MEDALLA[score.badge] : null
+
+  return (
+    <div className="mt-4 flex items-center justify-between gap-2 rounded-2xl border border-ink/10 bg-paper/60 px-3.5 py-3">
+      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-ink">
+        <ShieldCheck className="size-3.5 text-ink/50" />
+        Score de Confianza
+      </span>
+      <span className="flex items-center gap-2">
+        {medalla && (
+          <span
+            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${medalla.clase}`}
+          >
+            <Award className="size-3" />
+            {medalla.label}
+          </span>
+        )}
+        <span className="text-sm font-bold text-ink">
+          {score.total}
+          <span className="text-[10px] font-medium text-slate-warm">/100</span>
+        </span>
+      </span>
     </div>
   )
 }
