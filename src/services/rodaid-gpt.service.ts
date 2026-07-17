@@ -595,6 +595,43 @@ export interface ChunkRespuesta {
   usage?: { entrada: number; salida: number }
 }
 
+// ── TEMPORAL (diagnostico 2026-07-16): timeout por inactividad del modelo ────
+//
+// Mismo criterio que TIMEOUT_CONTEXTO_MS: sin esto, si la llamada a Anthropic
+// se cuelga (ej. un problema de red hacia el Netlify AI Gateway) sin tirar
+// ninguna excepcion, la plataforma mata la funcion desde afuera y el catch de
+// la ruta nunca llega a ejecutarse -- por eso streamRespuesta() no dejaba
+// ningun rastro visible pese a que recolectarContexto() ya estaba cubierto.
+// Se reinicia con cada evento que llega del modelo (no es un limite fijo de
+// duracion total) para no cortar una respuesta larga que sigue generando texto
+// con normalidad -- solo corta un colgado real, sin actividad. Revertir junto
+// con el resto del diagnostico temporal una vez confirmada la causa real de la
+// falla en produccion.
+const TIMEOUT_STREAM_MS = 8000
+
+function proximoEventoConTimeout<T>(
+  iterador: AsyncIterator<T>,
+  ms: number
+): Promise<IteratorResult<T>> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(
+        new Error(`[rodaid-gpt] el modelo no respondio (sin actividad ${ms}ms)`)
+      )
+    }, ms)
+    iterador.next().then(
+      (resultado) => {
+        clearTimeout(timer)
+        resolve(resultado)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      }
+    )
+  })
+}
+
 /**
  * Abre el stream con Claude Sonnet y emite los deltas de texto a medida que
  * llegan, mas el consumo de tokens final. El backend es el unico intermediario:
@@ -604,26 +641,40 @@ export async function* streamRespuesta(
   system: string,
   mensajes: Anthropic.MessageParam[]
 ): AsyncGenerator<ChunkRespuesta> {
-  const stream = anthropic().messages.stream({
-    model: MODELO_GPT,
-    max_tokens: maxTokens(),
-    system,
-    messages: mensajes,
-  })
+  const controller = new AbortController()
+  const stream = anthropic().messages.stream(
+    {
+      model: MODELO_GPT,
+      max_tokens: maxTokens(),
+      system,
+      messages: mensajes,
+    },
+    { signal: controller.signal }
+  )
+  const iterador = stream[Symbol.asyncIterator]()
 
   let entrada = 0
   let salida = 0
-  for await (const event of stream) {
-    if (
-      event.type === 'content_block_delta' &&
-      event.delta.type === 'text_delta'
-    ) {
-      yield { texto: event.delta.text }
-    } else if (event.type === 'message_start') {
-      entrada = event.message.usage?.input_tokens ?? entrada
-    } else if (event.type === 'message_delta') {
-      salida = event.usage?.output_tokens ?? salida
+  try {
+    while (true) {
+      const resultado = await proximoEventoConTimeout(iterador, TIMEOUT_STREAM_MS)
+      if (resultado.done) break
+      const event = resultado.value
+      if (
+        event.type === 'content_block_delta' &&
+        event.delta.type === 'text_delta'
+      ) {
+        yield { texto: event.delta.text }
+      } else if (event.type === 'message_start') {
+        entrada = event.message.usage?.input_tokens ?? entrada
+      } else if (event.type === 'message_delta') {
+        salida = event.usage?.output_tokens ?? salida
+      }
     }
+  } catch (error) {
+    console.error('[rodaid-gpt] error/timeout en el stream del modelo', error)
+    controller.abort()
+    throw error
   }
   yield { usage: { entrada, salida } }
 }
