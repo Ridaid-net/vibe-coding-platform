@@ -41,10 +41,40 @@ export const PUNTOS_INSPECCION: PuntoInspeccion[] = [
 
 export type ResultadoPunto = 'ok' | 'observacion' | 'falla' | 'no_aplica'
 
+/**
+ * Puntos de "alto valor" candidatos a captura de componente (marca/modelo/
+ * numero de serie) -- "CIT Completo Plus". Auditoria 2026-07-17: de los 20,
+ * solo estos 5 corresponden a una pieza fisica reemplazable e identificable
+ * por serial (horquilla, ruedas, frenos). El resto son verificaciones
+ * estructurales/de identidad sin un componente propio -- forzarles captura
+ * de marca/modelo/serial pediria datos que la pieza no tiene grabados.
+ * P13/P14 (Transmision) quedan deliberadamente afuera de esta fase: zona
+ * gris para una fase futura (ver CLAUDE.md).
+ */
+export const PUNTOS_CON_COMPONENTE = ['P06', 'P08', 'P09', 'P11', 'P12'] as const
+export type PuntoConComponente = (typeof PUNTOS_CON_COMPONENTE)[number]
+
+export function esPuntoConComponente(puntoId: string): puntoId is PuntoConComponente {
+  return (PUNTOS_CON_COMPONENTE as readonly string[]).includes(puntoId)
+}
+
+/**
+ * Datos del componente fisico capturados en un punto de alto valor. La foto
+ * NO viaja acá -- se sube aparte (multipart) y el backend la asocia por
+ * puntoId; este objeto solo lleva los campos de texto.
+ */
+export interface ComponenteCapturado {
+  marca?: string
+  modelo?: string
+  numeroSerie?: string
+}
+
 export interface ChecklistInspeccion {
   [puntoId: string]: {
     resultado: ResultadoPunto
     nota?: string
+    /** Solo presente si puntoId ∈ PUNTOS_CON_COMPONENTE. */
+    componente?: ComponenteCapturado
   }
 }
 

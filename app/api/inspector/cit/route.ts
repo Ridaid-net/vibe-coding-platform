@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { ApiError, jsonError, optionalText, requireRole } from '@/lib/marketplace'
+import type { ChecklistInspeccion } from '@/lib/puntos-inspeccion'
 import {
   aprobarInspeccionFisica,
   autorizarCitParaInspeccion,
@@ -37,6 +38,42 @@ interface PostBody {
   accion?: unknown
   notas?: unknown
   motivo?: unknown
+  /** Checklist de 20 puntos (JSON serializado), solo en accion 'aprobar'. */
+  checklist?: unknown
+}
+
+/**
+ * Parsea el body en JSON (camino de siempre: discrepancia/verificar, y
+ * aprobar sin checklist) o en multipart/form-data (aprobar CON checklist +
+ * fotos de componentes). El content-type real del request decide, no un
+ * flag -- así ningún caller existente que siga mandando JSON se rompe.
+ * Campos de archivo esperados: `foto_P06`, `foto_P08`, etc. (prefijo
+ * `foto_` + puntoId).
+ */
+async function parseBody(
+  req: Request
+): Promise<{ body: PostBody; fotosPorPunto: Record<string, Blob> }> {
+  const contentType = req.headers.get('content-type') ?? ''
+  if (contentType.includes('multipart/form-data')) {
+    const form = await req.formData()
+    const body: PostBody = {
+      citId: form.get('citId') ?? undefined,
+      actaId: form.get('actaId') ?? undefined,
+      accion: form.get('accion') ?? undefined,
+      notas: form.get('notas') ?? undefined,
+      motivo: form.get('motivo') ?? undefined,
+      checklist: form.get('checklist') ?? undefined,
+    }
+    const fotosPorPunto: Record<string, Blob> = {}
+    for (const [key, value] of form.entries()) {
+      if (key.startsWith('foto_') && value instanceof File && value.size > 0) {
+        fotosPorPunto[key.slice('foto_'.length)] = value
+      }
+    }
+    return { body, fotosPorPunto }
+  }
+  const body = (await req.json().catch(() => ({}))) as PostBody
+  return { body, fotosPorPunto: {} }
 }
 
 export async function GET(req: Request) {
@@ -60,7 +97,7 @@ export async function POST(req: Request) {
     // un acta real -- un admin en "ver como" nunca puede atribuirle una
     // accion a un aliado que no es el suyo.
     const ctx = await cargarInspectorContexto(user.id)
-    const body = (await req.json().catch(() => ({}))) as PostBody
+    const { body, fotosPorPunto } = await parseBody(req)
     const accion = typeof body.accion === 'string' ? body.accion : ''
 
     // Verificacion de firma: no requiere wallet ni alcance sobre un CIT.
@@ -90,11 +127,22 @@ export async function POST(req: Request) {
     const { aliadoId } = await autorizarCitParaInspeccion(ctx, citId)
 
     if (accion === 'aprobar') {
+      const checklistRaw = typeof body.checklist === 'string' ? body.checklist : null
+      let checklist: ChecklistInspeccion | null = null
+      if (checklistRaw) {
+        try {
+          checklist = JSON.parse(checklistRaw) as ChecklistInspeccion
+        } catch {
+          throw new ApiError(400, 'VALIDATION_ERROR', 'El checklist enviado no es JSON válido.')
+        }
+      }
       const resultado = await aprobarInspeccionFisica({
         citId,
         inspector: ctx,
         aliadoId,
         notas: optionalText(body.notas),
+        checklist,
+        fotosPorPunto,
       })
       return NextResponse.json(resultado, { status: 201 })
     }

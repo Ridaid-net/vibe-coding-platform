@@ -1,7 +1,14 @@
 'use client'
-import { useState, useRef } from 'react'
-import { CheckCircle, XCircle, AlertCircle, MinusCircle, Camera, X, ChevronDown, ChevronUp } from 'lucide-react'
-import { PUNTOS_INSPECCION, ChecklistInspeccion, ResultadoPunto, calcularResultadoChecklist } from '@/lib/puntos-inspeccion'
+import { useEffect, useRef, useState } from 'react'
+import { CheckCircle, XCircle, AlertCircle, MinusCircle, Camera, X, ChevronDown, ChevronUp, Tag } from 'lucide-react'
+import {
+  PUNTOS_INSPECCION,
+  ChecklistInspeccion,
+  ComponenteCapturado,
+  ResultadoPunto,
+  calcularResultadoChecklist,
+  esPuntoConComponente,
+} from '@/lib/puntos-inspeccion'
 
 const RESULTADO_CONFIG: Record<ResultadoPunto, { label: string; color: string; icono: typeof CheckCircle }> = {
   ok: { label: 'OK', color: 'text-green-600 bg-green-100 border-green-300', icono: CheckCircle },
@@ -11,14 +18,15 @@ const RESULTADO_CONFIG: Record<ResultadoPunto, { label: string; color: string; i
 }
 
 interface Props {
-  onSubmit: (checklist: ChecklistInspeccion, fotos: string[], notas: string) => void
+  onSubmit: (checklist: ChecklistInspeccion, fotosPorPunto: Record<string, File>, notas: string) => void
   enviando?: boolean
 }
 
 export function ChecklistCIT({ onSubmit, enviando = false }: Props) {
   const [checklist, setChecklist] = useState<ChecklistInspeccion>({})
   const [notasGlobal, setNotasGlobal] = useState('')
-  const [fotos, setFotos] = useState<string[]>([])
+  const [fotosPorPunto, setFotosPorPunto] = useState<Record<string, File>>({})
+  const [previewsPorPunto, setPreviewsPorPunto] = useState<Record<string, string>>({})
   const [categoriasAbiertas, setCategoriasAbiertas] = useState<Record<string, boolean>>({
     'Identificación': true,
     'Cuadro y Horquilla': true,
@@ -28,7 +36,16 @@ export function ChecklistCIT({ onSubmit, enviando = false }: Props) {
     'Componentes': false,
     'Seguridad': true,
   })
-  const fileRef = useRef<HTMLInputElement>(null)
+  const fileRefs = useRef<Record<string, HTMLInputElement | null>>({})
+
+  // Revoca todas las URL de preview al desmontar (no antes -- se revocan
+  // individualmente al reemplazar/quitar una foto, ver adjuntarFotoPunto).
+  useEffect(() => {
+    return () => {
+      Object.values(previewsPorPunto).forEach(url => URL.revokeObjectURL(url))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const categorias = [...new Set(PUNTOS_INSPECCION.map(p => p.categoria))]
 
@@ -40,15 +57,33 @@ export function ChecklistCIT({ onSubmit, enviando = false }: Props) {
     setChecklist(prev => ({ ...prev, [puntoId]: { ...prev[puntoId], nota } }))
   }
 
-  const subirFoto = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? [])
-    files.forEach(file => {
-      const reader = new FileReader()
-      reader.onload = ev => {
-        const base64 = ev.target?.result as string
-        setFotos(prev => [...prev, base64])
-      }
-      reader.readAsDataURL(file)
+  const setComponenteCampo = (puntoId: string, campo: keyof ComponenteCapturado, valor: string) => {
+    setChecklist(prev => ({
+      ...prev,
+      [puntoId]: {
+        ...prev[puntoId],
+        componente: { ...prev[puntoId]?.componente, [campo]: valor },
+      },
+    }))
+  }
+
+  const adjuntarFotoPunto = (puntoId: string, file: File) => {
+    setFotosPorPunto(prev => ({ ...prev, [puntoId]: file }))
+    setPreviewsPorPunto(prev => {
+      if (prev[puntoId]) URL.revokeObjectURL(prev[puntoId])
+      return { ...prev, [puntoId]: URL.createObjectURL(file) }
+    })
+  }
+
+  const quitarFotoPunto = (puntoId: string) => {
+    setFotosPorPunto(prev => {
+      const { [puntoId]: _quitada, ...resto } = prev
+      return resto
+    })
+    setPreviewsPorPunto(prev => {
+      if (prev[puntoId]) URL.revokeObjectURL(prev[puntoId])
+      const { [puntoId]: _quitada, ...resto } = prev
+      return resto
     })
   }
 
@@ -65,7 +100,7 @@ export function ChecklistCIT({ onSubmit, enviando = false }: Props) {
       alert(`Faltan ${PUNTOS_INSPECCION.length - completados} puntos por evaluar.`)
       return
     }
-    onSubmit(checklist, fotos, notasGlobal)
+    onSubmit(checklist, fotosPorPunto, notasGlobal)
   }
 
   return (
@@ -113,6 +148,10 @@ export function ChecklistCIT({ onSubmit, enviando = false }: Props) {
               <div className="border-t border-slate-100 divide-y divide-slate-50">
                 {puntosCat.map(punto => {
                   const r = checklist[punto.id]?.resultado
+                  const conComponente = esPuntoConComponente(punto.id)
+                  const componente = checklist[punto.id]?.componente
+                  const foto = fotosPorPunto[punto.id]
+                  const preview = previewsPorPunto[punto.id]
                   return (
                     <div key={punto.id} className="px-5 py-4">
                       <div className="flex items-start gap-3 mb-2">
@@ -121,6 +160,11 @@ export function ChecklistCIT({ onSubmit, enviando = false }: Props) {
                           <p className="text-sm text-[#0F1E35]">
                             {punto.descripcion}
                             {punto.critico && <span className="ml-1 text-[10px] font-bold text-red-500">CRÍTICO</span>}
+                            {conComponente && (
+                              <span className="ml-1 inline-flex items-center gap-0.5 text-[10px] font-bold text-[#2BBCB8]">
+                                <Tag className="size-2.5" /> COMPONENTE
+                              </span>
+                            )}
                           </p>
                         </div>
                       </div>
@@ -146,6 +190,52 @@ export function ChecklistCIT({ onSubmit, enviando = false }: Props) {
                           onChange={e => setNota(punto.id, e.target.value)}
                           className="mt-2 ml-8 w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs outline-none focus:border-[#2BBCB8]" />
                       )}
+
+                      {conComponente && (
+                        <div className="mt-3 ml-8 rounded-xl border border-[#2BBCB8]/25 bg-[#2BBCB8]/5 p-3 space-y-2">
+                          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#2BBCB8]">
+                            <Tag className="size-3" /> Componente tokenizado (opcional)
+                          </p>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <input type="text" placeholder="Marca"
+                              value={componente?.marca ?? ''}
+                              onChange={e => setComponenteCampo(punto.id, 'marca', e.target.value)}
+                              className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus:border-[#2BBCB8]" />
+                            <input type="text" placeholder="Modelo"
+                              value={componente?.modelo ?? ''}
+                              onChange={e => setComponenteCampo(punto.id, 'modelo', e.target.value)}
+                              className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus:border-[#2BBCB8]" />
+                            <input type="text" placeholder="N° de serie"
+                              value={componente?.numeroSerie ?? ''}
+                              onChange={e => setComponenteCampo(punto.id, 'numeroSerie', e.target.value)}
+                              className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-mono outline-none focus:border-[#2BBCB8]" />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {preview ? (
+                              <div className="relative size-14 shrink-0 overflow-hidden rounded-lg bg-slate-100">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={preview} alt={`Foto ${punto.id}`} className="size-full object-cover" />
+                                <button type="button" onClick={() => quitarFotoPunto(punto.id)}
+                                  className="absolute top-0.5 right-0.5 flex size-4 items-center justify-center rounded-full bg-black/60 text-white">
+                                  <X className="size-2.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <label className="inline-flex items-center gap-1 rounded-full bg-[#F47B20] px-2.5 py-1 text-[11px] font-semibold text-white cursor-pointer hover:bg-[#F47B20]/80">
+                                <Camera className="size-3" /> Foto del serial
+                                <input
+                                  ref={el => { fileRefs.current[punto.id] = el }}
+                                  type="file" accept="image/*" className="hidden"
+                                  onChange={e => {
+                                    const file = e.target.files?.[0]
+                                    if (file) adjuntarFotoPunto(punto.id, file)
+                                  }} />
+                              </label>
+                            )}
+                            {foto && <span className="text-[11px] text-slate-warm">{foto.name}</span>}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )
                 })}
@@ -154,34 +244,6 @@ export function ChecklistCIT({ onSubmit, enviando = false }: Props) {
           </div>
         )
       })}
-
-      {/* Fotos */}
-      <div className="rounded-2xl border border-ink/10 bg-white p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-display text-base font-semibold text-[#0F1E35] flex items-center gap-2">
-            <Camera className="size-4 text-[#F47B20]" /> Fotos de la inspección
-          </h3>
-          <label className="inline-flex items-center gap-1 rounded-full bg-[#F47B20] px-3 py-1.5 text-xs font-semibold text-white cursor-pointer hover:bg-[#F47B20]/80">
-            <Camera className="size-3" /> Agregar fotos
-            <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={subirFoto} />
-          </label>
-        </div>
-        {fotos.length === 0 ? (
-          <p className="text-sm text-slate-warm text-center py-4">Agregá fotos del número de serie, cuadro y componentes inspeccionados.</p>
-        ) : (
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-            {fotos.map((f, i) => (
-              <div key={i} className="relative aspect-square rounded-xl overflow-hidden bg-slate-100">
-                <img src={f} alt={`Foto ${i+1}`} loading="lazy" className="w-full h-full object-cover" />
-                <button type="button" onClick={() => setFotos(prev => prev.filter((_, j) => j !== i))}
-                  className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-full bg-black/60 text-white">
-                  <X className="size-3" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
 
       {/* Notas generales */}
       <div className="rounded-2xl border border-ink/10 bg-white p-5">

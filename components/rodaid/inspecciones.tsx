@@ -476,7 +476,6 @@ function Acciones({
   cit: NonNullable<BusquedaInspeccion['cit']>
   onRefrescar: () => void
 }) {
-  const [notas, setNotas] = useState('')
   const [motivo, setMotivo] = useState('')
   const [modo, setModo] = useState<'idle' | 'discrepancia'>('idle')
   const [enviando, setEnviando] = useState<null | 'aprobar' | 'discrepancia'>(null)
@@ -486,11 +485,15 @@ function Acciones({
   const yaResuelta = cit.estado === 'rechazado'
   const modoVistaActivo = ctx.modoVista !== 'propio'
 
-  const aprobar = async () => {
+  const aprobar = async (
+    checklist: ChecklistInspeccion,
+    fotosPorPunto: Record<string, File>,
+    notas: string
+  ) => {
     if (enviando) return
     setEnviando('aprobar')
     try {
-      const r = await aprobarInspeccion(cit.id, notas.trim() || undefined)
+      const r = await aprobarInspeccion(cit.id, checklist, fotosPorPunto, notas.trim() || undefined)
       if (r.bloqueadaPorSeguridad) {
         toast.warning('Aprobada, pero bloqueada por seguridad', {
           description:
@@ -501,7 +504,6 @@ function Acciones({
           description: `Acta firmada (${r.firma.algoritmo}). Pipeline acelerado. CIT: ${r.citEstado}.`,
         })
       }
-      setNotas('')
       onRefrescar()
     } catch (err) {
       toast.error('No pudimos aprobar', { description: (err as Error).message })
@@ -562,35 +564,21 @@ function Acciones({
 
       {modo === 'idle' ? (
         <>
-          <textarea
-            value={notas}
-            onChange={(e) => setNotas(e.target.value)}
-            rows={2}
-            placeholder="Notas de la inspección (opcional)"
-            className="w-full rounded-xl border border-ink/15 bg-white px-3 py-2 text-sm text-ink outline-none transition-colors placeholder:text-slate-warm/60 focus:border-ink/40 focus:ring-4 focus:ring-lime/25"
-          />
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={aprobar}
-              disabled={sinWallet || enviando !== null || modoVistaActivo}
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-ink px-4 py-2.5 text-sm font-semibold text-paper transition-colors hover:bg-ink-soft disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {enviando === 'aprobar' ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <ShieldCheck className="size-4 text-lime" />
-              )}
-              Aprobar inspección física
-            </button>
-            <button
-              onClick={() => setModo('discrepancia')}
-              disabled={sinWallet || enviando !== null || modoVistaActivo}
-              className="inline-flex items-center justify-center gap-2 rounded-full border border-clay/40 bg-white px-4 py-2.5 text-sm font-semibold text-clay transition-colors hover:bg-clay/5 disabled:opacity-50"
-            >
-              <AlertTriangle className="size-4" />
-              Reportar discrepancia
-            </button>
-          </div>
+          {(sinWallet || modoVistaActivo) ? (
+            <p className="rounded-xl bg-paper-dim px-3 py-2 text-xs font-semibold text-slate-warm">
+              Completá el checklist una vez que puedas firmar (wallet configurada, fuera de modo vista previa).
+            </p>
+          ) : (
+            <ChecklistCIT onSubmit={aprobar} enviando={enviando === 'aprobar'} />
+          )}
+          <button
+            onClick={() => setModo('discrepancia')}
+            disabled={sinWallet || enviando !== null || modoVistaActivo}
+            className="inline-flex items-center justify-center gap-2 rounded-full border border-clay/40 bg-white px-4 py-2.5 text-sm font-semibold text-clay transition-colors hover:bg-clay/5 disabled:opacity-50"
+          >
+            <AlertTriangle className="size-4" />
+            Reportar discrepancia en su lugar
+          </button>
         </>
       ) : (
         <div className="rounded-2xl border border-clay/30 bg-clay/5 p-3">
