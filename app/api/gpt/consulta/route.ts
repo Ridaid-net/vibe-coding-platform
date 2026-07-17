@@ -68,6 +68,33 @@ function sseFrame(obj: unknown): string {
   return `data: ${JSON.stringify(obj)}\n\n`
 }
 
+const HEARTBEAT_MS = 5000
+
+/**
+ * Espera el proximo valor del iterador, pero sin dejar la conexion en
+ * silencio: cada HEARTBEAT_MS invoca `enviarHeartbeat` (un comentario SSE) y
+ * sigue esperando. No es un timeout -- nunca rechaza por si solo, solo late
+ * mientras el iterador real sigue trabajando.
+ */
+function proximoConHeartbeat<T>(
+  iterador: AsyncIterator<T>,
+  enviarHeartbeat: () => void
+): Promise<IteratorResult<T>> {
+  return new Promise((resolve, reject) => {
+    const timer = setInterval(enviarHeartbeat, HEARTBEAT_MS)
+    iterador.next().then(
+      (resultado) => {
+        clearInterval(timer)
+        resolve(resultado)
+      },
+      (error) => {
+        clearInterval(timer)
+        reject(error)
+      }
+    )
+  })
+}
+
 export async function POST(req: Request) {
   let user: { id: string }
   try {
@@ -168,7 +195,20 @@ export async function POST(req: Request) {
             )
           )
 
-          for await (const chunk of streamRespuestaConReintento(system, mensajes)) {
+          // El reintento (streamRespuestaConReintento) puede dejar la conexion
+          // hasta ~16s sin enviar ningun byte si el primer intento se cuelga
+          // -- suficiente para que un proxy/CDN intermedio la de por muerta y
+          // la corte antes de que el segundo intento llegue a responder. El
+          // heartbeat manda un comentario SSE (ignorado por el parser del
+          // cliente, que solo procesa lineas "data:") cada 5s mientras se
+          // espera, para que la conexion nunca quede en silencio absoluto.
+          const iterador = streamRespuestaConReintento(system, mensajes)[Symbol.asyncIterator]()
+          while (true) {
+            const resultado = await proximoConHeartbeat(iterador, () =>
+              controller.enqueue(enc.encode(': keep-alive\n\n'))
+            )
+            if (resultado.done) break
+            const chunk = resultado.value
             if (chunk.texto) {
               texto += chunk.texto
               controller.enqueue(enc.encode(sseFrame({ type: 'delta', text: chunk.texto })))
