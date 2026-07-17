@@ -1,6 +1,7 @@
 'use client'
 
 import { authedFetch, ensureRoleSession } from '@/lib/session'
+import type { ChecklistInspeccion } from '@/lib/puntos-inspeccion'
 
 /**
  * Cliente del Portal de Inspecciones (Hito 11). Habla con los endpoints
@@ -175,15 +176,31 @@ export interface AprobacionRespuesta {
   } | null
 }
 
+/**
+ * Aprueba la inspeccion fisica con el checklist de 20 puntos ("CIT Completo
+ * Plus"). Se manda como multipart/form-data (no JSON): las fotos de
+ * componentes tokenizados viajan como archivos reales, nunca en base64
+ * dentro del body -- mismo patron que `denuncia-mpf-modal.tsx` ya usa para
+ * el PDF de una denuncia.
+ */
 export async function aprobarInspeccion(
   citId: string,
+  checklist: ChecklistInspeccion,
+  fotosPorPunto: Record<string, File>,
   notas?: string
 ): Promise<AprobacionRespuesta> {
+  const form = new FormData()
+  form.set('accion', 'aprobar')
+  form.set('citId', citId)
+  form.set('checklist', JSON.stringify(checklist))
+  if (notas) form.set('notas', notas)
+  for (const [puntoId, file] of Object.entries(fotosPorPunto)) {
+    form.set(`foto_${puntoId}`, file)
+  }
   return leer(
     await authedFetch('/api/inspector/cit', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ accion: 'aprobar', citId, notas: notas ?? null }),
+      body: form,
     })
   )
 }

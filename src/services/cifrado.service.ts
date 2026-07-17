@@ -39,6 +39,7 @@ const VERSION = 'v1'
 let cachedKey: Buffer | null = null
 let cachedIotKey: Buffer | null = null
 let cachedDenunciaKey: Buffer | null = null
+let cachedInspeccionKey: Buffer | null = null
 
 /** Indica si hay una clave AES real configurada (vs. derivada en preview). */
 export function cifradoConfigurado(): boolean {
@@ -55,6 +56,12 @@ export function iotCifradoConfigurado(): boolean {
 /** Indica si hay una clave AES real para los PDF de denuncias (vs. derivada). */
 export function denunciaCifradoConfigurado(): boolean {
   const raw = process.env.RODAID_DENUNCIA_AES_KEY
+  return typeof raw === 'string' && raw.trim().length > 0
+}
+
+/** Indica si hay una clave AES real para las fotos de componentes de inspeccion (vs. derivada). */
+export function inspeccionCifradoConfigurado(): boolean {
+  const raw = process.env.RODAID_INSPECCION_AES_KEY
   return typeof raw === 'string' && raw.trim().length > 0
 }
 
@@ -124,6 +131,28 @@ function getDenunciaKey(): Buffer {
   const secret = getAuthSecret() ?? 'rodaid-denuncia-fallback'
   cachedDenunciaKey = scryptSync(secret, 'rodaid-denuncia-aes-v1', KEY_BYTES)
   return cachedDenunciaKey
+}
+
+/**
+ * Resuelve (y cachea) la clave AES-256 del BUCKET CIFRADO de fotos de
+ * componentes tokenizados (Checklist de 20 puntos, "CIT Completo Plus"). Es
+ * una clave INDEPENDIENTE de la de denuncias -- NO reusa getDenunciaKey(),
+ * a proposito, mismo criterio que separa la clave de telemetria IoT de la
+ * del Ministerio: cada bucket cifrado tiene su propia identidad
+ * criptografica. En LIVE se toma de `RODAID_INSPECCION_AES_KEY`; en preview
+ * se deriva de forma estable del secreto de la app (igual que el resto de
+ * los modos del proyecto).
+ */
+function getInspeccionKey(): Buffer {
+  if (cachedInspeccionKey) return cachedInspeccionKey
+  const raw = process.env.RODAID_INSPECCION_AES_KEY
+  if (raw && raw.trim().length > 0) {
+    cachedInspeccionKey = parseClaveConfigurada(raw)
+    return cachedInspeccionKey
+  }
+  const secret = getAuthSecret() ?? 'rodaid-inspeccion-fallback'
+  cachedInspeccionKey = scryptSync(secret, 'rodaid-inspeccion-aes-v1', KEY_BYTES)
+  return cachedInspeccionKey
 }
 
 /** Cifra un texto en claro con una clave dada. Devuelve el token portable. */
@@ -226,6 +255,41 @@ export function descifrarBytesDenuncia(blob: Buffer | Uint8Array): Buffer {
   const tag = buf.subarray(1 + IV_BYTES, 1 + IV_BYTES + TAG_BYTES)
   const ct = buf.subarray(1 + IV_BYTES + TAG_BYTES)
   const decipher = createDecipheriv(ALGO, getDenunciaKey(), iv)
+  decipher.setAuthTag(tag)
+  return Buffer.concat([decipher.update(ct), decipher.final()])
+}
+
+// ── Bucket cifrado de fotos de componentes (Checklist 20 puntos) ──────────────
+
+/**
+ * Cifra un buffer (foto de un componente tokenizado) para guardarlo en su
+ * bucket CIFRADO. Mismo formato de contenedor binario que
+ * `cifrarBytesDenuncia` (version + IV + tag + ciphertext), pero con la clave
+ * INDEPENDIENTE de este bucket -- no reusar `cifrarBytesDenuncia` tal cual,
+ * usaria la clave equivocada.
+ */
+export function cifrarBytesInspeccion(plain: Buffer | Uint8Array): Buffer {
+  const key = getInspeccionKey()
+  const iv = randomBytes(IV_BYTES)
+  const cipher = createCipheriv(ALGO, key, iv)
+  const ct = Buffer.concat([cipher.update(Buffer.from(plain)), cipher.final()])
+  const tag = cipher.getAuthTag()
+  return Buffer.concat([Buffer.from([BIN_VERSION]), iv, tag, ct])
+}
+
+/**
+ * Descifra un contenedor binario producido por `cifrarBytesInspeccion`.
+ * Lanza si el formato es invalido o el contenido fue manipulado.
+ */
+export function descifrarBytesInspeccion(blob: Buffer | Uint8Array): Buffer {
+  const buf = Buffer.from(blob)
+  if (buf.length < 1 + IV_BYTES + TAG_BYTES || buf[0] !== BIN_VERSION) {
+    throw new Error('Contenedor cifrado de inspeccion con formato invalido.')
+  }
+  const iv = buf.subarray(1, 1 + IV_BYTES)
+  const tag = buf.subarray(1 + IV_BYTES, 1 + IV_BYTES + TAG_BYTES)
+  const ct = buf.subarray(1 + IV_BYTES + TAG_BYTES)
+  const decipher = createDecipheriv(ALGO, getInspeccionKey(), iv)
   decipher.setAuthTag(tag)
   return Buffer.concat([decipher.update(ct), decipher.final()])
 }

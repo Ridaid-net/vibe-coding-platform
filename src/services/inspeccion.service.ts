@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+import { getStore } from '@netlify/blobs'
 import { ApiError, getPool, type DbClient } from '@/lib/marketplace'
 import type { UsuarioRol } from '@/lib/auth'
 import {
@@ -9,6 +11,12 @@ import { anclarCITEnSegundoPlano } from '@/src/services/blockchain.service'
 import { emitirEvento } from '@/src/services/notification.service'
 import { registrarLiquidacionAliadoFeeVerificacion } from '@/src/services/compensaciones.service'
 import { enviarEmail } from '@/lib/email'
+import { cifrarBytesInspeccion } from '@/src/services/cifrado.service'
+import {
+  PUNTOS_CON_COMPONENTE,
+  PUNTOS_INSPECCION,
+  type ChecklistInspeccion,
+} from '@/lib/puntos-inspeccion'
 import {
   firmarActa,
   firmaHashActa,
@@ -16,6 +24,9 @@ import {
   type ActaFirmada,
   type ActaPayload,
 } from '@/src/services/acta-firma.service'
+
+// Bucket CIFRADO de fotos de componentes tokenizados (Checklist 20 puntos).
+const STORE_INSPECCIONES = 'rodaid-inspecciones-componentes'
 
 /**
  * RODAID — Hito 11: Portal de Inspectores y Aliados (validacion presencial).
@@ -73,6 +84,20 @@ async function withTx<T>(fn: (client: DbClient) => Promise<T>): Promise<T> {
   } finally {
     client.release()
   }
+}
+
+/**
+ * Sube una foto de componente tokenizado (cifrada en reposo) al bucket
+ * dedicado. Mismo patron que `subirPdfCifrado` en denuncia-mpf.service.ts,
+ * pero con su propia clave/bucket -- ver cifrado.service.ts.
+ */
+async function subirFotoComponenteCifrada(key: string, bytes: Uint8Array): Promise<void> {
+  const cifrado = cifrarBytesInspeccion(bytes)
+  const ab = cifrado.buffer.slice(
+    cifrado.byteOffset,
+    cifrado.byteOffset + cifrado.byteLength
+  ) as ArrayBuffer
+  await getStore(STORE_INSPECCIONES).set(key, ab)
 }
 
 /**
@@ -657,6 +682,12 @@ export async function aprobarInspeccionFisica(opts: {
   inspector: InspectorContexto
   aliadoId: string | null
   notas?: string | null
+  /** Checklist de 20 puntos (Hito "CIT Completo Plus"). Opcional: un caller
+   * que no lo envia sigue el camino legacy (solo veredicto + notas libres). */
+  checklist?: ChecklistInspeccion | null
+  /** Fotos de componentes tokenizados, keyeadas por puntoId (P06/P08/P09/
+   * P11/P12). Solo se suben las que efectivamente vengan. */
+  fotosPorPunto?: Record<string, Blob> | null
 }): Promise<AprobacionResultado> {
   const { inspector } = opts
   const wallet = inspector.walletAddress
@@ -670,6 +701,36 @@ export async function aprobarInspeccionFisica(opts: {
 
   const emitidoEn = new Date().toISOString()
   const tallerId = opts.aliadoId
+  // "Plus" = se uso el checklist de 20 puntos (habilita la captura de
+  // componentes), independientemente de si algun punto termino con datos --
+  // un inspector puede activar el modulo y no encontrar un serial legible
+  // ese dia. Esta es la unica senal confiable: la presencia de filas en
+  // componentes_tokenizados NO alcanza (ver auditoria previa a esta migracion).
+  const moduloComponentes = Boolean(opts.checklist)
+
+  // Subida de fotos de componentes ANTES de la transaccion (mismo orden que
+  // denuncia-mpf.service.ts::subirPdfCifrado): I/O externo primero, para no
+  // sostener la transaccion abierta mientras se sube un blob. Si algo falla
+  // acá, no se toca la base todavia.
+  const fotoBlobKeys: Record<string, string> = {}
+  if (opts.fotosPorPunto) {
+    for (const [puntoId, blob] of Object.entries(opts.fotosPorPunto)) {
+      if (!PUNTOS_CON_COMPONENTE.includes(puntoId as (typeof PUNTOS_CON_COMPONENTE)[number])) continue
+      try {
+        const bytes = new Uint8Array(await blob.arrayBuffer())
+        const key = `inspecciones/${opts.citId}/${puntoId}-${randomUUID()}.jpg.enc`
+        await subirFotoComponenteCifrada(key, bytes)
+        fotoBlobKeys[puntoId] = key
+      } catch (error) {
+        console.error('[inspeccion] no se pudo guardar la foto del componente', error)
+        throw new ApiError(
+          502,
+          'STORAGE_ERROR',
+          'No pudimos guardar una de las fotos del componente. Probá de nuevo.'
+        )
+      }
+    }
+  }
 
   const atomico = await withTx(async (client) => {
     const cit = await cargarCitParaInspeccion(client, opts.citId)
@@ -705,9 +766,9 @@ export async function aprobarInspeccionFisica(opts: {
           (cit_id, bicicleta_id, inspector_id, aliado_id, taller_id, resultado,
            inspector_wallet, firma_hash, firma_algoritmo, firma_valor,
            firma_certificado, firma_cert_serie, firma_cert_fingerprint, firma_modo,
-           notas, acelero_pipeline, metadata)
+           notas, acelero_pipeline, metadata, checklist_detalle, modulo_componentes)
         VALUES ($1, $2, $3, $4, $5, 'APROBADA', $6, $7, $8, $9, $10, $11, $12, $13,
-                $14, TRUE, $15::jsonb)
+                $14, TRUE, $15::jsonb, $16::jsonb, $17)
         RETURNING id
       `,
       [
@@ -730,8 +791,51 @@ export async function aprobarInspeccionFisica(opts: {
           inspectorNombre: inspector.nombre,
           canonico: firma.canonico,
         }),
+        opts.checklist ? JSON.stringify(opts.checklist) : null,
+        moduloComponentes,
       ]
     )
+    const inspeccionId = inserted.rows[0].id
+
+    // 1b. Componentes tokenizados ("CIT Completo Plus"): solo para los 5
+    // puntos de alto valor, y solo si el inspector efectivamente cargo algo
+    // (marca, modelo, numero de serie o foto) -- no se inserta una fila
+    // vacia por cada punto en cada inspeccion.
+    if (opts.checklist) {
+      for (const puntoId of PUNTOS_CON_COMPONENTE) {
+        const punto = PUNTOS_INSPECCION.find((p) => p.id === puntoId)
+        const comp = opts.checklist[puntoId]?.componente
+        const fotoBlobKey = fotoBlobKeys[puntoId] ?? null
+        const marca = comp?.marca?.trim() || null
+        const modelo = comp?.modelo?.trim() || null
+        const numeroSerie = comp?.numeroSerie?.trim() || null
+        if (!punto || (!marca && !modelo && !numeroSerie && !fotoBlobKey)) continue
+
+        if (numeroSerie) {
+          const dup = await client.query<{ id: string }>(
+            `SELECT id FROM componentes_tokenizados WHERE numero_serie = $1 LIMIT 1`,
+            [numeroSerie]
+          )
+          if (dup.rowCount) {
+            throw new ApiError(
+              409,
+              'NUMERO_SERIE_DUPLICADO_COMPONENTE',
+              `Ya existe un componente tokenizado con el número de serie "${numeroSerie}" en otra bicicleta.`
+            )
+          }
+        }
+
+        await client.query(
+          `
+            INSERT INTO componentes_tokenizados
+              (inspeccion_id, bicicleta_id, punto_id, categoria, marca, modelo,
+               numero_serie, foto_blob_key)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          `,
+          [inspeccionId, cit.bicicleta_id, puntoId, punto.categoria, marca, modelo, numeroSerie, fotoBlobKey]
+        )
+      }
+    }
 
     // 2. Sella la aprobacion fisica en el CIT (para el certificado + auditoria).
     await client.query(
