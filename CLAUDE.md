@@ -614,6 +614,22 @@ Marketplace API error error: operator does not exist: marketplace_publicacion_es
 
 **Para la próxima sesión:** (1) confirmar si esto es un regresión reciente o si el fix del 2026-07-11 nunca funcionó realmente (revisar `git log -p` sobre `app/api/v1/marketplace/route.ts` buscando cuándo se introdujo `::text[]`); (2) reproducir con una query aislada contra Neon antes de tocar código, para confirmar la hipótesis del cast; (3) corregir las 6 queries del archivo (son todas el mismo patrón); (4) revisar si la sección "Item 4... Prioridad 2" de este mismo archivo necesita una corrección explícita de su claim "Confirmed live in production".
 
+### DECIDIDO 2026-07-17: no instalar `garrytan/gstack` en esta máquina — auditoría completa hecha, no queda pendiente
+
+Alguien le pasó a Federico el repo `https://github.com/garrytan/gstack.git` ("agiliza todo") para evaluar. **Auditoría completa hecha sin clonar ni ejecutar nada** (metadata vía GitHub API, README completo, `package.json`, `.env.example`, y el script `setup` de 1531 líneas leídos directamente vía `raw.githubusercontent.com`) — esto no es una decisión tomada sin mirar el código. **Decisión: NO instalar, ni ahora ni en esta máquina.** No es spam, no está abandonado, no es malware — es un proyecto real, masivamente usado (122k stars, 18k forks, pusheado 2 días antes de esta auditoría) de Garry Tan (presidente de Y Combinator, identidad real verificable). El rechazo es por superficie de riesgo, no por legitimidad.
+
+**Qué es en realidad (no es lo que el pedido original suponía):** no es un template de proyecto ni tiene nada que ver con el stack de RODAID (Next.js/Node/Postgres) — es un kit de productividad para agentes de código (23 slash-commands de Claude Code + CLIs), instalado **globalmente** (`~/.claude/skills/gstack`, `~/.gstack/`), que afecta a *todos* los repos de la máquina, no solo al que lo pediste instalar.
+
+**Motivo del rechazo — superficie de riesgo incompatible con una máquina que además maneja identidad, pagos y datos bancarios reales de RODAID:**
+- Importa cookies de sesión reales del navegador (Chrome/Arc/Brave/Edge) a un navegador controlado por el agente, para "testear páginas autenticadas".
+- Un modo (`/pair-agent`) levanta un **túnel ngrok automático** que expone la sesión de navegador local a internet para que un agente remoto la controle.
+- Tiene un canal explícito de sincronización de estado a un repo git externo (con scanner de secretos como mitigación — la sola existencia de ese scanner confirma que el canal de salida de datos es real, no hipotético).
+- Pide credenciales de alcance amplio para lo opcional (`gbrain`): un Personal Access Token de Supabase con permiso de crear proyectos nuevos vía su Management API, no algo acotado a una sola base.
+- El propio README demuestra como caso de uso destacado extraer PII de un sitio de terceros autenticado (el portal de la escuela de un hijo) y volcarla a Google Contacts — señal directa de la postura del proyecto frente al manejo de datos personales.
+- Instalación "team mode" (un solo paste) hace `git add .claude/ CLAUDE.md && git commit` automático en el repo donde se corra — y puede configurarse para bloquear sesiones de Claude Code que no lo tengan instalado.
+
+**Si en el futuro se vuelve a plantear instalarlo (Federico incluido):** ya está evaluado — no re-auditar de cero. Si algo cambió materialmente (por ejemplo, una versión con instalación scopeada por proyecto en vez de global, o sin el acceso a cookies/túneles), vale la pena una auditoría nueva y acotada a qué cambió, no repetir todo el proceso.
+
 ### Privacy-by-design analytics
 
 Location-based features (security heatmap, personal "Garaje Digital" heatmap) clip coordinates to a coarse grid (`ANALITICA_GRID_DEG`, ~500m cells) before persisting, and only surface aggregates above a k-anonymity threshold — never raw points. Preserve this clipping if touching those code paths.
