@@ -650,3 +650,33 @@ export async function* streamRespuesta(
   }
   yield { usage: { entrada, salida } }
 }
+
+/**
+ * Igual que streamRespuesta(), pero reintenta UNA vez si el modelo se cuelga
+ * (timeout de inactividad) o falla antes de emitir ningun texto. Un colgado
+ * transitorio del Gateway antes del primer token es seguro de reintentar
+ * porque el cliente todavia no recibio nada que se pudiera duplicar. Si ya se
+ * emitio texto y despues se corta, no reintenta -- reenviar la consulta
+ * duplicaria contenido que el usuario ya esta viendo en pantalla.
+ */
+export async function* streamRespuestaConReintento(
+  system: string,
+  mensajes: Anthropic.MessageParam[]
+): AsyncGenerator<ChunkRespuesta> {
+  let huboTexto = false
+  for (let intento = 1; intento <= 2; intento++) {
+    try {
+      for await (const chunk of streamRespuesta(system, mensajes)) {
+        if (chunk.texto) huboTexto = true
+        yield chunk
+      }
+      return
+    } catch (error) {
+      if (huboTexto || intento === 2) throw error
+      console.error(
+        `[rodaid-gpt] reintentando streamRespuesta() tras fallo sin texto emitido (intento ${intento})`,
+        error
+      )
+    }
+  }
+}
