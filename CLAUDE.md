@@ -593,6 +593,27 @@ Confirmado también, antes de construir esto, que el prompt a Claude (`iot-mante
 
 **Strava/Garmin deliberadamente EXCLUIDO como quinto factor — backlog, no un rechazo del concepto.** Motivo, de la auditoría de datos que precedió a este diseño: hoy no existe forma confiable de responder "¿esta bici está vinculada a Strava, y desde cuándo?" a nivel de bici. `oauth_connections` (la tabla realmente viva, escrita por `stravaOAuthService.ts`) es a nivel de USUARIO, no tiene columna `bicicleta_id`, y no tiene `created_at` (solo `updated_at`, que se pisa en cada refresh de token — no sirve para "desde cuándo"). `bike_activities` sí tiene `bicicleta_id` + `created_at` — la forma correcta de responder esto — pero confirmado por grep exhaustivo: el único código que escribe en esa tabla (`src/services/stravaWebhookService.ts`, ya documentado como código muerto más arriba en este archivo) no tiene ningún importador en todo el repo. El endpoint real (`app/api/v1/strava/actividades/route.ts`) lee las actividades directo de la API de Strava en cada request y nunca las persiste ni las asocia a una bici — es un proxy de lectura, no un sync job. Mismo problema con `bici_odometro` (`km_totales`), también solo escrito por el servicio muerto. **Antes de sumar Strava como quinto factor del score, hace falta conectar `bike_activities` de verdad (un sync real, no el webhook muerto) — pieza de trabajo aparte, no bloqueante para lanzar el score con los cuatro factores ya confirmados.**
 
+### CRÍTICO, sin resolver 2026-07-17: `GET /api/v1/marketplace` — el grid público del Marketplace devuelve 500 siempre, en producción y en cualquier preview — no tocado esta sesión, queda para la próxima
+
+Encontrado por accidente el 2026-07-17 mientras se investigaba (y resolvía, ver más arriba) un 500 no relacionado en `denuncia-mpf.service.ts` durante la verificación del PR #107 (Historial Clínico). **Completamente ajeno a los PRs de esta sesión (#107/#108/#109) — ninguno toca `app/api/v1/marketplace/route.ts`.** No investigado más allá de confirmar el síntoma y la causa más probable; queda deliberadamente para una sesión dedicada, con foco fresco, en vez de apurar un fix al final de una sesión larga.
+
+**Síntoma, confirmado en vivo, dos veces, en dos entornos distintos:**
+```
+GET https://rodaid.net/api/v1/marketplace              → 500
+GET https://rodaid.net/api/v1/marketplace?estado=ACTIVA → 500
+```
+(y lo mismo contra el preview del PR #107 antes de mergear). Es decir: el grid público real del Marketplace — el que se ve en el homepage, `components/rodaid/marketplace.tsx` vía `app/page.tsx` — está caído en producción ahora mismo, con o sin filtro de estado.
+
+**Error real, capturado vía `netlify logs --source functions --url <deploy permalink>`:**
+```
+Marketplace API error error: operator does not exist: marketplace_publicacion_estado = text
+  code: '42883', hint: 'No operator matches the given name and argument types. You might need to add explicit type casts.'
+```
+
+**Causa más probable (leída en el código, no solo inferida del mensaje):** las 6 queries de `app/api/v1/marketplace/route.ts` (el `listResult` vía `buildWhere()`, y las 5 del `Promise.all` de facetas: marcas/tipos/rodados/talles/rangosPrecio) todas filtran con `mp.estado = ANY($1::text[])`, donde `$1` es el array `estados: string[]` construido en el handler. Esto es exactamente el patrón que esta misma sección de CLAUDE.md (más arriba, "Pending frontend work... Item 4... Prioridad 2") documenta como "confirmado en producción" tras el fix del 2026-07-11 — esa afirmación previa **parece estar equivocada o el bug se reintrodujo después**; no se investigó cuál de las dos cosas es cierta. La hipótesis técnica (no verificada aún con una prueba aislada): castear el array de parámetros a `::text[]` rompe el cast implícito que Postgres aplica automáticamente entre un literal de tipo `unknown` y un enum nativo — un `text[]` explícito ya no califica para ese cast implícito, de ahí el `operator does not exist: marketplace_publicacion_estado = text`. El arreglo más probable (a confirmar, no asumir) es castear el array al tipo del enum en vez de a `text[]`, algo como `mp.estado = ANY($1::marketplace_publicacion_estado[])` — verificar el nombre exacto del tipo y el comportamiento real contra Postgres antes de aplicarlo, con el mismo rigor que el resto de los hallazgos de este archivo, no copiar esta hipótesis a ciegas.
+
+**Para la próxima sesión:** (1) confirmar si esto es un regresión reciente o si el fix del 2026-07-11 nunca funcionó realmente (revisar `git log -p` sobre `app/api/v1/marketplace/route.ts` buscando cuándo se introdujo `::text[]`); (2) reproducir con una query aislada contra Neon antes de tocar código, para confirmar la hipótesis del cast; (3) corregir las 6 queries del archivo (son todas el mismo patrón); (4) revisar si la sección "Item 4... Prioridad 2" de este mismo archivo necesita una corrección explícita de su claim "Confirmed live in production".
+
 ### Privacy-by-design analytics
 
 Location-based features (security heatmap, personal "Garaje Digital" heatmap) clip coordinates to a coarse grid (`ANALITICA_GRID_DEG`, ~500m cells) before persisting, and only surface aggregates above a k-anonymity threshold — never raw points. Preserve this clipping if touching those code paths.
