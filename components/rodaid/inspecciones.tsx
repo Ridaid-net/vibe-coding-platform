@@ -1,6 +1,6 @@
 'use client'
 import { ChecklistCIT } from '@/components/rodaid/ChecklistCIT'
-import { ChecklistInspeccion } from '@/lib/puntos-inspeccion'
+import { calcularResultadoChecklist, ChecklistInspeccion } from '@/lib/puntos-inspeccion'
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import {
@@ -511,35 +511,70 @@ function Acciones({
     }
   }
 
-  /** Checklist completo de 20 puntos ("CIT Completo Plus"). */
+  /**
+   * Checklist completo de 20 puntos ("CIT Completo Plus"). URGENTE (fix
+   * 2026-07-18): antes, el boton relabeleaba a "Rechazar inspección" cuando
+   * calcularResultadoChecklist().aprobada daba false, pero seguía
+   * aprobando de todas formas -- el checklist no bloqueaba nada real. Ahora
+   * branchea de verdad: aprobada=false reusa reportarDiscrepancia() (mismo
+   * mecanismo que ya existe y ya frena el CIT), pasandole el checklist
+   * completo para no perder los 20 puntos de trabajo.
+   */
   const aprobarConChecklist = async (
     checklist: ChecklistInspeccion,
     fotosPorPunto: Record<string, File>,
     notasChecklist: string
   ) => {
     if (enviando) return
+    const { aprobada } = calcularResultadoChecklist(checklist)
+
+    if (aprobada) {
+      setEnviando('aprobar')
+      try {
+        const r = await aprobarInspeccion(
+          cit.id,
+          notasChecklist.trim() || undefined,
+          checklist,
+          fotosPorPunto
+        )
+        if (r.bloqueadaPorSeguridad) {
+          toast.warning('Aprobada, pero bloqueada por seguridad', {
+            description:
+              'El cross-reference detectó una denuncia. La bici quedó BLOQUEADA.',
+          })
+        } else {
+          toast.success('Inspección aprobada y firmada', {
+            description: `Acta firmada (${r.firma.algoritmo}). Pipeline acelerado. CIT: ${r.citEstado}.`,
+          })
+        }
+        setModo('idle')
+        onRefrescar()
+      } catch (err) {
+        toast.error('No pudimos aprobar', { description: (err as Error).message })
+      } finally {
+        setEnviando(null)
+      }
+      return
+    }
+
     setEnviando('aprobar')
     try {
-      const r = await aprobarInspeccion(
-        cit.id,
-        notasChecklist.trim() || undefined,
-        checklist,
-        fotosPorPunto
-      )
-      if (r.bloqueadaPorSeguridad) {
-        toast.warning('Aprobada, pero bloqueada por seguridad', {
-          description:
-            'El cross-reference detectó una denuncia. La bici quedó BLOQUEADA.',
-        })
-      } else {
-        toast.success('Inspección aprobada y firmada', {
-          description: `Acta firmada (${r.firma.algoritmo}). Pipeline acelerado. CIT: ${r.citEstado}.`,
-        })
-      }
+      const puntosFallados = Object.entries(checklist)
+        .filter(([, v]) => v.resultado === 'falla')
+        .map(([id]) => id)
+      const motivo =
+        `Discrepancia detectada por checklist de 20 puntos — punto(s) con falla: ${puntosFallados.join(', ')}.` +
+        (notasChecklist.trim() ? ` Notas del inspector: ${notasChecklist.trim()}` : '')
+      await reportarDiscrepancia(cit.id, motivo, checklist)
+      toast.error('Discrepancia registrada por checklist', {
+        description: `Punto(s) con falla: ${puntosFallados.join(', ')}. La verificación quedó frenada (CIT rechazado).`,
+      })
       setModo('idle')
       onRefrescar()
     } catch (err) {
-      toast.error('No pudimos aprobar', { description: (err as Error).message })
+      toast.error('No pudimos registrar la discrepancia', {
+        description: (err as Error).message,
+      })
     } finally {
       setEnviando(null)
     }
