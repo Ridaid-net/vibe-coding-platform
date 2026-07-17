@@ -101,9 +101,7 @@ export async function POST(req: Request) {
     }
 
     // 3) Contexto controlado del usuario + seguridad de la ciudad.
-    const { contexto, perfil, piezasConTimeout, piezasConError } = await recolectarContexto(
-      user.id
-    )
+    const { contexto, perfil } = await recolectarContexto(user.id)
 
     // 4) Cache (solo en consultas de un solo turno, para no servir algo fuera de
     //    contexto conversacional).
@@ -131,10 +129,6 @@ export async function POST(req: Request) {
                   cacheHit: true,
                   modelo: hit.modelo,
                   cuota: { ...cuota }, // no consume cuota
-                  // TEMPORAL (diagnostico 2026-07-16): revertir junto con el
-                  // resto del diagnostico temporal.
-                  piezasConTimeout,
-                  piezasConError,
                 })
               )
             )
@@ -170,10 +164,6 @@ export async function POST(req: Request) {
                   usadas: cuota.usadas + 1,
                   restantes: Math.max(0, cuota.restantes - 1),
                 },
-                // TEMPORAL (diagnostico 2026-07-16): revertir junto con el
-                // resto del diagnostico temporal.
-                piezasConTimeout,
-                piezasConError,
               })
             )
           )
@@ -213,16 +203,11 @@ export async function POST(req: Request) {
           })
         } catch (err) {
           console.error('[rodaid-gpt] error en el stream', err)
-          // TEMPORAL (diagnostico 2026-07-16): el mensaje real del error viaja
-          // en la respuesta para que sea visible en el chat sin depender de
-          // logs de Netlify (Federico no puede usar DevTools). Revertir a un
-          // mensaje generico una vez confirmada la causa real de la falla.
-          const detalle = err instanceof Error ? err.message : String(err)
           controller.enqueue(
             enc.encode(
               sseFrame({
                 type: 'error',
-                message: `[DEBUG TEMPORAL] ${detalle.slice(0, 300)}`,
+                message: 'Ocurrió un error en el asistente. Intentá de nuevo.',
               })
             )
           )
@@ -241,18 +226,6 @@ export async function POST(req: Request) {
 
     return sseResponse(stream)
   } catch (error) {
-    // TEMPORAL (diagnostico 2026-07-16): si el error no es de negocio (ApiError,
-    // ya con su propio mensaje claro), incluye el mensaje real para que sea
-    // visible en el chat sin depender de logs de Netlify. Revertir una vez
-    // confirmada la causa real de la falla en produccion.
-    if (!(error instanceof ApiError)) {
-      console.error('[rodaid-gpt] error antes de iniciar el stream', error)
-      const detalle = error instanceof Error ? error.message : String(error)
-      return NextResponse.json(
-        { error: 'INTERNAL_ERROR', message: `[DEBUG TEMPORAL] ${detalle.slice(0, 300)}` },
-        { status: 500 }
-      )
-    }
     return jsonError(error)
   }
 }

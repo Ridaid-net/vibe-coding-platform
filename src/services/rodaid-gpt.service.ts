@@ -132,10 +132,6 @@ export interface ContextoRecolectado {
   contexto: ContextoUsuario
   /** Datos sensibles del perfil — SOLO para construir el mapa de anonimizacion. */
   perfil: PerfilSensible
-  /** TEMPORAL (diagnostico 2026-07-16): piezas que no respondieron a tiempo. */
-  piezasConTimeout: string[]
-  /** TEMPORAL (diagnostico 2026-07-16): piezas que fallaron con un error. */
-  piezasConError: string[]
 }
 
 interface UsuarioRow {
@@ -152,30 +148,16 @@ function textoPerfil(perfil: Record<string, unknown> | null, ...claves: string[]
   return null
 }
 
-// ── TEMPORAL (diagnostico 2026-07-16): timeout por pieza ─────────────────────
+// ── Timeout por pieza ─────────────────────────────────────────────────────
 //
 // Cada consulta que arma el contexto corre con un limite de tiempo propio y un
-// valor de respaldo -- antes, un Promise.all sin timeout por pieza dejaba que
-// una consulta lenta (ej. el mapa de calor, dos agregaciones geoespaciales)
-// colgara todo el pedido hasta que la plataforma matara la funcion, sin dejar
-// ningun error capturable por la app (por eso el [DEBUG TEMPORAL] de los catch
-// de la ruta no alcanzaba a mostrar nada -- el proceso se corta desde afuera).
-// Revertir junto con el resto del diagnostico temporal una vez confirmada la
-// causa real de la falla en produccion.
+// valor de respaldo, para que una consulta lenta (ej. el mapa de calor, dos
+// agregaciones geoespaciales) nunca cuelgue todo el pedido -- se sirve el
+// contexto con esa pieza en su valor de respaldo en vez de bloquear la
+// respuesta entera.
 const TIMEOUT_CONTEXTO_MS = 4000
 
-interface ResultadoConTimeout<T> {
-  valor: T
-  etiqueta: string
-  timeout: boolean
-  error: boolean
-}
-
-function conTimeout<T>(
-  promise: Promise<T>,
-  fallback: T,
-  etiqueta: string
-): Promise<ResultadoConTimeout<T>> {
+function conTimeout<T>(promise: Promise<T>, fallback: T, etiqueta: string): Promise<T> {
   // Evita "unhandled rejection" si la promesa original falla despues del timeout.
   promise.catch(() => undefined)
   return new Promise((resolve) => {
@@ -183,17 +165,17 @@ function conTimeout<T>(
       console.error(
         `[rodaid-gpt] timeout recolectando contexto: ${etiqueta} (${TIMEOUT_CONTEXTO_MS}ms)`
       )
-      resolve({ valor: fallback, etiqueta, timeout: true, error: false })
+      resolve(fallback)
     }, TIMEOUT_CONTEXTO_MS)
     promise.then(
       (valor) => {
         clearTimeout(timer)
-        resolve({ valor, etiqueta, timeout: false, error: false })
+        resolve(valor)
       },
       (err) => {
         clearTimeout(timer)
         console.error(`[rodaid-gpt] error recolectando contexto: ${etiqueta}`, err)
-        resolve({ valor: fallback, etiqueta, timeout: false, error: true })
+        resolve(fallback)
       }
     )
   })
@@ -242,26 +224,13 @@ export async function recolectarContexto(userId: string): Promise<ContextoRecole
     return res.rows[0] ?? null
   }
 
-  const [usuarioR, activosR, analiticaR, mapaR, alertasR] = await Promise.all([
+  const [fila, activos, analitica, mapa, alertas] = await Promise.all([
     conTimeout(obtenerUsuarioRow(), null, 'usuario'),
     conTimeout(obtenerActivosUsuario(userId), [] as ActivoGaraje[], 'activos'),
     conTimeout(obtenerAnaliticaPersonal(userId), ANALITICA_FALLBACK, 'analiticaPersonal'),
     conTimeout(construirMapaCalor({ dias: 30 }), null, 'mapaCalor'),
     conTimeout(listarAlertas({ estado: 'abierta', limite: 8 }), [] as AlertaSeguridad[], 'alertas'),
   ])
-
-  const fila = usuarioR.valor
-  const activos = activosR.valor
-  const analitica = analiticaR.valor
-  const mapa = mapaR.valor
-  const alertas = alertasR.valor
-
-  const piezasConTimeout = [usuarioR, activosR, analiticaR, mapaR, alertasR]
-    .filter((r) => r.timeout)
-    .map((r) => r.etiqueta)
-  const piezasConError = [usuarioR, activosR, analiticaR, mapaR, alertasR]
-    .filter((r) => r.error)
-    .map((r) => r.etiqueta)
 
   const datos = fila?.datos_perfil ?? null
   const perfil: PerfilSensible = {
@@ -364,7 +333,7 @@ export async function recolectarContexto(userId: string): Promise<ContextoRecole
     },
   }
 
-  return { contexto, perfil, piezasConTimeout, piezasConError }
+  return { contexto, perfil }
 }
 
 // ── System prompt dinamico con las "reglas de oro" ───────────────────────────
@@ -601,18 +570,15 @@ export interface ChunkRespuesta {
   usage?: { entrada: number; salida: number }
 }
 
-// ── TEMPORAL (diagnostico 2026-07-16): timeout por inactividad del modelo ────
+// ── Timeout por inactividad del modelo ───────────────────────────────────
 //
 // Mismo criterio que TIMEOUT_CONTEXTO_MS: sin esto, si la llamada a Anthropic
 // se cuelga (ej. un problema de red hacia el Netlify AI Gateway) sin tirar
-// ninguna excepcion, la plataforma mata la funcion desde afuera y el catch de
-// la ruta nunca llega a ejecutarse -- por eso streamRespuesta() no dejaba
-// ningun rastro visible pese a que recolectarContexto() ya estaba cubierto.
-// Se reinicia con cada evento que llega del modelo (no es un limite fijo de
-// duracion total) para no cortar una respuesta larga que sigue generando texto
-// con normalidad -- solo corta un colgado real, sin actividad. Revertir junto
-// con el resto del diagnostico temporal una vez confirmada la causa real de la
-// falla en produccion.
+// ninguna excepcion, la plataforma mata la funcion desde afuera sin dejar
+// ningun error capturable. Se reinicia con cada evento que llega del modelo
+// (no es un limite fijo de duracion total) para no cortar una respuesta larga
+// que sigue generando texto con normalidad -- solo corta un colgado real, sin
+// actividad.
 const TIMEOUT_STREAM_MS = 8000
 
 function proximoEventoConTimeout<T>(
