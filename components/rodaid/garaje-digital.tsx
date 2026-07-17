@@ -23,10 +23,13 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
+  activarCompartirBici,
   descargarCertificadoActivo,
   ESTADO_VISUAL,
   etiquetaActivo,
+  revocarCompartirBici,
   useActivosGaraje,
+  useEstadoCompartir,
   useMiPerfil,
   type ActivoGaraje,
 } from '@/lib/garaje-digital'
@@ -287,6 +290,14 @@ function ActivoCard({
     .filter(Boolean)
     .join(' · ')
 
+  // Historial Clinico publico (opt-in): solo tiene sentido pedir el estado
+  // para bicis con identidad verificada -- sin CIT activo no hay nada que
+  // compartir todavia. `null` desactiva el fetch (key null de SWR) sin
+  // romper las Rules of Hooks.
+  const { data: estadoCompartir, mutate: mutateCompartir } = useEstadoCompartir(
+    activo.estado === 'verificado' ? activo.id : null
+  )
+
   return (
     <li
       className={`flex flex-col rounded-3xl border bg-white p-5 ${visual.acento}`}
@@ -357,6 +368,23 @@ function ActivoCard({
       <div className="mt-auto flex flex-wrap gap-2 pt-4">
         {activo.estado === 'verificado' && (
           <DescargarCertificadoButton activo={activo} />
+        )}
+
+        {activo.estado === 'verificado' && (
+          <BiciSeguraShare
+            marca={activo.marca}
+            modelo={activo.modelo}
+            año={activo.anio}
+            estado={estadoCompartir ?? null}
+            onActivar={async () => {
+              await activarCompartirBici(activo.id)
+              await mutateCompartir()
+            }}
+            onDesactivar={async () => {
+              await revocarCompartirBici(activo.id)
+              await mutateCompartir()
+            }}
+          />
         )}
 
         {(activo.estado === 'sin_verificar' ||

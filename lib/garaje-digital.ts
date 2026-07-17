@@ -192,6 +192,47 @@ async function authedJson<T>(url: string): Promise<T> {
   return (await res.json()) as T
 }
 
+// ── Historial Clinico publico (compartir, opt-in) ───────────────────────────
+
+export interface EstadoCompartir {
+  activo: boolean
+  token: string | null
+  url: string | null
+  activadoEn: string | null
+  vistas: number
+}
+
+/**
+ * Estado del Historial Clinico publico de una bici (sin polling: cambia por
+ * accion del usuario). `bicicletaId: null` desactiva el fetch (key null de
+ * SWR) sin romper las Rules of Hooks -- el caller sigue llamando el hook
+ * siempre, solo cambia si busca datos o no.
+ */
+export function useEstadoCompartir(bicicletaId: string | null) {
+  return useSWR<EstadoCompartir>(
+    bicicletaId ? `/api/v1/bicicletas/${bicicletaId}/compartir` : null,
+    authedJson,
+    { revalidateOnFocus: false }
+  )
+}
+
+export async function activarCompartirBici(bicicletaId: string): Promise<EstadoCompartir> {
+  const res = await authedFetch(`/api/v1/bicicletas/${bicicletaId}/compartir`, { method: 'POST' })
+  if (!res.ok) {
+    const detalle = (await res.json().catch(() => null)) as { message?: string } | null
+    throw new Error(detalle?.message ?? `HTTP ${res.status}`)
+  }
+  return res.json()
+}
+
+export async function revocarCompartirBici(bicicletaId: string): Promise<void> {
+  const res = await authedFetch(`/api/v1/bicicletas/${bicicletaId}/compartir`, { method: 'DELETE' })
+  if (!res.ok) {
+    const detalle = (await res.json().catch(() => null)) as { message?: string } | null
+    throw new Error(detalle?.message ?? `HTTP ${res.status}`)
+  }
+}
+
 /**
  * Cierre de CIT Completo: el comprador confirma que recibio la bici. Libera
  * el pago al vendedor, transfiere la titularidad real y liquida el Fee de

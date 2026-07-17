@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { getStore } from '@netlify/blobs'
-import QRCode from 'qrcode'
+import { generarQrPng } from '@/lib/qr'
 import {
   PDFDocument,
   StandardFonts,
@@ -920,19 +920,6 @@ function envolver(
   }
   if (actual) lineas.push(actual)
   return lineas
-}
-
-// ── QR ───────────────────────────────────────────────────────────────────────
-
-/** Genera el QR (PNG) al vuelo apuntando al Verificador Publico. */
-async function generarQrPng(url: string): Promise<Buffer> {
-  return QRCode.toBuffer(url, {
-    type: 'png',
-    errorCorrectionLevel: 'M',
-    margin: 1,
-    scale: 8,
-    color: { dark: '#14160eff', light: '#ffffffff' },
-  })
 }
 
 // ── Almacenamiento (Netlify Blobs) ───────────────────────────────────────────
