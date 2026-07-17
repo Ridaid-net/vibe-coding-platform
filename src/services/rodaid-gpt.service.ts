@@ -47,8 +47,14 @@ import {
 
 // ── Modelo y limites configurables ───────────────────────────────────────────
 
+// TEMPORAL (diagnostico 2026-07-16): probando si claude-sonnet-4-6 no esta
+// soportado por el Netlify AI Gateway y por eso streamRespuesta() se cuelga
+// sin ningun evento (confirmado con el timeout de arriba) -- el FAQ, que usa
+// claude-haiku-4-5 contra el mismo gateway, responde bien. claude-sonnet-5 es
+// el Sonnet vigente (4-6 es la generacion anterior). Revertir si esto no
+// resuelve el colgado.
 /** Claude Sonnet via Netlify AI Gateway (lista de modelos soportados del skill). */
-export const MODELO_GPT = 'claude-sonnet-4-6'
+export const MODELO_GPT = 'claude-sonnet-5'
 
 /** Cuota mensual de consultas REALES (no aciertos de cache) por usuario. */
 export function cuotaMensual(): number {
