@@ -7,12 +7,28 @@ import type { EstadoZona, GemeloDigital, ZonaGemeloDigital, ZonaId } from '@/lib
 /**
  * RODAID — Gemelo Digital Interactivo (Garaje Digital, "puntos de calor").
  *
- * Ilustracion 2D simple (SVG inline, sin dependencia nueva) de la bici, con
- * hasta 7 zonas clickeables coloreadas segun su estado. Geometria schematic
- * MVP (circulos + trazos), no arte final por tipo -- las 3 ilustraciones +
- * silueta generica comparten esta misma geometria por ahora; el prop
- * `ilustracion` ya queda disponible para cuando haya arte real distinto por
- * tipo, sin tocar el contrato de datos.
+ * Fase 2: geometria de cuadro diamante real (tubo superior/inferior/asiento,
+ * vainas), manubrio+potencia y sillin+tija como elementos visuales propios
+ * (no solo puntos), ruedas proporcionadas relativas al cuadro (ratio
+ * wheelbase/diametro ~1.6, similar al de una bici real). Las 7 zonas base
+ * estan ancladas a puntos anatomicos reales (la horquilla ES el trazo
+ * cabeza-de-horquilla→eje delantero, la cadena ES el tramo plato→piñon, los
+ * frenos estan en la posicion real de una pinza sobre la llanta).
+ *
+ * Zonas condicionales (amortiguador_trasero/motor/bateria) -- SOLO se
+ * renderizan si `gemelo.zonas` las trae (zonasAplicables() en el servicio ya
+ * decide esto, este componente no vuelve a evaluar tipo/suspension):
+ *   - amortiguador_trasero: la geometria del triangulo trasero CAMBIA de
+ *     verdad frente a una bici rigida -- pivote + basculante (en vez de
+ *     vaina recta) + el amortiguador como tensor propio. No es solo pintar
+ *     un circulo mas, es la unica zona que altera la estructura del cuadro.
+ *   - motor: bloque en el eje pedalier (ubicacion real de un motor mid-drive).
+ *   - bateria: tramo mas grueso sobre el tubo inferior (integracion real de
+ *     bateria en e-bikes modernas).
+ *
+ * Fase 1 (single-shared-schematic, `ilustracion` sin usar visualmente
+ * todavia) sigue vigente -- esto es geometria/proporcion + zonas
+ * condicionales, no una re-skin por tipo de bici.
  *
  * IMPORTANTE (mismo criterio que Score de Confianza): 'sin_datos' es gris,
  * nunca verde -- ausencia de dato no es "sano". El verde solo aparece para
@@ -35,30 +51,54 @@ const ETIQUETA_ESTADO: Record<EstadoZona, string> = {
 }
 
 /**
- * Layout schematic de las 7 zonas sobre un viewBox 400x220 (silueta lateral
- * simple). 'cubiertas' es UNA sola zona visual cubriendo ambas ruedas a la
- * vez -- el dato IoT no distingue delantera de trasera (un solo
- * acelerometro), asi que no se dibuja como dos hotspots independientes con
- * estados potencialmente distintos.
+ * Geometria del cuadro diamante sobre un viewBox 400x240 (silueta lateral).
+ * Puntos anatomicos: BB (eje pedalier), ST_TOP (union tubo superior/tubo de
+ * asiento), HT_TOP/HT_BOTTOM (cabeza de direccion), ejes de rueda. Todo lo
+ * demas (horquilla, vainas, cadena, frenos, pivote/basculante) se deriva de
+ * estos puntos, no son coordenadas independientes.
  */
-const RUEDA_TRASERA = { cx: 80, cy: 170 }
-const RUEDA_DELANTERA = { cx: 320, cy: 170 }
+const REAR_AXLE = { x: 100, y: 165 }
+const FRONT_AXLE = { x: 300, y: 165 }
+const WHEEL_R = 62 // llanta/cubierta exterior
+const RIM_R = 32 // llanta interior/buje -- zona clickeable de rueda
+const BB = { x: 185, y: 158 } // eje pedalier
+const ST_TOP = { x: 150, y: 75 } // union tubo superior + tubo de asiento
+const HT_TOP = { x: 295, y: 65 } // cabeza de direccion, arriba
+const HT_BOTTOM = { x: 280, y: 100 } // cabeza de direccion, abajo (corona de horquilla)
+const SEATPOST_TOP = { x: 145, y: 55 }
+const STEM_TOP = { x: 308, y: 48 }
+const PEDAL = { x: 200, y: 172 }
 
-function ZonaGuardabarros({ zonaId, estado, onClick }: { zonaId: ZonaId; estado: EstadoZona; onClick: () => void }) {
-  const c = COLOR_POR_ESTADO[estado]
-  return (
-    <g onClick={onClick} className="cursor-pointer">
-      <circle
-        cx={zonaId === 'rueda_trasera' ? RUEDA_TRASERA.cx : RUEDA_DELANTERA.cx}
-        cy={170}
-        r={28}
-        fill={c.fill}
-        stroke={c.stroke}
-        strokeWidth={3}
-      />
-    </g>
-  )
+// Cadena: tramo plato (BB) → piñon (buje trasero). El recorrido real de la
+// cadena no cambia entre rigida/doble suspension (misma simplificacion en
+// ambos casos), levemente por encima de la vaina para no superponerse 100%.
+const CADENA_START = { x: 182, y: 150 }
+const CADENA_END = { x: 103, y: 157 }
+
+// Frenos: posicion real de una pinza sobre la llanta -- punto fijo, no
+// depende de si la vaina trasera es recta (rigida) o un basculante (doble
+// suspension): el freno se monta sobre la llanta en ambos casos.
+const FRENO_TRASERO_POS = { x: 120, y: 129 }
+const FRENO_DELANTERO_POS = { x: 287, y: 123 }
+
+// Triangulo trasero de doble suspension: pivote principal + basculante
+// (reemplaza la vaina inferior recta) + el amortiguador como tensor propio
+// entre el tubo de asiento y el basculante.
+const PIVOTE = { x: 170, y: 130 }
+const AMORTIGUADOR_TOP = { x: 163, y: 100 } // sobre el tubo de asiento
+const AMORTIGUADOR_BOTTOM = { x: 174, y: 133 } // sobre el basculante, junto al pivote
+
+// Motor e-bike (mid-drive): housing sobre el eje pedalier.
+const MOTOR_RECT = { x: BB.x - 20, y: BB.y - 16, width: 40, height: 32, rx: 12 }
+
+// Bateria e-bike: tramo integrado sobre el tubo inferior (BB → cabeza de
+// horquilla), del 10% al 80% del recorrido -- deja lugar visual al motor
+// (cerca de BB) y a la cabeza de direccion.
+function puntoEnSegmento(a: { x: number; y: number }, b: { x: number; y: number }, t: number) {
+  return { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) }
 }
+const BATERIA_START = puntoEnSegmento(BB, HT_BOTTOM, 0.12)
+const BATERIA_END = puntoEnSegmento(BB, HT_BOTTOM, 0.8)
 
 export function GemeloDigitalBici({ gemelo }: { gemelo: GemeloDigital }) {
   const [seleccionada, setSeleccionada] = useState<ZonaId | null>(null)
@@ -71,6 +111,12 @@ export function GemeloDigitalBici({ gemelo }: { gemelo: GemeloDigital }) {
   const ruedaTrasera = zonaPorId.get('rueda_trasera')!
   const frenoDelantero = zonaPorId.get('freno_delantero')!
   const frenoTrasero = zonaPorId.get('freno_trasero')!
+  // Condicionales -- undefined si zonasAplicables() no las incluyo para
+  // esta bici (rigida / no electrica). Este componente no vuelve a decidir
+  // tipo/suspension, solo reacciona a si el dato vino o no.
+  const amortiguadorTrasero = zonaPorId.get('amortiguador_trasero')
+  const motor = zonaPorId.get('motor')
+  const bateria = zonaPorId.get('bateria')
 
   const zonaActiva = seleccionada ? zonaPorId.get(seleccionada) ?? null : null
   const abrir = (z: ZonaId) => setSeleccionada(z)
@@ -82,42 +128,133 @@ export function GemeloDigitalBici({ gemelo }: { gemelo: GemeloDigital }) {
         <span className="text-[11px] text-slate-warm">Tocá una zona para ver el detalle</span>
       </div>
 
-      <svg viewBox="0 0 400 220" className="w-full max-w-md mx-auto" role="img" aria-label="Diagrama de la bicicleta con puntos de calor">
-        {/* Estructura no interactiva (marco, horquilla como trazo, cadena como banda) */}
+      <svg viewBox="0 0 400 240" className="w-full max-w-md mx-auto" role="img" aria-label="Diagrama de la bicicleta con puntos de calor">
+        {/* Cuadro diamante (estructural, no interactivo) */}
+        <g stroke="#cbd5e1" strokeWidth={6} fill="none" strokeLinecap="round" strokeLinejoin="round">
+          <path d={`M ${ST_TOP.x} ${ST_TOP.y} L ${HT_TOP.x} ${HT_TOP.y}`} />
+          <path d={`M ${BB.x} ${BB.y} L ${HT_BOTTOM.x} ${HT_BOTTOM.y}`} />
+          <path d={`M ${BB.x} ${BB.y} L ${ST_TOP.x} ${ST_TOP.y}`} />
+        </g>
+        <path
+          d={`M ${HT_TOP.x} ${HT_TOP.y} L ${HT_BOTTOM.x} ${HT_BOTTOM.y}`}
+          stroke="#94a3b8"
+          strokeWidth={8}
+          strokeLinecap="round"
+        />
+
+        {/* Triangulo trasero: vaina recta (rigida) o pivote+basculante (doble
+            suspension) -- la vaina superior (tubo de asiento → eje trasero)
+            no cambia entre los dos casos. */}
         <g stroke="#cbd5e1" strokeWidth={4} fill="none" strokeLinecap="round">
-          <path d="M 150 175 L 170 70 L 250 70" />
-          <path d="M 170 70 L 80 170" />
-          <path d="M 250 70 L 150 175" />
+          <path d={`M ${ST_TOP.x} ${ST_TOP.y} L ${REAR_AXLE.x} ${REAR_AXLE.y}`} />
+          {amortiguadorTrasero ? (
+            <>
+              <path d={`M ${BB.x} ${BB.y} L ${PIVOTE.x} ${PIVOTE.y}`} />
+              <path d={`M ${PIVOTE.x} ${PIVOTE.y} L ${REAR_AXLE.x} ${REAR_AXLE.y}`} strokeWidth={5} />
+            </>
+          ) : (
+            <path d={`M ${BB.x} ${BB.y} L ${REAR_AXLE.x} ${REAR_AXLE.y}`} />
+          )}
         </g>
+        {amortiguadorTrasero && <circle cx={PIVOTE.x} cy={PIVOTE.y} r={4} fill="#94a3b8" />}
 
-        {/* Cubiertas: UNA zona logica, dibujada como anillo exterior de ambas ruedas */}
-        <g onClick={() => abrir('cubiertas')} className="cursor-pointer">
-          <circle cx={RUEDA_TRASERA.cx} cy={170} r={45} fill="none" stroke={COLOR_POR_ESTADO[cubiertas.estado].stroke} strokeWidth={6} />
-          <circle cx={RUEDA_DELANTERA.cx} cy={170} r={45} fill="none" stroke={COLOR_POR_ESTADO[cubiertas.estado].stroke} strokeWidth={6} />
+        {/* Cockpit: manubrio, potencia, sillin, tija (decorativo, no interactivo) */}
+        <g stroke="#94a3b8" strokeWidth={4} fill="none" strokeLinecap="round">
+          <path d={`M ${ST_TOP.x} ${ST_TOP.y} L ${SEATPOST_TOP.x} ${SEATPOST_TOP.y}`} />
+          <path d={`M ${HT_TOP.x} ${HT_TOP.y} L ${STEM_TOP.x} ${STEM_TOP.y}`} />
+          <path d="M 292 46 Q 308 38 324 46" />
         </g>
+        <ellipse cx={138} cy={53} rx={15} ry={5} fill="#94a3b8" />
 
-        {/* Ruedas (aro/rayos) -- zona manual */}
-        <ZonaGuardabarros zonaId="rueda_trasera" estado={ruedaTrasera.estado} onClick={() => abrir('rueda_trasera')} />
-        <ZonaGuardabarros zonaId="rueda_delantera" estado={ruedaDelantera.estado} onClick={() => abrir('rueda_delantera')} />
+        {/* Motor (e-bike, mid-drive) -- clickeable, sobre el eje pedalier.
+            Se dibuja ANTES del plato/biela/pedal para que esos elementos
+            lean "montados sobre" el motor, como en una bici real. */}
+        {motor && (
+          <g onClick={() => abrir('motor')} className="cursor-pointer">
+            <rect
+              x={MOTOR_RECT.x} y={MOTOR_RECT.y} width={MOTOR_RECT.width} height={MOTOR_RECT.height} rx={MOTOR_RECT.rx}
+              fill={COLOR_POR_ESTADO[motor.estado].fill}
+              stroke={COLOR_POR_ESTADO[motor.estado].stroke}
+              strokeWidth={3}
+            />
+          </g>
+        )}
 
-        {/* Cadena */}
+        {/* Plato + eje pedalier + biela + pedal (decorativo) */}
+        <circle cx={BB.x} cy={BB.y} r={13} fill="none" stroke="#94a3b8" strokeWidth={2.5} />
+        <path d={`M ${BB.x} ${BB.y} L ${PEDAL.x} ${PEDAL.y}`} stroke="#94a3b8" strokeWidth={3} strokeLinecap="round" />
+        <circle cx={PEDAL.x} cy={PEDAL.y} r={5} fill="#94a3b8" />
+        <circle cx={BB.x} cy={BB.y} r={7} fill="#64748b" />
+
+        {/* Cadena -- tramo plato→piñon */}
         <g onClick={() => abrir('cadena')} className="cursor-pointer">
-          <rect x={150} y={175} width={120} height={12} rx={6} fill={COLOR_POR_ESTADO[cadena.estado].fill} stroke={COLOR_POR_ESTADO[cadena.estado].stroke} strokeWidth={2.5} />
+          <path
+            d={`M ${CADENA_START.x} ${CADENA_START.y} L ${CADENA_END.x} ${CADENA_END.y}`}
+            stroke={COLOR_POR_ESTADO[cadena.estado].stroke}
+            strokeWidth={5}
+            strokeLinecap="round"
+          />
         </g>
 
-        {/* Horquilla */}
+        {/* Bateria (e-bike) -- clickeable, tramo integrado sobre el tubo
+            inferior. Se dibuja despues del tubo inferior gris para que se
+            lea como "esta parte del tubo ES la bateria". */}
+        {bateria && (
+          <g onClick={() => abrir('bateria')} className="cursor-pointer">
+            <path
+              d={`M ${BATERIA_START.x} ${BATERIA_START.y} L ${BATERIA_END.x} ${BATERIA_END.y}`}
+              stroke={COLOR_POR_ESTADO[bateria.estado].stroke}
+              strokeWidth={14}
+              strokeLinecap="round"
+            />
+          </g>
+        )}
+
+        {/* Cubiertas: UNA zona logica sobre el anillo exterior de ambas ruedas */}
+        <g onClick={() => abrir('cubiertas')} className="cursor-pointer">
+          <circle cx={REAR_AXLE.x} cy={REAR_AXLE.y} r={WHEEL_R} fill="none" stroke={COLOR_POR_ESTADO[cubiertas.estado].stroke} strokeWidth={7} />
+          <circle cx={FRONT_AXLE.x} cy={FRONT_AXLE.y} r={WHEEL_R} fill="none" stroke={COLOR_POR_ESTADO[cubiertas.estado].stroke} strokeWidth={7} />
+        </g>
+
+        {/* Horquilla -- cabeza de direccion → eje delantero, el trazo ES la horquilla */}
         <g onClick={() => abrir('horquilla')} className="cursor-pointer">
-          <path d="M 300 80 L 322 165" stroke={COLOR_POR_ESTADO[horquilla.estado].stroke} strokeWidth={10} strokeLinecap="round" fill="none" />
-          <path d="M 250 70 L 300 80" stroke="#cbd5e1" strokeWidth={4} strokeLinecap="round" fill="none" />
+          <path
+            d={`M ${HT_BOTTOM.x} ${HT_BOTTOM.y} L ${FRONT_AXLE.x} ${FRONT_AXLE.y}`}
+            stroke={COLOR_POR_ESTADO[horquilla.estado].stroke}
+            strokeWidth={8}
+            strokeLinecap="round"
+          />
         </g>
 
-        {/* Frenos */}
+        {/* Ruedas (buje/llanta interior) -- zona manual */}
+        <g onClick={() => abrir('rueda_trasera')} className="cursor-pointer">
+          <circle cx={REAR_AXLE.x} cy={REAR_AXLE.y} r={RIM_R} fill={COLOR_POR_ESTADO[ruedaTrasera.estado].fill} stroke={COLOR_POR_ESTADO[ruedaTrasera.estado].stroke} strokeWidth={3} />
+        </g>
+        <g onClick={() => abrir('rueda_delantera')} className="cursor-pointer">
+          <circle cx={FRONT_AXLE.x} cy={FRONT_AXLE.y} r={RIM_R} fill={COLOR_POR_ESTADO[ruedaDelantera.estado].fill} stroke={COLOR_POR_ESTADO[ruedaDelantera.estado].stroke} strokeWidth={3} />
+        </g>
+
+        {/* Frenos -- posicion real de pinza sobre la llanta */}
         <g onClick={() => abrir('freno_trasero')} className="cursor-pointer">
-          <circle cx={88} cy={132} r={13} fill={COLOR_POR_ESTADO[frenoTrasero.estado].fill} stroke={COLOR_POR_ESTADO[frenoTrasero.estado].stroke} strokeWidth={2.5} />
+          <circle cx={FRENO_TRASERO_POS.x} cy={FRENO_TRASERO_POS.y} r={10} fill={COLOR_POR_ESTADO[frenoTrasero.estado].fill} stroke={COLOR_POR_ESTADO[frenoTrasero.estado].stroke} strokeWidth={2.5} />
         </g>
         <g onClick={() => abrir('freno_delantero')} className="cursor-pointer">
-          <circle cx={314} cy={130} r={13} fill={COLOR_POR_ESTADO[frenoDelantero.estado].fill} stroke={COLOR_POR_ESTADO[frenoDelantero.estado].stroke} strokeWidth={2.5} />
+          <circle cx={FRENO_DELANTERO_POS.x} cy={FRENO_DELANTERO_POS.y} r={10} fill={COLOR_POR_ESTADO[frenoDelantero.estado].fill} stroke={COLOR_POR_ESTADO[frenoDelantero.estado].stroke} strokeWidth={2.5} />
         </g>
+
+        {/* Amortiguador trasero (doble suspension) -- clickeable, el tensor
+            entre el tubo de asiento y el basculante. Se dibuja al final para
+            quedar por encima del basculante gris. */}
+        {amortiguadorTrasero && (
+          <g onClick={() => abrir('amortiguador_trasero')} className="cursor-pointer">
+            <path
+              d={`M ${AMORTIGUADOR_TOP.x} ${AMORTIGUADOR_TOP.y} L ${AMORTIGUADOR_BOTTOM.x} ${AMORTIGUADOR_BOTTOM.y}`}
+              stroke={COLOR_POR_ESTADO[amortiguadorTrasero.estado].stroke}
+              strokeWidth={7}
+              strokeLinecap="round"
+            />
+          </g>
+        )}
       </svg>
 
       {/* Leyenda */}
