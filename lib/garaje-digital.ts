@@ -71,6 +71,10 @@ export interface ActivoGaraje {
   rodado: number | null
   talleCuadro: string | null
   creadoEn: string
+  /** NULL = no declarado todavía. Distinto de FALSE (confirmado rígida). */
+  suspensionTrasera: boolean | null
+  /** true si la última inspección Checklist Premium marcó PR08 (batería) en 'falla'. */
+  bateriaFalla: boolean
   estado: EstadoActivo
   citId: string | null
   citEstado: string | null

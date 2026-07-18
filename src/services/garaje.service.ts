@@ -81,6 +81,11 @@ export interface ActivoGaraje {
   rodado: number | null
   talleCuadro: string | null
   creadoEn: string
+  /** NULL = no declarado todavía. Distinto de FALSE (confirmado rígida). */
+  suspensionTrasera: boolean | null
+  /** true si la última inspección con modulo_componentes=TRUE marcó PR08
+   * (batería de e-bike) en 'falla' -- ver precioSugerido() en swipe-to-sell.ts. */
+  bateriaFalla: boolean
 
   /** Estado resumido para la UI (semaforo del activo). */
   estado: EstadoActivo
@@ -124,6 +129,8 @@ interface ActivoRow {
   rodado: string | null
   talle_cuadro: string | null
   created_at: string
+  suspension_trasera: boolean | null
+  bateria_falla: boolean
   cit_id: string | null
   cit_estado: string | null
   codigo_cit: string | null
@@ -208,7 +215,9 @@ export async function obtenerActivosUsuario(
     `
       SELECT
         b.id, b.marca, b.modelo, b.numero_serie, b.tipo, b.anio, b.color,
-        b.foto_url, b.rodado, b.talle_cuadro, b.created_at,
+        b.foto_url, b.rodado, b.talle_cuadro, b.created_at, b.suspension_trasera,
+        COALESCE(insp_premium.checklist_detalle -> 'PR08' ->> 'resultado' = 'falla', FALSE)
+          AS bateria_falla,
         c.id AS cit_id,
         c.estado AS cit_estado,
         NULL AS codigo_cit,
@@ -274,6 +283,16 @@ export async function obtenerActivosUsuario(
         ORDER BY sce.created_at DESC
         LIMIT 1
       ) solicitud ON TRUE
+      -- Última inspección con Checklist Premium (PR01-PR08) de esta bici, para
+      -- leer si PR08 (batería de e-bike) quedó marcada 'falla' -- ver
+      -- precioSugerido() en lib/swipe-to-sell.ts.
+      LEFT JOIN LATERAL (
+        SELECT checklist_detalle
+        FROM inspecciones_fisicas ifis
+        WHERE ifis.bicicleta_id = b.id AND ifis.modulo_componentes = TRUE
+        ORDER BY ifis.created_at DESC
+        LIMIT 1
+      ) insp_premium ON TRUE
       WHERE b.propietario_id = $1
       ORDER BY b.created_at DESC
     `,
@@ -292,6 +311,8 @@ export async function obtenerActivosUsuario(
     rodado: row.rodado === null ? null : Number(row.rodado),
     talleCuadro: row.talle_cuadro,
     creadoEn: row.created_at,
+    suspensionTrasera: row.suspension_trasera,
+    bateriaFalla: row.bateria_falla,
     estado: derivarEstado(row),
     citId: row.cit_id,
     citEstado: row.cit_estado,
