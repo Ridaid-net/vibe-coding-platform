@@ -127,7 +127,7 @@ export async function GET(req: Request) {
             SELECT b.marca AS valor, COUNT(*)::text AS conteo
             FROM marketplace_publicaciones mp
             INNER JOIN bicicletas b ON b.id = mp.bicicleta_id
-            WHERE mp.estado = ANY($1::text[])
+            WHERE mp.estado = ANY($1::marketplace_publicacion_estado[])
             GROUP BY b.marca
             ORDER BY COUNT(*) DESC, b.marca ASC
           `,
@@ -138,7 +138,7 @@ export async function GET(req: Request) {
             SELECT b.tipo AS valor, COUNT(*)::text AS conteo
             FROM marketplace_publicaciones mp
             INNER JOIN bicicletas b ON b.id = mp.bicicleta_id
-            WHERE mp.estado = ANY($1::text[])
+            WHERE mp.estado = ANY($1::marketplace_publicacion_estado[])
             GROUP BY b.tipo
             ORDER BY COUNT(*) DESC, b.tipo ASC
           `,
@@ -149,7 +149,7 @@ export async function GET(req: Request) {
             SELECT b.rodado::text AS valor, COUNT(*)::text AS conteo
             FROM marketplace_publicaciones mp
             INNER JOIN bicicletas b ON b.id = mp.bicicleta_id
-            WHERE mp.estado = ANY($1::text[]) AND b.rodado IS NOT NULL
+            WHERE mp.estado = ANY($1::marketplace_publicacion_estado[]) AND b.rodado IS NOT NULL
             GROUP BY b.rodado
             ORDER BY b.rodado ASC
           `,
@@ -160,7 +160,7 @@ export async function GET(req: Request) {
             SELECT b.talle_cuadro AS valor, COUNT(*)::text AS conteo
             FROM marketplace_publicaciones mp
             INNER JOIN bicicletas b ON b.id = mp.bicicleta_id
-            WHERE mp.estado = ANY($1::text[]) AND b.talle_cuadro IS NOT NULL
+            WHERE mp.estado = ANY($1::marketplace_publicacion_estado[]) AND b.talle_cuadro IS NOT NULL
             GROUP BY b.talle_cuadro
             ORDER BY
               CASE b.talle_cuadro
@@ -185,7 +185,7 @@ export async function GET(req: Request) {
               COUNT(mp.id)::text AS conteo
             FROM rangos r
             LEFT JOIN marketplace_publicaciones mp
-              ON mp.estado = ANY($1::text[])
+              ON mp.estado = ANY($1::marketplace_publicacion_estado[])
              AND mp.precio_ars >= r.min
              AND mp.precio_ars < r.max
             GROUP BY r.etiqueta, r.min, r.max
@@ -284,7 +284,7 @@ function buildWhere(filters: {
   anioMax: number | null
   tsQuery: string
 }) {
-  const clauses = ['mp.estado = ANY($1::text[])']
+  const clauses = ['mp.estado = ANY($1::marketplace_publicacion_estado[])']
   const values: Array<string | number | string[]> = [filters.estados]
 
   if (filters.tsQuery) {
