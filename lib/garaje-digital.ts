@@ -233,6 +233,52 @@ export async function revocarCompartirBici(bicicletaId: string): Promise<void> {
   }
 }
 
+// ── Gemelo Digital Interactivo (puntos de calor) ────────────────────────────
+
+export type ZonaId =
+  | 'cadena'
+  | 'cubiertas'
+  | 'horquilla'
+  | 'rueda_delantera'
+  | 'rueda_trasera'
+  | 'freno_delantero'
+  | 'freno_trasero'
+
+export type EstadoZona = 'ok' | 'media' | 'alta' | 'sin_datos'
+
+export interface ZonaGemeloDigital {
+  zonaId: ZonaId
+  fuente: 'iot' | 'manual' | 'sin_datos'
+  estado: EstadoZona
+  titulo: string
+  mensaje: string | null
+  fecha: string | null
+  componente?: {
+    marca: string | null
+    modelo: string | null
+    numeroSerie: string | null
+    tieneFoto: boolean
+  }
+}
+
+export interface GemeloDigital {
+  tipo: string
+  ilustracion: 'ruta' | 'mtb' | 'urbana' | 'generica'
+  zonas: ZonaGemeloDigital[]
+  servicioTecnico: { titulo: string; mensaje: string; fecha: string } | null
+}
+
+/** Gemelo Digital de una bici (sin polling: es un snapshot IoT+manual, no
+ * cambia por accion del usuario en esta pantalla). Mismo null-key gate que
+ * useEstadoCompartir. */
+export function useGemeloDigital(bicicletaId: string | null) {
+  return useSWR<GemeloDigital>(
+    bicicletaId ? `/api/v1/bicicletas/${bicicletaId}/gemelo-digital` : null,
+    authedJson,
+    { revalidateOnFocus: false }
+  )
+}
+
 /**
  * Cierre de CIT Completo: el comprador confirma que recibio la bici. Libera
  * el pago al vendedor, transfiere la titularidad real y liquida el Fee de
