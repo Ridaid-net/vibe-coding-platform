@@ -98,6 +98,13 @@ export interface ActivosResponse {
   /** Swipe to Sell: si el usuario ya tiene CBU/alias cargado. Chequeado de
    * entrada (no al final del gesto) -- ver usuarioTieneDatosBancarios(). */
   tieneDatosBancarios: boolean
+  /** Swipe to Sell: cotización del dólar blue, resuelta en el servidor
+   * (ver src/services/cotizacion.service.ts::obtenerCotizacionDolarBlue()). */
+  tipoDeCambioBlueMep: {
+    valor: number
+    fuente: 'override_manual' | 'dolarapi.com' | 'cache_vencido' | 'referencia_fallback'
+    actualizadoEn: string
+  }
 }
 
 export interface MiPublicacion {

@@ -25,13 +25,21 @@ const UMBRAL_VELOCIDAD = 500
 
 interface Props {
   activo: ActivoGaraje
+  /** Resuelto en el servidor -- ver ActivosResponse.tipoDeCambioBlueMep. */
+  tipoDeCambioBlueMep: number
   enviando?: boolean
   onConfirmar: (input: { titulo: string; descripcion: string; precioARS: number }) => void
   onDescartar: () => void
 }
 
-export function SwipeToSellCard({ activo, enviando = false, onConfirmar, onDescartar }: Props) {
-  const [precio, setPrecio] = useState(() => precioSugerido(activo).monto)
+export function SwipeToSellCard({
+  activo,
+  tipoDeCambioBlueMep,
+  enviando = false,
+  onConfirmar,
+  onDescartar,
+}: Props) {
+  const [precio, setPrecio] = useState(() => precioSugerido(activo, tipoDeCambioBlueMep).monto)
   const [descripcion, setDescripcion] = useState(() => generarDescripcion(activo))
   const [editandoDescripcion, setEditandoDescripcion] = useState(false)
   const titulo = generarTitulo(activo)

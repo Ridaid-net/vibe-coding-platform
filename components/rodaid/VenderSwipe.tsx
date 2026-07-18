@@ -101,6 +101,7 @@ export function VenderSwipe() {
           <SwipeToSellCard
             key={actual.id}
             activo={actual}
+            tipoDeCambioBlueMep={data.tipoDeCambioBlueMep.valor}
             enviando={enviando}
             onConfirmar={handleConfirmar}
             onDescartar={avanzar}
