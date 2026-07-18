@@ -681,6 +681,8 @@ La idea original tenía 3 patas: (1) marcar la bici como robada al instante, (2)
 
 - **Biometría real (WebAuthn) — queda fuera de alcance, no construida.** Motivo: cero infraestructura existente (punto 2 de la auditoría) — sería una interacción nueva de punta a punta (registro de credencial + verificación en cada uso), un cambio de alcance mayor que el resto de esta pieza. Si en el futuro se prioriza, empezar por un enrolamiento de credencial WebAuthn por usuario (tabla nueva, algo como `credenciales_webauthn`) y considerar si conviene reemplazar o complementar el paso de contraseña de `POST /api/v1/usuario/reautenticar` con eso.
 
+**Confirmado en producción (2026-07-18), de punta a punta:** (1) el certificado con anexo fotográfico se probó contra una bici real (`II1124279207`) — encontró y corrigió un bug real en el camino: `bicicletas.foto_url` es una ruta relativa (`/api/v1/marketplace/fotos/...`), no una URL absoluta, así que el primer intento generaba el PDF sin la página anexo (fallaba en silencio, por diseño) — fix en `absolutizarUrl()` en ambas rutas de certificado, confirmado después con el mismo serial dando 2 páginas / ~218KB. (2) Federico probó el botón "Modo Robo" en vivo: abre el formulario pre-cargado como se esperaba, y al subir un PDF genérico (sin denuncia real ante el MPF) el sistema correctamente NO dejó avanzar el reporte — confirma en producción que la promesa de "nunca bloqueo instantáneo, siempre exige PDF real" se cumple tal cual se diseñó.
+
 ### Mobile
 
 `android/` and `ios/` are Capacitor shells (`capacitor.config.ts`, appId `net.rodaid.app`). `server.url` points at `https://rodaid.net` — the native apps are thin WebView wrappers loading the live deployment, not bundlers of a local static `webDir` build.
