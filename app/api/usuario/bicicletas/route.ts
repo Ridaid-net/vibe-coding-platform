@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { jsonError, requireUser } from '@/lib/marketplace'
 import { obtenerActivosUsuario, usuarioTieneDatosBancarios } from '@/src/services/garaje.service'
+import { obtenerCotizacionDolarBlue } from '@/src/services/cotizacion.service'
 
 export const runtime = 'nodejs'
 
@@ -16,9 +17,10 @@ export const runtime = 'nodejs'
 export async function GET(req: Request) {
   try {
     const user = await requireUser(req)
-    const [activos, tieneDatosBancarios] = await Promise.all([
+    const [activos, tieneDatosBancarios, tipoDeCambioBlueMep] = await Promise.all([
       obtenerActivosUsuario(user.id),
       usuarioTieneDatosBancarios(user.id),
+      obtenerCotizacionDolarBlue(),
     ])
     return NextResponse.json(
       {
@@ -32,6 +34,9 @@ export async function GET(req: Request) {
         // Swipe to Sell: chequeado de entrada, no al final del gesto (ver
         // usuarioTieneDatosBancarios() en garaje.service.ts).
         tieneDatosBancarios,
+        // Swipe to Sell: resuelto en el servidor (ver cotizacion.service.ts) --
+        // precioSugerido() lo recibe ya resuelto, nunca hace su propio fetch.
+        tipoDeCambioBlueMep,
       },
       { headers: { 'cache-control': 'no-store' } }
     )

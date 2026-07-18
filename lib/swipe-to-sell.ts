@@ -73,26 +73,6 @@ const AJUSTE_SUSPENSION_TRASERA_MTB = 1.25 // MTB doble suspensión vs. rígida
 // Modificador sobre el resultado final (ya con depreciación/Score aplicados).
 const AJUSTE_BATERIA_FALLA = 0.5 // PR08 (batería e-bike) en 'falla' en la última inspección Premium
 
-const TIPO_DE_CAMBIO_FALLBACK = 1000 // valor de referencia, NO es la cotización real -- ajustar en produccion
-
-/**
- * Tipo de cambio a usar: DÓLAR BLUE/MEP, NUNCA el oficial -- el oficial no
- * refleja el poder de compra real en pesos para un bien usado como una
- * bici, y usarlo subvaluaría sistemáticamente el precio sugerido. Quien
- * actualice `NEXT_PUBLIC_RODAID_DOLAR_BLUE_MEP_ARS` a mano tiene que cargar
- * esa cotización (blue o MEP), no la oficial del BCRA.
- *
- * Configurable manualmente por ahora (no conecta ninguna API de cotización
- * todavía -- mejora futura). `NEXT_PUBLIC_` a propósito: este archivo es
- * 'use client', y Next.js solo expone al browser las variables con ese
- * prefijo. La cotización no es un dato sensible, no hay problema en que
- * viaje al bundle público.
- */
-function dolarBlueMepArs(): number {
-  const v = Number(process.env.NEXT_PUBLIC_RODAID_DOLAR_BLUE_MEP_ARS)
-  return Number.isFinite(v) && v > 0 ? v : TIPO_DE_CAMBIO_FALLBACK
-}
-
 export interface PrecioSugerido {
   monto: number
   esEstimacion: true
@@ -103,13 +83,18 @@ export interface PrecioSugerido {
  * MTB doble suspensión) × depreciación por antigüedad (~10%/año, piso 30%
  * del valor base) × ajuste por Score de Confianza (oro +10%, bronce neutro,
  * sin badge -10%) × ajuste por batería en falla (si aplica) -- todo en USD,
- * agnostico de la unidad. La conversión a ARS (dólar blue/MEP) es el ÚNICO
- * paso que usa el tipo de cambio, al final. CERO datos de mercado reales
- * detrás de la regla en si -- ver BASE_POR_TIPO_USD. Se muestra SIEMPRE
- * editable en la UI, con el texto "estimación automática, sin datos de
- * mercado reales todavía".
+ * agnostico de la unidad. La conversión a ARS es el ÚNICO paso que usa el
+ * tipo de cambio, al final. CERO datos de mercado reales detrás de la regla
+ * en si -- ver BASE_POR_TIPO_USD. Se muestra SIEMPRE editable en la UI, con
+ * el texto "estimación automática, sin datos de mercado reales todavía".
+ *
+ * `tipoDeCambioBlueMep` llega YA RESUELTO desde el servidor (ver
+ * ActivosResponse.tipoDeCambioBlueMep / cotizacion.service.ts) -- esta
+ * función es puramente sincrónica, sin fetch ni env var: separa la REGLA de
+ * precio (negocio) de CÓMO se consigue el tipo de cambio (infraestructura,
+ * con su propio cache/fallback resuelto server-side).
  */
-export function precioSugerido(activo: ActivoGaraje): PrecioSugerido {
+export function precioSugerido(activo: ActivoGaraje, tipoDeCambioBlueMep: number): PrecioSugerido {
   let baseUsd = BASE_POR_TIPO_USD[activo.tipo] ?? BASE_POR_TIPO_USD.Urbana
   if (activo.tipo === 'MTB' && activo.suspensionTrasera === true) {
     baseUsd *= AJUSTE_SUSPENSION_TRASERA_MTB
@@ -123,7 +108,7 @@ export function precioSugerido(activo: ActivoGaraje): PrecioSugerido {
   let montoUsd = baseUsd * depreciacion * ajusteScore
   if (activo.bateriaFalla) montoUsd *= AJUSTE_BATERIA_FALLA
 
-  const montoArs = montoUsd * dolarBlueMepArs()
+  const montoArs = montoUsd * tipoDeCambioBlueMep
   const monto = Math.round(montoArs / 1000) * 1000
   return { monto, esEstimacion: true }
 }

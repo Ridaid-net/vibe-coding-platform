@@ -1,3 +1,5 @@
+import { getStore } from '@netlify/blobs'
+
 /**
  * Servicio de cotización del dólar oficial Banco Nación Argentina.
  * Fuente: API pública dolarapi.com (sin autenticación).
@@ -101,5 +103,117 @@ export async function obtenerCorroboracionBcra(): Promise<CorroboracionBcra | nu
     return { valor, fecha }
   } catch {
     return null
+  }
+}
+
+// ── Dólar BLUE/MEP para Swipe to Sell (precioSugerido()) ─────────────────────
+//
+// Dominio distinto al dólar oficial de arriba: el blue/MEP es el que rige el
+// mercado real de bicicletas usadas en Argentina (ver lib/swipe-to-sell.ts).
+// A diferencia de getDolarOficialBNA() (cache en memoria, se resetea en cada
+// cold-start), esta usa Netlify Blobs -- decision explicita de Federico
+// (2026-07-18): prefiere que sobreviva un cold-start aunque quede un
+// mecanismo de cache distinto al de su vecina oficial en este mismo archivo.
+//
+// Orden de prioridad, nunca devuelve 0/undefined ni lanza:
+//   1. Override manual (RODAID_DOLAR_BLUE_MEP_OVERRIDE_ARS) -- si esta
+//      seteado, SIEMPRE gana (decision humana explicita de pisar el valor).
+//   2. Cache vigente (Netlify Blobs, TTL configurable, default 6hs).
+//   3. Fetch a dolarapi.com/v1/dolares/blue (timeout 3s) -- actualiza el cache.
+//   4. Si el fetch falla: cae al ULTIMO valor cacheado, aunque este vencido.
+//   5. Si nunca hubo cache exitoso: valor de referencia hardcodeado.
+
+const BLUE_STORE = 'rodaid-cotizacion-dolar-blue'
+const BLUE_CLAVE = 'blue'
+const BLUE_VALOR_REFERENCIA_FALLBACK = 1000 // ultimo recurso -- NO es la cotizacion real
+const BLUE_TIMEOUT_MS = 3000
+
+export interface CotizacionDolarBlue {
+  valor: number
+  fuente: 'override_manual' | 'dolarapi.com' | 'cache_vencido' | 'referencia_fallback'
+  actualizadoEn: string
+}
+
+interface CotizacionBlueCache {
+  valor: number
+  actualizadoEn: string
+}
+
+function blueTtlHoras(): number {
+  const v = Number(process.env.RODAID_DOLAR_BLUE_CACHE_TTL_HORAS)
+  return Number.isFinite(v) && v > 0 ? v : 6
+}
+
+function blueOverrideManual(): number | null {
+  const v = Number(process.env.RODAID_DOLAR_BLUE_MEP_OVERRIDE_ARS)
+  return Number.isFinite(v) && v > 0 ? v : null
+}
+
+async function leerCacheBlue(): Promise<CotizacionBlueCache | null> {
+  try {
+    return (await getStore(BLUE_STORE).get(BLUE_CLAVE, { type: 'json' })) as CotizacionBlueCache | null
+  } catch {
+    return null
+  }
+}
+
+async function guardarCacheBlue(entry: CotizacionBlueCache): Promise<void> {
+  try {
+    await getStore(BLUE_STORE).setJSON(BLUE_CLAVE, entry)
+  } catch {
+    // Best-effort: el cache nunca debe romper el calculo de precio.
+  }
+}
+
+/** Fetch a dolarapi.com con timeout corto -- nunca lanza, devuelve null si falla. */
+async function fetchDolarApiBlue(): Promise<CotizacionBlueCache | null> {
+  try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), BLUE_TIMEOUT_MS)
+    const res = await fetch('https://dolarapi.com/v1/dolares/blue', { signal: controller.signal })
+    clearTimeout(timeoutId)
+    if (!res.ok) return null
+
+    const data = (await res.json()) as { venta?: number; compra?: number }
+    const valor = data.venta ?? data.compra
+    if (!valor || !Number.isFinite(valor) || valor <= 0) return null
+
+    return { valor, actualizadoEn: new Date().toISOString() }
+  } catch (error) {
+    console.warn('[cotizacion] fetch a dolarapi.com (blue) fallo o tardo demasiado', error)
+    return null
+  }
+}
+
+export async function obtenerCotizacionDolarBlue(): Promise<CotizacionDolarBlue> {
+  const override = blueOverrideManual()
+  if (override !== null) {
+    return { valor: override, fuente: 'override_manual', actualizadoEn: new Date().toISOString() }
+  }
+
+  const cache = await leerCacheBlue()
+  if (cache) {
+    const edadHoras = (Date.now() - new Date(cache.actualizadoEn).getTime()) / 3_600_000
+    if (edadHoras <= blueTtlHoras()) {
+      return { valor: cache.valor, fuente: 'dolarapi.com', actualizadoEn: cache.actualizadoEn }
+    }
+  }
+
+  const fresco = await fetchDolarApiBlue()
+  if (fresco) {
+    await guardarCacheBlue(fresco)
+    return { valor: fresco.valor, fuente: 'dolarapi.com', actualizadoEn: fresco.actualizadoEn }
+  }
+
+  if (cache) {
+    console.warn('[cotizacion] dolarapi.com (blue) no respondio -- usando ultimo valor cacheado (vencido)')
+    return { valor: cache.valor, fuente: 'cache_vencido', actualizadoEn: cache.actualizadoEn }
+  }
+
+  console.warn('[cotizacion] dolarapi.com (blue) no respondio y no hay cache -- usando valor de referencia')
+  return {
+    valor: BLUE_VALOR_REFERENCIA_FALLBACK,
+    fuente: 'referencia_fallback',
+    actualizadoEn: new Date().toISOString(),
   }
 }
