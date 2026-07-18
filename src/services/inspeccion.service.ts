@@ -15,6 +15,8 @@ import { cifrarBytesInspeccion } from '@/src/services/cifrado.service'
 import {
   PUNTOS_CON_COMPONENTE,
   PUNTOS_INSPECCION,
+  PUNTOS_PREMIUM_CON_COMPONENTE,
+  PUNTOS_INSPECCION_PREMIUM,
   type ChecklistInspeccion,
 } from '@/lib/puntos-inspeccion'
 import {
@@ -343,6 +345,7 @@ interface FilaInspeccionBusqueda {
   color: string | null
   rodado: string | null
   talle_cuadro: string | null
+  suspension_trasera: boolean | null
   propietario_id: string
   titular_perfil: Record<string, unknown> | null
   cit_id: string | null
@@ -391,6 +394,8 @@ export interface BusquedaInspeccionResultado {
     color: string | null
     rodado: number | null
     talleCuadro: string | null
+    /** NULL = no declarado todavía. Distinto de FALSE (confirmado rígida). */
+    suspensionTrasera: boolean | null
     /** Solo para inspector/admin (no se expone a un aliado). */
     titular: string | null
   }
@@ -434,7 +439,7 @@ export async function buscarParaInspeccion(
     `
       SELECT
         b.id AS bici_id, b.marca, b.modelo, b.tipo, b.numero_serie, b.anio,
-        b.color, b.rodado, b.talle_cuadro, b.propietario_id,
+        b.color, b.rodado, b.talle_cuadro, b.suspension_trasera, b.propietario_id,
         u.datos_perfil AS titular_perfil,
         c.id AS cit_id, c.estado AS cit_estado, c.codigo_cit, c.hash_sha256,
         c.fecha_vencimiento, c.bfa_estado, c.metadata_json AS cit_metadata
@@ -539,6 +544,7 @@ export async function buscarParaInspeccion(
       color: fila.color,
       rodado: fila.rodado === null ? null : Number(fila.rodado),
       talleCuadro: fila.talle_cuadro,
+      suspensionTrasera: fila.suspension_trasera,
       titular: verTitular ? nombreTitular(fila.titular_perfil) : null,
     },
     cit: fila.cit_id
@@ -685,8 +691,12 @@ export async function aprobarInspeccionFisica(opts: {
   /** Checklist de 20 puntos (Hito "CIT Completo Plus"). Opcional: un caller
    * que no lo envia sigue el camino legacy (solo veredicto + notas libres). */
   checklist?: ChecklistInspeccion | null
+  /** Checklist Premium (PR01-PR08, suspensión/e-bike) -- opcional, solo
+   * disponible cuando `checklist` tambien esta presente (nunca standalone).
+   * Nunca gatea aprobada/DISCREPANCIA -- ver puntos-inspeccion.ts. */
+  checklistPremium?: ChecklistInspeccion | null
   /** Fotos de componentes tokenizados, keyeadas por puntoId (P06/P08/P09/
-   * P11/P12). Solo se suben las que efectivamente vengan. */
+   * P11/P12/PR01..PR08). Solo se suben las que efectivamente vengan. */
   fotosPorPunto?: Record<string, Blob> | null
 }): Promise<AprobacionResultado> {
   const { inspector } = opts
@@ -707,6 +717,10 @@ export async function aprobarInspeccionFisica(opts: {
   // ese dia. Esta es la unica senal confiable: la presencia de filas en
   // componentes_tokenizados NO alcanza (ver auditoria previa a esta migracion).
   const moduloComponentes = Boolean(opts.checklist)
+  // Mismo criterio que moduloComponentes, pero para el módulo premium
+  // (PR01-PR08) -- solo tiene sentido si el checklist base también está
+  // presente (nunca se ofrece el módulo premium fuera del flujo Plus).
+  const moduloPremium = Boolean(opts.checklist) && Boolean(opts.checklistPremium)
 
   // Subida de fotos de componentes ANTES de la transaccion (mismo orden que
   // denuncia-mpf.service.ts::subirPdfCifrado): I/O externo primero, para no
@@ -715,7 +729,10 @@ export async function aprobarInspeccionFisica(opts: {
   const fotoBlobKeys: Record<string, string> = {}
   if (opts.fotosPorPunto) {
     for (const [puntoId, blob] of Object.entries(opts.fotosPorPunto)) {
-      if (!PUNTOS_CON_COMPONENTE.includes(puntoId as (typeof PUNTOS_CON_COMPONENTE)[number])) continue
+      const esComponenteValido =
+        PUNTOS_CON_COMPONENTE.includes(puntoId as (typeof PUNTOS_CON_COMPONENTE)[number]) ||
+        PUNTOS_PREMIUM_CON_COMPONENTE.includes(puntoId as (typeof PUNTOS_PREMIUM_CON_COMPONENTE)[number])
+      if (!esComponenteValido) continue
       try {
         const bytes = new Uint8Array(await blob.arrayBuffer())
         const key = `inspecciones/${opts.citId}/${puntoId}-${randomUUID()}.jpg.enc`
@@ -766,9 +783,10 @@ export async function aprobarInspeccionFisica(opts: {
           (cit_id, bicicleta_id, inspector_id, aliado_id, taller_id, resultado,
            inspector_wallet, firma_hash, firma_algoritmo, firma_valor,
            firma_certificado, firma_cert_serie, firma_cert_fingerprint, firma_modo,
-           notas, acelero_pipeline, metadata, checklist_detalle, modulo_componentes)
+           notas, acelero_pipeline, metadata, checklist_detalle, modulo_componentes,
+           modulo_premium)
         VALUES ($1, $2, $3, $4, $5, 'APROBADA', $6, $7, $8, $9, $10, $11, $12, $13,
-                $14, TRUE, $15::jsonb, $16::jsonb, $17)
+                $14, TRUE, $15::jsonb, $16::jsonb, $17, $18)
         RETURNING id
       `,
       [
@@ -791,8 +809,16 @@ export async function aprobarInspeccionFisica(opts: {
           inspectorNombre: inspector.nombre,
           canonico: firma.canonico,
         }),
-        opts.checklist ? JSON.stringify(opts.checklist) : null,
+        // checklist_detalle mezcla el checklist base (P01-P20) y el premium
+        // (PR01-PR08) en el mismo objeto plano -- misma columna JSONB,
+        // ambos comparten shape {resultado, nota?, componente?} y ninguno
+        // necesita distinguirse a nivel de storage (calcularResultadoChecklist()
+        // solo lee las claves P01-P20 de todas formas, ver puntos-inspeccion.ts).
+        opts.checklist
+          ? JSON.stringify({ ...opts.checklist, ...(opts.checklistPremium ?? {}) })
+          : null,
         moduloComponentes,
+        moduloPremium,
       ]
     )
     const inspeccionId = inserted.rows[0].id
@@ -833,6 +859,58 @@ export async function aprobarInspeccionFisica(opts: {
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
           `,
           [inspeccionId, cit.bicicleta_id, puntoId, punto.categoria, marca, modelo, numeroSerie, fotoBlobKey]
+        )
+      }
+    }
+
+    // 1c. Componentes tokenizados PREMIUM (PR01-PR08, suspensión/e-bike):
+    // mismo mecanismo que 1b -- los 8 SIEMPRE son candidatos a componente
+    // (a diferencia de los 5-de-20 base), y solo se insertan si el
+    // inspector efectivamente cargo algo. `especificaciones` solo lo
+    // completan PR07 (motor) y PR08 (batería).
+    if (opts.checklist && opts.checklistPremium) {
+      for (const puntoId of PUNTOS_PREMIUM_CON_COMPONENTE) {
+        const punto = PUNTOS_INSPECCION_PREMIUM.find((p) => p.id === puntoId)
+        const comp = opts.checklistPremium[puntoId]?.componente
+        const fotoBlobKey = fotoBlobKeys[puntoId] ?? null
+        const marca = comp?.marca?.trim() || null
+        const modelo = comp?.modelo?.trim() || null
+        const numeroSerie = comp?.numeroSerie?.trim() || null
+        const especificaciones = comp?.especificaciones ?? null
+        if (!punto || (!marca && !modelo && !numeroSerie && !fotoBlobKey && !especificaciones)) continue
+
+        if (numeroSerie) {
+          const dup = await client.query<{ id: string }>(
+            `SELECT id FROM componentes_tokenizados WHERE numero_serie = $1 LIMIT 1`,
+            [numeroSerie]
+          )
+          if (dup.rowCount) {
+            throw new ApiError(
+              409,
+              'NUMERO_SERIE_DUPLICADO_COMPONENTE',
+              `Ya existe un componente tokenizado con el número de serie "${numeroSerie}" en otra bicicleta.`
+            )
+          }
+        }
+
+        await client.query(
+          `
+            INSERT INTO componentes_tokenizados
+              (inspeccion_id, bicicleta_id, punto_id, categoria, marca, modelo,
+               numero_serie, foto_blob_key, especificaciones)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+          `,
+          [
+            inspeccionId,
+            cit.bicicleta_id,
+            puntoId,
+            punto.categoria,
+            marca,
+            modelo,
+            numeroSerie,
+            fotoBlobKey,
+            especificaciones ? JSON.stringify(especificaciones) : null,
+          ]
         )
       }
     }

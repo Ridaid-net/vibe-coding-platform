@@ -18,7 +18,7 @@ import type { ChecklistInspeccion } from '@/lib/puntos-inspeccion'
  *     resultado='DISCREPANCIA': mezclar datos de desgaste de una inspeccion
  *     formalmente rechazada seria engañoso.
  *
- * Las 5 zonas manuales estan fijadas a los 5 puntos de "alto valor" del
+ * Las 5 zonas manuales base estan fijadas a los 5 puntos de "alto valor" del
  * checklist (lib/puntos-inspeccion.ts::PUNTOS_CON_COMPONENTE) -- P13/P14
  * (Transmision) quedan fuera de esta fase (zona gris, ver CLAUDE.md).
  *
@@ -27,6 +27,12 @@ import type { ChecklistInspeccion } from '@/lib/puntos-inspeccion'
  * `componentes_tokenizados` -- esa tabla es enriquecimiento opcional
  * (marca/modelo/serial/foto) para el detalle, no un prerequisito para
  * mostrar el estado de la zona.
+ *
+ * zonas YA NO es un array fijo de 7 (ver zonasAplicables()): 3 zonas mas
+ * (amortiguador_trasero/motor/bateria) son condicionales segun tipo/
+ * suspension_trasera de la bici -- Checklist Premium, ver
+ * lib/puntos-inspeccion.ts::PUNTOS_INSPECCION_PREMIUM. Las 7 zonas base
+ * siguen siendo universales.
  */
 
 export type ZonaId =
@@ -37,6 +43,10 @@ export type ZonaId =
   | 'rueda_trasera'
   | 'freno_delantero'
   | 'freno_trasero'
+  // Condicionales -- solo aparecen si la bici las tiene (ver zonasAplicables()).
+  | 'amortiguador_trasero'
+  | 'motor'
+  | 'bateria'
 
 export type EstadoZona = 'ok' | 'media' | 'alta' | 'sin_datos'
 
@@ -63,14 +73,15 @@ export interface ZonaGemeloDigital {
 export interface GemeloDigital {
   tipo: string
   ilustracion: 'ruta' | 'mtb' | 'urbana' | 'generica'
-  /** Siempre 7 entradas (una por zona fija) -- 'sin_datos' no oculta la
-   * zona, la pinta gris. Ausencia de dato no es "sano". */
+  /** 7, 8, 9 o 10 entradas segun tipo/suspension_trasera de la bici (ver
+   * zonasAplicables()) -- 'sin_datos' no oculta la zona, la pinta gris.
+   * Ausencia de dato no es "sano". */
   zonas: ZonaGemeloDigital[]
   /** Badge no-espacial (IoT "servicio"). null si no hay hallazgo vigente. */
   servicioTecnico: { titulo: string; mensaje: string; fecha: string } | null
 }
 
-const TODAS_LAS_ZONAS: ZonaId[] = [
+const ZONAS_BASE: ZonaId[] = [
   'cadena',
   'cubiertas',
   'horquilla',
@@ -80,6 +91,21 @@ const TODAS_LAS_ZONAS: ZonaId[] = [
   'freno_trasero',
 ]
 
+/**
+ * Zonas relevantes para ESTA bici -- ya no un array fijo de 7. Solo 3 zonas
+ * son condicionales (mismo criterio que puntosPremiumAplicables() en
+ * lib/puntos-inspeccion.ts, coarse, no una matriz fina): amortiguador_trasero
+ * si suspensionTrasera=true, motor/bateria si tipo='Eléctrica'. Las 7 zonas
+ * base son universales -- toda bici tiene cadena/cubiertas/horquilla/ruedas/
+ * frenos, aunque no tengan datos todavia ('sin_datos').
+ */
+function zonasAplicables(bici: { tipo: string; suspensionTrasera: boolean | null }): ZonaId[] {
+  const zonas = [...ZONAS_BASE]
+  if (bici.suspensionTrasera === true) zonas.push('amortiguador_trasero')
+  if (bici.tipo === 'Eléctrica') zonas.push('motor', 'bateria')
+  return zonas
+}
+
 const TITULO_ZONA: Record<ZonaId, string> = {
   cadena: 'Cadena',
   cubiertas: 'Cubiertas',
@@ -88,6 +114,9 @@ const TITULO_ZONA: Record<ZonaId, string> = {
   rueda_trasera: 'Rueda trasera',
   freno_delantero: 'Freno delantero',
   freno_trasero: 'Freno trasero',
+  amortiguador_trasero: 'Amortiguador trasero',
+  motor: 'Motor',
+  bateria: 'Batería',
 }
 
 /** Los 7 valores reales de bicicletas.tipo (garaje.tsx) -- 3 tienen
@@ -102,13 +131,20 @@ const ILUSTRACION_POR_TIPO: Record<string, GemeloDigital['ilustracion']> = {
   Plegable: 'generica',
 }
 
-/** P06/P08/P09/P11/P12 -> su zona en el gemelo. */
+/** P06/P08/P09/P11/P12 (base) + PR01/PR07/PR08 (premium) -> su zona en el
+ * gemelo. checklist_detalle ya trae ambos namespaces mezclados en el mismo
+ * objeto (ver inspeccion.service.ts), así que este mapa simplemente se
+ * amplía -- no hace falta lógica nueva, la zona resultante ya sale filtrada
+ * por zonasAplicables() antes de devolverse. */
 const PUNTO_A_ZONA: Record<string, ZonaId> = {
   P06: 'horquilla',
   P08: 'rueda_delantera',
   P09: 'rueda_trasera',
   P11: 'freno_delantero',
   P12: 'freno_trasero',
+  PR01: 'amortiguador_trasero',
+  PR07: 'motor',
+  PR08: 'bateria',
 }
 
 function mapSeveridadIot(severidad: string): EstadoZona {
@@ -135,6 +171,7 @@ function zonaVacia(zonaId: ZonaId): ZonaGemeloDigital {
 
 interface BiciRow {
   tipo: string
+  suspension_trasera: boolean | null
   propietario_id: string
 }
 
@@ -167,7 +204,7 @@ export async function obtenerGemeloDigital(
   const pool = getPool()
 
   const biciRes = await pool.query<BiciRow>(
-    `SELECT tipo, propietario_id FROM bicicletas WHERE id = $1`,
+    `SELECT tipo, suspension_trasera, propietario_id FROM bicicletas WHERE id = $1`,
     [bicicletaId]
   )
   const bici = biciRes.rows[0]
@@ -178,8 +215,9 @@ export async function obtenerGemeloDigital(
     throw new ApiError(403, 'NOT_OWNER', 'No sos el propietario de esta bicicleta.')
   }
 
+  const zonasDeEstaBici = zonasAplicables({ tipo: bici.tipo, suspensionTrasera: bici.suspension_trasera })
   const zonas = new Map<ZonaId, ZonaGemeloDigital>(
-    TODAS_LAS_ZONAS.map((z) => [z, zonaVacia(z)])
+    zonasDeEstaBici.map((z) => [z, zonaVacia(z)])
   )
   let servicioTecnico: GemeloDigital['servicioTecnico'] = null
 
@@ -259,7 +297,7 @@ export async function obtenerGemeloDigital(
   return {
     tipo: bici.tipo,
     ilustracion: ILUSTRACION_POR_TIPO[bici.tipo] ?? 'generica',
-    zonas: TODAS_LAS_ZONAS.map((z) => zonas.get(z)!),
+    zonas: zonasDeEstaBici.map((z) => zonas.get(z)!),
     servicioTecnico,
   }
 }

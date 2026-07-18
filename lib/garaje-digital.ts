@@ -243,6 +243,11 @@ export type ZonaId =
   | 'rueda_trasera'
   | 'freno_delantero'
   | 'freno_trasero'
+  // Condicionales -- solo presentes si la bici las tiene (suspension_trasera
+  // / tipo Eléctrica). Ver src/services/gemelo-digital.service.ts::zonasAplicables().
+  | 'amortiguador_trasero'
+  | 'motor'
+  | 'bateria'
 
 export type EstadoZona = 'ok' | 'media' | 'alta' | 'sin_datos'
 

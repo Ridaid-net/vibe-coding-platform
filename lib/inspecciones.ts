@@ -56,6 +56,8 @@ export interface BusquedaInspeccion {
     rodado: number | null
     talleCuadro: string | null
     titular: string | null
+    /** NULL = no declarado todavía. Distinto de FALSE (confirmado rígida). */
+    suspensionTrasera: boolean | null
   }
   cit?: {
     id: string
@@ -191,13 +193,17 @@ export async function aprobarInspeccion(
   citId: string,
   notas?: string,
   checklist?: ChecklistInspeccion | null,
-  fotosPorPunto?: Record<string, File>
+  fotosPorPunto?: Record<string, File>,
+  checklistPremium?: ChecklistInspeccion | null
 ): Promise<AprobacionRespuesta> {
   if (checklist) {
     const form = new FormData()
     form.set('accion', 'aprobar')
     form.set('citId', citId)
     form.set('checklist', JSON.stringify(checklist))
+    if (checklistPremium && Object.keys(checklistPremium).length > 0) {
+      form.set('checklistPremium', JSON.stringify(checklistPremium))
+    }
     if (notas) form.set('notas', notas)
     for (const [puntoId, file] of Object.entries(fotosPorPunto ?? {})) {
       form.set(`foto_${puntoId}`, file)

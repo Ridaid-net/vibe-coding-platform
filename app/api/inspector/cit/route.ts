@@ -42,6 +42,9 @@ interface PostBody {
    * multipart) y opcionalmente en 'discrepancia' (via JSON) cuando el
    * rechazo se origina en el checklist completo. */
   checklist?: unknown
+  /** Checklist Premium (PR01-PR08, JSON serializado). Solo relevante junto
+   * a 'aprobar' -- el módulo premium nunca gatea una discrepancia. */
+  checklistPremium?: unknown
 }
 
 /**
@@ -65,6 +68,7 @@ async function parseBody(
       notas: form.get('notas') ?? undefined,
       motivo: form.get('motivo') ?? undefined,
       checklist: form.get('checklist') ?? undefined,
+      checklistPremium: form.get('checklistPremium') ?? undefined,
     }
     const fotosPorPunto: Record<string, Blob> = {}
     for (const [key, value] of form.entries()) {
@@ -79,13 +83,12 @@ async function parseBody(
 }
 
 /**
- * Parsea `body.checklist` (string JSON, tanto en multipart como en el body
- * JSON de 'discrepancia') a `ChecklistInspeccion`. Compartido entre 'aprobar'
- * y 'discrepancia' -- mismo formato de campo en los dos casos.
+ * Parsea un campo JSON serializado (string) a `ChecklistInspeccion`.
+ * Compartido entre `body.checklist` (aprobar/discrepancia) y
+ * `body.checklistPremium` (solo aprobar) -- mismo formato de campo.
  */
-function parseChecklist(body: PostBody): ChecklistInspeccion | null {
-  const raw = typeof body.checklist === 'string' ? body.checklist : null
-  if (!raw) return null
+function parseChecklistField(raw: unknown): ChecklistInspeccion | null {
+  if (typeof raw !== 'string' || !raw) return null
   try {
     return JSON.parse(raw) as ChecklistInspeccion
   } catch {
@@ -149,7 +152,8 @@ export async function POST(req: Request) {
         inspector: ctx,
         aliadoId,
         notas: optionalText(body.notas),
-        checklist: parseChecklist(body),
+        checklist: parseChecklistField(body.checklist),
+        checklistPremium: parseChecklistField(body.checklistPremium),
         fotosPorPunto,
       })
       return NextResponse.json(resultado, { status: 201 })
@@ -165,12 +169,14 @@ export async function POST(req: Request) {
       // dio aprobada=false) -- antes se perdia por completo. Deliberadamente
       // sin fotosPorPunto acá: ver el comentario junto al INSERT en
       // reportarDiscrepancia() sobre por que tampoco se tokenizan componentes.
+      // Tampoco checklistPremium acá -- el módulo premium nunca gatea una
+      // discrepancia (ver puntos-inspeccion.ts), no tiene sentido en este camino.
       const resultado = await reportarDiscrepancia({
         citId,
         inspector: ctx,
         aliadoId,
         motivo,
-        checklist: parseChecklist(body),
+        checklist: parseChecklistField(body.checklist),
       })
       return NextResponse.json(resultado, { status: 201 })
     }
