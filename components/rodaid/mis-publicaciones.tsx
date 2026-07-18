@@ -240,7 +240,12 @@ function PublicacionItem({ pub }: { pub: MiPublicacion }) {
       </div>
 
       <Link
-        href={`/marketplace/${pub.slug}`}
+        // FIX (reportado en vivo 2026-07-18): la ruta real es /marketplace/[id]
+        // (ver app/api/v1/marketplace/[id]/route.ts, WHERE mp.id = $1) -- pasar
+        // el slug producia "invalid input syntax for type uuid" en Postgres,
+        // que jsonError() convertia en un 500 generico ("Algo salió mal"). Mismo
+        // patron ya correcto en listing-card.tsx/mis-compras.tsx (usan .id).
+        href={`/marketplace/${pub.id}`}
         className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-ink/15 bg-white px-3.5 py-2 text-xs font-semibold text-ink transition-colors hover:border-ink/40"
       >
         Ver publicación

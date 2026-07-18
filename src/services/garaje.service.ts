@@ -108,6 +108,11 @@ export interface ActivoGaraje {
   actas: ActaFirmada[]
 
   tienePublicacionActiva: boolean
+  /** UUID real de marketplace_publicaciones -- usar ESTE para linkear a
+   * /marketplace/[id] (WHERE mp.id = $1), nunca publicacionSlug (bug real
+   * encontrado 2026-07-18: pasar el slug ahi tira "invalid input syntax for
+   * type uuid" en Postgres, 500 generico en el frontend). */
+  publicacionId: string | null
   publicacionSlug: string | null
 
   /** Presente solo si estado === 'pago_pendiente' (solicitud de CIT Express sin confirmar). */
@@ -147,6 +152,7 @@ interface ActivoRow {
   job_resultado: string | null
   job_creado_en: string | null
   tiene_publicacion_activa: boolean
+  publicacion_id: string | null
   publicacion_slug: string | null
   cit_metadata: Record<string, unknown> | null
   solicitud_pago_monto: string | null
@@ -242,6 +248,7 @@ export async function obtenerActivosUsuario(
           SELECT 1 FROM marketplace_publicaciones mp
           WHERE mp.bicicleta_id = b.id AND mp.estado IN ('ACTIVA', 'PAUSADA')
         ) AS tiene_publicacion_activa,
+        pub.id AS publicacion_id,
         pub.slug AS publicacion_slug,
         solicitud.monto_ars AS solicitud_pago_monto,
         solicitud.fee_init_point AS solicitud_pago_init_point
@@ -268,7 +275,7 @@ export async function obtenerActivosUsuario(
         LIMIT 1
       ) job ON c.id IS NOT NULL
       LEFT JOIN LATERAL (
-        SELECT slug
+        SELECT id, slug
         FROM marketplace_publicaciones mp
         WHERE mp.bicicleta_id = b.id AND mp.estado IN ('ACTIVA', 'PAUSADA')
         ORDER BY mp.publicado_en DESC
@@ -339,6 +346,7 @@ export async function obtenerActivosUsuario(
       : null,
     actas: [],
     tienePublicacionActiva: row.tiene_publicacion_activa,
+    publicacionId: row.publicacion_id,
     publicacionSlug: row.publicacion_slug,
     solicitudPago: row.solicitud_pago_init_point
       ? {

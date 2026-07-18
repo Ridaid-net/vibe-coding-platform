@@ -443,9 +443,11 @@ function ActivoCard({
 
         {/* Publicar / Ver publicación */}
         {activo.estado === 'verificado' &&
-          (activo.tienePublicacionActiva && activo.publicacionSlug ? (
+          (activo.tienePublicacionActiva && activo.publicacionId ? (
             <Link
-              href={`/marketplace/${activo.publicacionSlug}`}
+              // FIX (mismo bug encontrado en mis-publicaciones.tsx 2026-07-18):
+              // /marketplace/[id] espera el UUID real, no el slug.
+              href={`/marketplace/${activo.publicacionId}`}
               className="inline-flex items-center gap-1.5 rounded-full border border-ink/15 bg-white px-3.5 py-2 text-xs font-semibold text-ink transition-colors hover:border-ink/40"
             >
               <Store className="size-3.5" />
