@@ -345,7 +345,10 @@ export async function tieneCitActivo(usuarioId: string): Promise<boolean> {
         SELECT 1 FROM cits
         WHERE ciclista_id = $1
           AND estado = 'activo'
-          AND fecha_vencimiento > NOW()
+          -- fecha_vencimiento IS NULL no es "vencido" -- CIT Completo no tiene
+          -- fecha fija por diseno. Mismo bug ya documentado en CLAUDE.md
+          -- (2026-07-13) y nunca corregido acá -- barrido 2026-07-18.
+          AND (fecha_vencimiento IS NULL OR fecha_vencimiento > NOW())
       ) AS existe
     `,
     [usuarioId]
