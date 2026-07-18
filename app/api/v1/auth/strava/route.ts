@@ -6,7 +6,6 @@ const STRAVA_CLIENT_ID = process.env.STRAVA_CLIENT_ID ?? ''
 const REDIRECT_URI = process.env.STRAVA_REDIRECT_URI ?? 'https://rodaid.net/api/v1/auth/strava/callback'
 
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url)
   let userId = 'anonimo'
   try {
     const cookie = req.cookies.get('nf_jwt')?.value
@@ -16,9 +15,8 @@ export async function GET(req: NextRequest) {
       if (payload.sub) userId = payload.sub as string
     }
   } catch {}
-  const tenantId = searchParams.get('tenantId') ?? 'rodaid'
 
-  const state = Buffer.from(JSON.stringify({ userId, tenantId, ts: Date.now() })).toString('base64url')
+  const state = Buffer.from(JSON.stringify({ userId, ts: Date.now() })).toString('base64url')
 
   const params = new URLSearchParams({
     client_id: STRAVA_CLIENT_ID,

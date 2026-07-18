@@ -15,11 +15,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL('/garaje?error=strava_cancelada', req.url))
   }
 
-  let userId: string, tenantId: string
+  let userId: string
   try {
     const decoded = JSON.parse(Buffer.from(state, 'base64url').toString('utf8'))
     userId = decoded.userId
-    tenantId = decoded.tenantId ?? 'rodaid'
     if (!userId) throw new Error('Estado invalido')
   } catch {
     return NextResponse.redirect(new URL('/garaje?error=strava_state_invalido', req.url))
@@ -48,14 +47,14 @@ export async function GET(req: NextRequest) {
     const pool = getPool()
     await pool.query(
       `INSERT INTO oauth_connections
-        (user_id, tenant_id, provider, provider_user_id, access_token, refresh_token, expires_at)
-       VALUES ($1, $2, 'strava', $3, $4, $5, to_timestamp($6))
+        (user_id, provider, provider_user_id, access_token, refresh_token, expires_at)
+       VALUES ($1, 'strava', $2, $3, $4, to_timestamp($5))
        ON CONFLICT (provider, provider_user_id) DO UPDATE SET
          access_token = EXCLUDED.access_token,
          refresh_token = EXCLUDED.refresh_token,
          expires_at = EXCLUDED.expires_at,
          updated_at = NOW()`,
-      [userId, tenantId, String(data.athlete.id), data.access_token, data.refresh_token, data.expires_at]
+      [userId, String(data.athlete.id), data.access_token, data.refresh_token, data.expires_at]
     )
 
     return NextResponse.redirect(new URL('/garaje?strava=vinculada', req.url))
