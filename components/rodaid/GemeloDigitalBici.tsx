@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Radio, Wrench, X, MessageCircle, Tag } from 'lucide-react'
 import type { EstadoZona, GemeloDigital, ZonaGemeloDigital, ZonaId } from '@/lib/garaje-digital'
 
@@ -30,6 +30,14 @@ import type { EstadoZona, GemeloDigital, ZonaGemeloDigital, ZonaId } from '@/lib
  * todavia) sigue vigente -- esto es geometria/proporcion + zonas
  * condicionales, no una re-skin por tipo de bici.
  *
+ * Modo holografico (gemelo.tipo === 'Eléctrica'): mismo SVG, mismas 7+
+ * zonas, ningun cambio de geometria -- solo tratamiento de linea/color
+ * (fondo oscuro del contenedor + filtro de glow SVG feGaussianBlur+feMerge
+ * sobre los trazos existentes, paleta navy/teal de RODAID en vez de gris
+ * plano). 'sin_datos' deliberadamente SIN glow en este modo tambien (tono
+ * apagado, sin filtro) -- la ausencia de dato no debe competir visualmente
+ * con una zona que si tiene alerta real.
+ *
  * IMPORTANTE (mismo criterio que Score de Confianza): 'sin_datos' es gris,
  * nunca verde -- ausencia de dato no es "sano". El verde solo aparece para
  * un resultado manual 'ok' genuino (un inspector lo confirmo), algo que el
@@ -43,11 +51,41 @@ const COLOR_POR_ESTADO: Record<EstadoZona, { fill: string; stroke: string; texto
   sin_datos: { fill: '#f1f5f9', stroke: '#94a3b8', texto: 'text-slate-500', chip: 'bg-slate-100 text-slate-500' },
 }
 
+/** Variantes brillantes para el modo holográfico -- los tonos pastel del
+ * modo claro se ven apagados/chalky sobre #060B14. `glow: false` en
+ * sin_datos es a propósito (ver comentario de arriba). */
+const COLOR_HOLO: Record<EstadoZona, { stroke: string; glow: boolean }> = {
+  ok: { stroke: '#34f5b0', glow: true },
+  media: { stroke: '#ffc233', glow: true },
+  alta: { stroke: '#ff4d6d', glow: true },
+  sin_datos: { stroke: '#4d6470', glow: false },
+}
+const FRAME_HOLO = '#1c5c59' // cuadro/cockpit estructural en modo holográfico -- "trazas de circuito"
+const BB_CLUSTER_HOLO = '#0d2b29'
+
 const ETIQUETA_ESTADO: Record<EstadoZona, string> = {
   ok: 'OK',
   media: 'A revisar',
   alta: 'Atención',
   sin_datos: 'Sin datos',
+}
+
+/** Resuelve stroke/fill/filter de una zona clickeable segun el modo. En
+ * modo holografico el fill pasa a ser un tinte muy tenue del mismo stroke
+ * (evita el look "chalky" de un pastel plano sobre fondo casi negro) y se
+ * agrega el filtro de glow fuerte, salvo en sin_datos. */
+function estiloZona(estado: EstadoZona, holografico: boolean, filtroId: string) {
+  if (!holografico) {
+    const c = COLOR_POR_ESTADO[estado]
+    return { stroke: c.stroke, fill: c.fill, fillOpacity: undefined as number | undefined, filter: undefined as string | undefined }
+  }
+  const c = COLOR_HOLO[estado]
+  return {
+    stroke: c.stroke,
+    fill: c.stroke,
+    fillOpacity: 0.16,
+    filter: c.glow ? `url(#glow-strong-${filtroId})` : undefined,
+  }
 }
 
 /**
@@ -110,6 +148,10 @@ const BATERIA_END = puntoEnSegmento(BB, HT_BOTTOM, 0.8)
 
 export function GemeloDigitalBici({ gemelo }: { gemelo: GemeloDigital }) {
   const [seleccionada, setSeleccionada] = useState<ZonaId | null>(null)
+  const filtroId = useId()
+  // Modo holografico: SOLO e-bikes. Mismo SVG/zonas, cero cambio de
+  // geometria -- ver comentario del encabezado del archivo.
+  const holo = gemelo.tipo === 'Eléctrica'
 
   const zonaPorId = new Map(gemelo.zonas.map((z) => [z.zonaId, z]))
   const cadena = zonaPorId.get('cadena')!
@@ -129,31 +171,50 @@ export function GemeloDigitalBici({ gemelo }: { gemelo: GemeloDigital }) {
   const zonaActiva = seleccionada ? zonaPorId.get(seleccionada) ?? null : null
   const abrir = (z: ZonaId) => setSeleccionada(z)
 
+  const frameColor = holo ? FRAME_HOLO : '#cbd5e1'
+  const frameColorDark = holo ? FRAME_HOLO : '#94a3b8'
+  const bbClusterColor = holo ? BB_CLUSTER_HOLO : '#64748b'
+  const glowSoft = holo ? `url(#glow-soft-${filtroId})` : undefined
+
   return (
-    <div className="rounded-2xl border border-ink/10 bg-white p-5">
+    <div className={`rounded-2xl border p-5 transition-colors ${holo ? 'border-[#1c5c59]/60 bg-[#060B14]' : 'border-ink/10 bg-white'}`}>
       <div className="flex items-center justify-between mb-3">
-        <h3 className="font-display text-sm font-semibold text-[#0F1E35]">Gemelo Digital</h3>
-        <span className="text-[11px] text-slate-warm">Tocá una zona para ver el detalle</span>
+        <h3 className={`font-display text-sm font-semibold ${holo ? 'text-[#e8f3f2]' : 'text-[#0F1E35]'}`}>Gemelo Digital</h3>
+        <span className={`text-[11px] ${holo ? 'text-[#6f8d8a]' : 'text-slate-warm'}`}>Tocá una zona para ver el detalle</span>
       </div>
 
       <svg viewBox="0 0 400 240" className="w-full max-w-md mx-auto" role="img" aria-label="Diagrama de la bicicleta con puntos de calor">
+        {holo && (
+          <defs>
+            <filter id={`glow-soft-${filtroId}`} x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur stdDeviation="1.6" result="b" />
+              <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+            <filter id={`glow-strong-${filtroId}`} x="-80%" y="-80%" width="260%" height="260%">
+              <feGaussianBlur stdDeviation="3.2" result="b" />
+              <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+          </defs>
+        )}
+
         {/* Cuadro diamante (estructural, no interactivo) */}
-        <g stroke="#cbd5e1" strokeWidth={6} fill="none" strokeLinecap="round" strokeLinejoin="round">
+        <g stroke={frameColor} strokeWidth={6} fill="none" strokeLinecap="round" strokeLinejoin="round" filter={glowSoft}>
           <path d={`M ${ST_TOP.x} ${ST_TOP.y} L ${HT_TOP.x} ${HT_TOP.y}`} />
           <path d={`M ${BB.x} ${BB.y} L ${HT_BOTTOM.x} ${HT_BOTTOM.y}`} />
           <path d={`M ${BB.x} ${BB.y} L ${ST_TOP.x} ${ST_TOP.y}`} />
         </g>
         <path
           d={`M ${HT_TOP.x} ${HT_TOP.y} L ${HT_BOTTOM.x} ${HT_BOTTOM.y}`}
-          stroke="#94a3b8"
+          stroke={frameColorDark}
           strokeWidth={8}
           strokeLinecap="round"
+          filter={glowSoft}
         />
 
         {/* Triangulo trasero: vaina recta (rigida) o pivote+basculante (doble
             suspension) -- la vaina superior (tubo de asiento → eje trasero)
             no cambia entre los dos casos. */}
-        <g stroke="#cbd5e1" strokeWidth={4} fill="none" strokeLinecap="round">
+        <g stroke={frameColor} strokeWidth={4} fill="none" strokeLinecap="round" filter={glowSoft}>
           <path d={`M ${ST_TOP.x} ${ST_TOP.y} L ${REAR_AXLE.x} ${REAR_AXLE.y}`} />
           {amortiguadorTrasero ? (
             <>
@@ -164,112 +225,149 @@ export function GemeloDigitalBici({ gemelo }: { gemelo: GemeloDigital }) {
             <path d={`M ${BB.x} ${BB.y} L ${REAR_AXLE.x} ${REAR_AXLE.y}`} />
           )}
         </g>
-        {amortiguadorTrasero && <circle cx={PIVOTE.x} cy={PIVOTE.y} r={4} fill="#94a3b8" />}
+        {amortiguadorTrasero && <circle cx={PIVOTE.x} cy={PIVOTE.y} r={4} fill={frameColorDark} filter={glowSoft} />}
 
         {/* Cockpit: manubrio, potencia, sillin, tija (decorativo, no interactivo) */}
-        <g stroke="#94a3b8" strokeWidth={4} fill="none" strokeLinecap="round">
+        <g stroke={frameColorDark} strokeWidth={4} fill="none" strokeLinecap="round" filter={glowSoft}>
           <path d={`M ${ST_TOP.x} ${ST_TOP.y} L ${SEATPOST_TOP.x} ${SEATPOST_TOP.y}`} />
           <path d={`M ${HT_TOP.x} ${HT_TOP.y} L ${STEM_TOP.x} ${STEM_TOP.y}`} />
           <path d="M 255 46 Q 271 38 287 46" />
         </g>
-        <ellipse cx={138} cy={53} rx={15} ry={5} fill="#94a3b8" />
+        <ellipse cx={138} cy={53} rx={15} ry={5} fill={frameColorDark} filter={glowSoft} />
 
         {/* Motor (e-bike, mid-drive) -- clickeable, sobre el eje pedalier.
             Se dibuja ANTES del plato/biela/pedal para que esos elementos
             lean "montados sobre" el motor, como en una bici real. */}
-        {motor && (
-          <g onClick={() => abrir('motor')} className="cursor-pointer">
-            <rect
-              x={MOTOR_RECT.x} y={MOTOR_RECT.y} width={MOTOR_RECT.width} height={MOTOR_RECT.height} rx={MOTOR_RECT.rx}
-              fill={COLOR_POR_ESTADO[motor.estado].fill}
-              stroke={COLOR_POR_ESTADO[motor.estado].stroke}
-              strokeWidth={3}
-            />
-          </g>
-        )}
+        {motor && (() => {
+          const est = estiloZona(motor.estado, holo, filtroId)
+          return (
+            <g onClick={() => abrir('motor')} className="cursor-pointer">
+              <rect
+                x={MOTOR_RECT.x} y={MOTOR_RECT.y} width={MOTOR_RECT.width} height={MOTOR_RECT.height} rx={MOTOR_RECT.rx}
+                fill={est.fill} fillOpacity={est.fillOpacity} stroke={est.stroke} strokeWidth={3} filter={est.filter}
+              />
+            </g>
+          )
+        })()}
 
         {/* Plato + eje pedalier + biela + pedal (decorativo) */}
-        <circle cx={BB.x} cy={BB.y} r={13} fill="none" stroke="#94a3b8" strokeWidth={2.5} />
-        <path d={`M ${BB.x} ${BB.y} L ${PEDAL.x} ${PEDAL.y}`} stroke="#94a3b8" strokeWidth={3} strokeLinecap="round" />
-        <circle cx={PEDAL.x} cy={PEDAL.y} r={5} fill="#94a3b8" />
-        <circle cx={BB.x} cy={BB.y} r={7} fill="#64748b" />
+        <circle cx={BB.x} cy={BB.y} r={13} fill="none" stroke={frameColorDark} strokeWidth={2.5} filter={glowSoft} />
+        <path d={`M ${BB.x} ${BB.y} L ${PEDAL.x} ${PEDAL.y}`} stroke={frameColorDark} strokeWidth={3} strokeLinecap="round" filter={glowSoft} />
+        <circle cx={PEDAL.x} cy={PEDAL.y} r={5} fill={frameColorDark} filter={glowSoft} />
+        <circle cx={BB.x} cy={BB.y} r={7} fill={bbClusterColor} filter={glowSoft} />
 
         {/* Cadena -- tramo plato→piñon */}
-        <g onClick={() => abrir('cadena')} className="cursor-pointer">
-          <path
-            d={`M ${CADENA_START.x} ${CADENA_START.y} L ${CADENA_END.x} ${CADENA_END.y}`}
-            stroke={COLOR_POR_ESTADO[cadena.estado].stroke}
-            strokeWidth={5}
-            strokeLinecap="round"
-          />
-        </g>
+        {(() => {
+          const est = estiloZona(cadena.estado, holo, filtroId)
+          return (
+            <g onClick={() => abrir('cadena')} className="cursor-pointer">
+              <path
+                d={`M ${CADENA_START.x} ${CADENA_START.y} L ${CADENA_END.x} ${CADENA_END.y}`}
+                stroke={est.stroke} strokeWidth={5} strokeLinecap="round" filter={est.filter}
+              />
+            </g>
+          )
+        })()}
 
         {/* Bateria (e-bike) -- clickeable, tramo integrado sobre el tubo
             inferior. Se dibuja despues del tubo inferior gris para que se
             lea como "esta parte del tubo ES la bateria". */}
-        {bateria && (
-          <g onClick={() => abrir('bateria')} className="cursor-pointer">
-            <path
-              d={`M ${BATERIA_START.x} ${BATERIA_START.y} L ${BATERIA_END.x} ${BATERIA_END.y}`}
-              stroke={COLOR_POR_ESTADO[bateria.estado].stroke}
-              strokeWidth={14}
-              strokeLinecap="round"
-            />
-          </g>
-        )}
+        {bateria && (() => {
+          const est = estiloZona(bateria.estado, holo, filtroId)
+          return (
+            <g onClick={() => abrir('bateria')} className="cursor-pointer">
+              <path
+                d={`M ${BATERIA_START.x} ${BATERIA_START.y} L ${BATERIA_END.x} ${BATERIA_END.y}`}
+                stroke={est.stroke} strokeWidth={14} strokeLinecap="round" filter={est.filter}
+              />
+            </g>
+          )
+        })()}
 
         {/* Cubiertas: UNA zona logica sobre el anillo exterior de ambas ruedas */}
-        <g onClick={() => abrir('cubiertas')} className="cursor-pointer">
-          <circle cx={REAR_AXLE.x} cy={REAR_AXLE.y} r={WHEEL_R} fill="none" stroke={COLOR_POR_ESTADO[cubiertas.estado].stroke} strokeWidth={7} />
-          <circle cx={FRONT_AXLE.x} cy={FRONT_AXLE.y} r={WHEEL_R} fill="none" stroke={COLOR_POR_ESTADO[cubiertas.estado].stroke} strokeWidth={7} />
-        </g>
+        {(() => {
+          const est = estiloZona(cubiertas.estado, holo, filtroId)
+          return (
+            <g onClick={() => abrir('cubiertas')} className="cursor-pointer">
+              <circle cx={REAR_AXLE.x} cy={REAR_AXLE.y} r={WHEEL_R} fill="none" stroke={est.stroke} strokeWidth={7} filter={est.filter} />
+              <circle cx={FRONT_AXLE.x} cy={FRONT_AXLE.y} r={WHEEL_R} fill="none" stroke={est.stroke} strokeWidth={7} filter={est.filter} />
+            </g>
+          )
+        })()}
 
         {/* Horquilla -- cabeza de direccion → eje delantero, el trazo ES la horquilla */}
-        <g onClick={() => abrir('horquilla')} className="cursor-pointer">
-          <path
-            d={`M ${HT_BOTTOM.x} ${HT_BOTTOM.y} L ${FRONT_AXLE.x} ${FRONT_AXLE.y}`}
-            stroke={COLOR_POR_ESTADO[horquilla.estado].stroke}
-            strokeWidth={8}
-            strokeLinecap="round"
-          />
-        </g>
+        {(() => {
+          const est = estiloZona(horquilla.estado, holo, filtroId)
+          return (
+            <g onClick={() => abrir('horquilla')} className="cursor-pointer">
+              <path
+                d={`M ${HT_BOTTOM.x} ${HT_BOTTOM.y} L ${FRONT_AXLE.x} ${FRONT_AXLE.y}`}
+                stroke={est.stroke} strokeWidth={8} strokeLinecap="round" filter={est.filter}
+              />
+            </g>
+          )
+        })()}
 
         {/* Ruedas (buje/llanta interior) -- zona manual */}
-        <g onClick={() => abrir('rueda_trasera')} className="cursor-pointer">
-          <circle cx={REAR_AXLE.x} cy={REAR_AXLE.y} r={RIM_R} fill={COLOR_POR_ESTADO[ruedaTrasera.estado].fill} stroke={COLOR_POR_ESTADO[ruedaTrasera.estado].stroke} strokeWidth={3} />
-        </g>
-        <g onClick={() => abrir('rueda_delantera')} className="cursor-pointer">
-          <circle cx={FRONT_AXLE.x} cy={FRONT_AXLE.y} r={RIM_R} fill={COLOR_POR_ESTADO[ruedaDelantera.estado].fill} stroke={COLOR_POR_ESTADO[ruedaDelantera.estado].stroke} strokeWidth={3} />
-        </g>
+        {(() => {
+          const est = estiloZona(ruedaTrasera.estado, holo, filtroId)
+          return (
+            <g onClick={() => abrir('rueda_trasera')} className="cursor-pointer">
+              <circle cx={REAR_AXLE.x} cy={REAR_AXLE.y} r={RIM_R} fill={est.fill} fillOpacity={est.fillOpacity} stroke={est.stroke} strokeWidth={3} filter={est.filter} />
+            </g>
+          )
+        })()}
+        {(() => {
+          const est = estiloZona(ruedaDelantera.estado, holo, filtroId)
+          return (
+            <g onClick={() => abrir('rueda_delantera')} className="cursor-pointer">
+              <circle cx={FRONT_AXLE.x} cy={FRONT_AXLE.y} r={RIM_R} fill={est.fill} fillOpacity={est.fillOpacity} stroke={est.stroke} strokeWidth={3} filter={est.filter} />
+            </g>
+          )
+        })()}
 
         {/* Frenos -- posicion real de pinza sobre la llanta */}
-        <g onClick={() => abrir('freno_trasero')} className="cursor-pointer">
-          <circle cx={FRENO_TRASERO_POS.x} cy={FRENO_TRASERO_POS.y} r={10} fill={COLOR_POR_ESTADO[frenoTrasero.estado].fill} stroke={COLOR_POR_ESTADO[frenoTrasero.estado].stroke} strokeWidth={2.5} />
-        </g>
-        <g onClick={() => abrir('freno_delantero')} className="cursor-pointer">
-          <circle cx={FRENO_DELANTERO_POS.x} cy={FRENO_DELANTERO_POS.y} r={10} fill={COLOR_POR_ESTADO[frenoDelantero.estado].fill} stroke={COLOR_POR_ESTADO[frenoDelantero.estado].stroke} strokeWidth={2.5} />
-        </g>
+        {(() => {
+          const est = estiloZona(frenoTrasero.estado, holo, filtroId)
+          return (
+            <g onClick={() => abrir('freno_trasero')} className="cursor-pointer">
+              <circle cx={FRENO_TRASERO_POS.x} cy={FRENO_TRASERO_POS.y} r={10} fill={est.fill} fillOpacity={est.fillOpacity} stroke={est.stroke} strokeWidth={2.5} filter={est.filter} />
+            </g>
+          )
+        })()}
+        {(() => {
+          const est = estiloZona(frenoDelantero.estado, holo, filtroId)
+          return (
+            <g onClick={() => abrir('freno_delantero')} className="cursor-pointer">
+              <circle cx={FRENO_DELANTERO_POS.x} cy={FRENO_DELANTERO_POS.y} r={10} fill={est.fill} fillOpacity={est.fillOpacity} stroke={est.stroke} strokeWidth={2.5} filter={est.filter} />
+            </g>
+          )
+        })()}
 
         {/* Amortiguador trasero (doble suspension) -- clickeable, el tensor
             entre el tubo de asiento y el basculante. Se dibuja al final para
             quedar por encima del basculante gris. */}
-        {amortiguadorTrasero && (
-          <g onClick={() => abrir('amortiguador_trasero')} className="cursor-pointer">
-            <path
-              d={`M ${AMORTIGUADOR_TOP.x} ${AMORTIGUADOR_TOP.y} L ${AMORTIGUADOR_BOTTOM.x} ${AMORTIGUADOR_BOTTOM.y}`}
-              stroke={COLOR_POR_ESTADO[amortiguadorTrasero.estado].stroke}
-              strokeWidth={7}
-              strokeLinecap="round"
-            />
-          </g>
-        )}
+        {amortiguadorTrasero && (() => {
+          const est = estiloZona(amortiguadorTrasero.estado, holo, filtroId)
+          return (
+            <g onClick={() => abrir('amortiguador_trasero')} className="cursor-pointer">
+              <path
+                d={`M ${AMORTIGUADOR_TOP.x} ${AMORTIGUADOR_TOP.y} L ${AMORTIGUADOR_BOTTOM.x} ${AMORTIGUADOR_BOTTOM.y}`}
+                stroke={est.stroke} strokeWidth={7} strokeLinecap="round" filter={est.filter}
+              />
+            </g>
+          )
+        })()}
       </svg>
 
       {/* Leyenda */}
-      <div className="mt-3 flex flex-wrap justify-center gap-3 text-[11px] text-slate-warm">
+      <div className={`mt-3 flex flex-wrap justify-center gap-3 text-[11px] ${holo ? 'text-[#6f8d8a]' : 'text-slate-warm'}`}>
         {(['ok', 'media', 'alta', 'sin_datos'] as EstadoZona[]).map((e) => (
           <span key={e} className="inline-flex items-center gap-1.5">
-            <span className="size-2.5 rounded-full" style={{ backgroundColor: COLOR_POR_ESTADO[e].stroke }} />
+            <span
+              className="size-2.5 rounded-full"
+              style={{ backgroundColor: holo ? COLOR_HOLO[e].stroke : COLOR_POR_ESTADO[e].stroke }}
+            />
             {ETIQUETA_ESTADO[e]}
           </span>
         ))}
