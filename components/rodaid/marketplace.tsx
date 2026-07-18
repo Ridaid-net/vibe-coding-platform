@@ -274,6 +274,12 @@ export function Marketplace() {
           </>
         )}
       </div>
+
+      <p className="mt-10 flex items-center justify-center gap-2.5 text-center text-[11px] font-bold uppercase tracking-[0.16em] text-[#2BBCB8]">
+        <span className="size-1.5 rounded-full bg-[#F47B20]" />
+        Contigo, siempre siempre bien.
+        <span className="size-1.5 rounded-full bg-[#F47B20]" />
+      </p>
     </section>
   )
 }
