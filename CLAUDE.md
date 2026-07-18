@@ -634,6 +634,14 @@ Alguien le pasó a Federico el repo `https://github.com/garrytan/gstack.git` ("a
 
 Location-based features (security heatmap, personal "Garaje Digital" heatmap) clip coordinates to a coarse grid (`ANALITICA_GRID_DEG`, ~500m cells) before persisting, and only surface aggregates above a k-anonymity threshold — never raw points. Preserve this clipping if touching those code paths.
 
+### RLS en `usuarios`/`bicicletas` — una consulta directa "vacía" no significa datos perdidos
+
+Encontrado 2026-07-18 verificando en producción, vía conexión directa de solo lectura (credencial `netlifydb_readonly`, sin pasar por la app), el fix del barrido de `fecha_vencimiento`. Un `SELECT COUNT(*) FROM bicicletas`/`usuarios` contra esa conexión dio **0** en ambas tablas, mientras `cits`/`aliados`/`inspecciones_fisicas` mostraban sus conteos reales — por un momento pareció un incidente real de pérdida de datos (`cits` referenciando `bicicleta_id`s que ya no existirían, algo que no debería ser alcanzable dado que `cits.bicicleta_id` no tiene `ON DELETE CASCADE`).
+
+**No fue un incidente.** Confirmado vía `pg_class.relrowsecurity`: `usuarios` y `bicicletas` tienen Row-Level Security habilitada (`relrowsecurity = true`), con una policy tenant-scoped (`usuarios_tenant_policy`/`bicicletas_tenant_policy`) que exige `tenant_id = current_setting('app.current_tenant_id')` (o `app.bypass_rls = 'true'`) para que una fila sea visible. `cits`, `aliados`, `inspecciones_fisicas` y `marketplace_publicaciones` **no** tienen RLS — de ahí la diferencia. Una conexión que nunca setea esa variable de sesión (cualquier conexión directa vía `psql`/`pg`/consola de Neon con la credencial `netlifydb_readonly`, sin pasar por `lib/tenant.ts::withTenant()`) ve **cero filas** en las tablas con RLS, aunque tengan datos reales — no es que esas filas no existan.
+
+**Para la próxima vez que alguien audite datos directamente contra producción** (fuera del flujo normal de la app, que sí abre la transacción con `SET LOCAL app.current_tenant_id`): un conteo en 0 sobre `usuarios`/`bicicletas` específicamente no es señal de nada raro por sí solo — hay que setear `app.current_tenant_id` al UUID del tenant correspondiente (`rodaid` es el de uso general) antes de confiar en el resultado, o usar `SET LOCAL app.bypass_rls = 'true'` si la credencial lo permite. Si en el futuro se agrega RLS a alguna otra tabla, esta misma sorpresa se va a repetir ahí también.
+
 ### Mobile
 
 `android/` and `ios/` are Capacitor shells (`capacitor.config.ts`, appId `net.rodaid.app`). `server.url` points at `https://rodaid.net` — the native apps are thin WebView wrappers loading the live deployment, not bundlers of a local static `webDir` build.
