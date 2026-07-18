@@ -36,7 +36,7 @@ export async function GET(
           c.fecha_vencimiento, c.bfa_estado, c.bfa_tx_hash, c.bfa_token_id, c.bfa_modo,
           NULL AS bfa_anclado_en, c.metadata_json,
           b.id AS bici_id, b.marca, b.modelo, b.tipo, b.numero_serie,
-          b.anio, b.color, b.rodado, b.talle_cuadro, b.propietario_id,
+          b.anio, b.color, b.rodado, b.talle_cuadro, b.propietario_id, b.foto_url,
           u.datos_perfil AS titular_perfil, u.email AS titular_email
         FROM cits c
         JOIN bicicletas b ON b.id = c.bicicleta_id
@@ -93,6 +93,7 @@ export async function GET(
         color: fila.color,
         rodado: fila.rodado === null ? null : Number(fila.rodado),
         talleCuadro: fila.talle_cuadro,
+        fotoUrl: fila.foto_url,
       },
       bfa: {
         estado: fila.bfa_estado ?? 'pendiente',
@@ -147,6 +148,7 @@ interface FilaCert {
   rodado: string | null
   talle_cuadro: string | null
   propietario_id: string
+  foto_url: string | null
   titular_perfil: Record<string, unknown> | null
   titular_email: string | null
 }

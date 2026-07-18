@@ -59,6 +59,17 @@ export interface CertificadoBici {
   color: string | null
   rodado: number | null
   talleCuadro: string | null
+  /**
+   * URL publica de la foto de la bici (`bicicletas.foto_url`, ya publica y sin
+   * cifrar -- ver auditoria de privacidad del Score de Confianza). Si esta
+   * presente, `generarCertificado()` intenta incrustarla como pagina anexo
+   * (ver `intentarFotoBici`/`dibujarAnexoFoto`) -- pensado para que el
+   * certificado sirva como prueba de identificacion fisica ante la policia en
+   * un robo (Boton de Panico). Si la descarga o el formato fallan, el
+   * certificado se genera igual, sin la pagina anexo -- nunca bloquea la
+   * emision por esto.
+   */
+  fotoUrl: string | null
 }
 
 export interface CertificadoBfa {
@@ -302,6 +313,20 @@ export async function generarCertificado(
     qrImage,
   })
 
+  // 1.b. Pagina anexo con la foto de la bici, si hay una disponible (best-
+  // effort: nunca bloquea la emision del certificado). Se agrega ANTES de
+  // reservar el hueco de firma para que la firma PKCS#7 cubra el documento
+  // completo, con sus 1 o 2 paginas.
+  const foto = await intentarFotoBici(d.bici.fotoUrl)
+  if (foto) {
+    try {
+      const fotoImage = foto.esPng ? await doc.embedPng(foto.bytes) : await doc.embedJpg(foto.bytes)
+      dibujarAnexoFoto(doc, fuentes, d, numero, fotoImage)
+    } catch (err) {
+      console.error('[pdf.service] no se pudo incrustar la foto de la bici (formato invalido)', err)
+    }
+  }
+
   // 2. Reservar el hueco de firma e incrustar la firma detached PKCS#7.
   const { signer, modo } = crearSignerRodaid()
   pdflibAddPlaceholder({
@@ -369,6 +394,94 @@ async function componerCertificado(
   dibujarNotaInspeccion(page, f, d)
   dibujarSello(page, f)
   dibujarPie(page, f, d, meta)
+}
+
+/**
+ * Descarga la foto de la bici para incrustarla en el certificado (best-
+ * effort). Nunca lanza: cualquier fallo (red, timeout, content-type invalido,
+ * magic bytes irreconocibles) devuelve `null` y el llamador sigue sin la
+ * pagina anexo -- la emision del certificado nunca depende de esto.
+ */
+async function intentarFotoBici(
+  fotoUrl: string | null
+): Promise<{ bytes: Uint8Array; esPng: boolean } | null> {
+  if (!fotoUrl) return null
+  try {
+    const res = await fetch(fotoUrl, { signal: AbortSignal.timeout(5000) })
+    if (!res.ok) return null
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    const tipo = res.headers.get('content-type') ?? ''
+    const esPng = tipo.includes('png') || (bytes[0] === 0x89 && bytes[1] === 0x50)
+    const esJpg = tipo.includes('jpeg') || tipo.includes('jpg') || (bytes[0] === 0xff && bytes[1] === 0xd8)
+    if (!esPng && !esJpg) return null
+    return { bytes, esPng }
+  } catch (err) {
+    console.error('[pdf.service] no se pudo descargar la foto de la bici para el certificado', err)
+    return null
+  }
+}
+
+/**
+ * Pagina anexo con la foto de la bici a pagina completa -- pensada para que
+ * el certificado alcance por si solo como prueba de identificacion fisica
+ * (p. ej. ante la policia luego de un robo). Repite codigo CIT y numero de
+ * serie al pie por si la pagina se separa del resto del documento impreso.
+ */
+function dibujarAnexoFoto(
+  doc: PDFDocument,
+  f: Fuentes,
+  d: CertificadoDatos,
+  numero: string,
+  fotoImage: PDFImage
+): void {
+  const page = doc.addPage([PAGE_W, PAGE_H])
+  page.drawRectangle({ x: 0, y: 0, width: PAGE_W, height: PAGE_H, color: C.paper })
+
+  page.drawText('Anexo fotografico', {
+    x: MARGIN,
+    y: PAGE_H - MARGIN - 24,
+    size: 18,
+    font: f.display,
+    color: C.ink,
+  })
+  page.drawText(`${d.bici.marca} ${d.bici.modelo} · N° de serie ${d.bici.numeroSerie}`, {
+    x: MARGIN,
+    y: PAGE_H - MARGIN - 44,
+    size: 10,
+    font: f.body,
+    color: C.slate,
+  })
+
+  const frameTop = PAGE_H - MARGIN - 68
+  const frameBottom = MARGIN + 50
+  const frameW = PAGE_W - MARGIN * 2
+  const frameH = frameTop - frameBottom
+
+  // Escalar la foto para que entre completa dentro del marco, sin recortar.
+  const escala = Math.min(frameW / fotoImage.width, frameH / fotoImage.height)
+  const w = fotoImage.width * escala
+  const h = fotoImage.height * escala
+  const x = MARGIN + (frameW - w) / 2
+  const y = frameBottom + (frameH - h) / 2
+
+  page.drawRectangle({
+    x: MARGIN,
+    y: frameBottom,
+    width: frameW,
+    height: frameH,
+    color: C.white,
+    borderColor: C.ink,
+    borderWidth: 1,
+  })
+  page.drawImage(fotoImage, { x, y, width: w, height: h })
+
+  page.drawText(`Codigo CIT: ${d.codigoCit} · Certificado ${numero}`, {
+    x: MARGIN,
+    y: MARGIN + 20,
+    size: 8,
+    font: f.mono,
+    color: C.slate,
+  })
 }
 
 const HEADER_H = 96

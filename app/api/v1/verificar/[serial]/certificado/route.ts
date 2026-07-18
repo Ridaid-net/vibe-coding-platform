@@ -75,7 +75,7 @@ export async function GET(
           c.id AS cit_id, c.estado, c.codigo_cit, c.hash_sha256,
           c.fecha_vencimiento, c.bfa_estado, c.bfa_tx_hash, c.bfa_token_id, c.bfa_modo,
           c.metadata_json,
-          b.marca, b.modelo, b.tipo, b.numero_serie, b.anio, b.color, b.rodado, b.talle_cuadro
+          b.marca, b.modelo, b.tipo, b.numero_serie, b.anio, b.color, b.rodado, b.talle_cuadro, b.foto_url
         FROM bicicletas b
         LEFT JOIN LATERAL (
           SELECT *
@@ -127,6 +127,7 @@ export async function GET(
         color: fila.color,
         rodado: fila.rodado === null ? null : Number(fila.rodado),
         talleCuadro: fila.talle_cuadro,
+        fotoUrl: fila.foto_url,
       },
       bfa: {
         estado: fila.bfa_estado ?? 'pendiente',
@@ -180,6 +181,7 @@ interface FilaCertPublico {
   color: string | null
   rodado: string | null
   talle_cuadro: string | null
+  foto_url: string | null
 }
 
 /**
