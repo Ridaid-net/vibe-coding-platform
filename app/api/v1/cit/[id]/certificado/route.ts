@@ -93,7 +93,7 @@ export async function GET(
         color: fila.color,
         rodado: fila.rodado === null ? null : Number(fila.rodado),
         talleCuadro: fila.talle_cuadro,
-        fotoUrl: fila.foto_url,
+        fotoUrl: absolutizarUrl(req, fila.foto_url),
       },
       bfa: {
         estado: fila.bfa_estado ?? 'pendiente',
@@ -202,4 +202,29 @@ function verifierUrl(req: Request, numeroSerie: string): string {
     }
   }
   return `${base}/verificar/${encodeURIComponent(numeroSerie)}`
+}
+
+/**
+ * `bicicletas.foto_url` se guarda como ruta RELATIVA (p. ej.
+ * `/api/v1/marketplace/fotos/bicicletas/...`, servida por
+ * `app/api/v1/marketplace/fotos/[...key]/route.ts`) -- confirmado con una
+ * consulta real de solo lectura contra produccion mientras se probaba esta
+ * misma pieza (el certificado se generaba con 1 sola pagina, sin el anexo,
+ * porque `fetch()` del lado servidor no puede resolver una URL relativa sin
+ * origen). `generarCertificado()` necesita una URL absoluta para descargar la
+ * foto -- se resuelve aca, mismo mecanismo de base que `verifierUrl`.
+ */
+function absolutizarUrl(req: Request, url: string | null): string | null {
+  if (!url) return null
+  if (/^https?:\/\//i.test(url)) return url
+  const configured = process.env.RODAID_BASE_URL?.replace(/\/+$/, '')
+  let base = configured
+  if (!base) {
+    try {
+      base = new URL(req.url).origin
+    } catch {
+      return null
+    }
+  }
+  return `${base}${url.startsWith('/') ? '' : '/'}${url}`
 }

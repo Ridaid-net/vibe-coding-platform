@@ -127,7 +127,7 @@ export async function GET(
         color: fila.color,
         rodado: fila.rodado === null ? null : Number(fila.rodado),
         talleCuadro: fila.talle_cuadro,
-        fotoUrl: fila.foto_url,
+        fotoUrl: absolutizarUrl(req, fila.foto_url),
       },
       bfa: {
         estado: fila.bfa_estado ?? 'pendiente',
@@ -229,6 +229,26 @@ function verifierUrl(req: Request, numeroSerie: string): string {
     }
   }
   return `${base}/verificar/${encodeURIComponent(numeroSerie)}`
+}
+
+/**
+ * Ver la nota gemela en app/api/v1/cit/[id]/certificado/route.ts:
+ * `bicicletas.foto_url` es una ruta relativa, no una URL absoluta -- hace
+ * falta resolverla antes de que `generarCertificado()` intente descargarla.
+ */
+function absolutizarUrl(req: Request, url: string | null): string | null {
+  if (!url) return null
+  if (/^https?:\/\//i.test(url)) return url
+  const configured = process.env.RODAID_BASE_URL?.replace(/\/+$/, '')
+  let base = configured
+  if (!base) {
+    try {
+      base = new URL(req.url).origin
+    } catch {
+      return null
+    }
+  }
+  return `${base}${url.startsWith('/') ? '' : '/'}${url}`
 }
 
 /**
