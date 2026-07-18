@@ -394,6 +394,21 @@ export async function obtenerActivosUsuario(
   return activos
 }
 
+/**
+ * Si el usuario ya tiene CBU/alias cargado (datos_bancarios_payout). Chequeo
+ * a nivel de USUARIO, no por bici -- un solo destino de payout por persona.
+ * Hoy solo se validaba dentro de POST /api/v1/marketplace/publicar (409 al
+ * final del flujo, ver DATOS_BANCARIOS_FALTANTES) -- Swipe to Sell necesita
+ * este mismo chequeo de entrada, antes de ofrecer el gesto.
+ */
+export async function usuarioTieneDatosBancarios(userId: string): Promise<boolean> {
+  const res = await getPool().query(
+    `SELECT 1 FROM datos_bancarios_payout WHERE beneficiario_tipo = 'usuario' AND beneficiario_id = $1 LIMIT 1`,
+    [userId]
+  )
+  return (res.rowCount ?? 0) > 0
+}
+
 // ---------------------------------------------------------------------------
 // Mis publicaciones (gestion de venta)
 // ---------------------------------------------------------------------------

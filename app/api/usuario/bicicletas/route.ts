@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { jsonError, requireUser } from '@/lib/marketplace'
-import { obtenerActivosUsuario } from '@/src/services/garaje.service'
+import { obtenerActivosUsuario, usuarioTieneDatosBancarios } from '@/src/services/garaje.service'
 
 export const runtime = 'nodejs'
 
@@ -16,7 +16,10 @@ export const runtime = 'nodejs'
 export async function GET(req: Request) {
   try {
     const user = await requireUser(req)
-    const activos = await obtenerActivosUsuario(user.id)
+    const [activos, tieneDatosBancarios] = await Promise.all([
+      obtenerActivosUsuario(user.id),
+      usuarioTieneDatosBancarios(user.id),
+    ])
     return NextResponse.json(
       {
         activos,
@@ -26,6 +29,9 @@ export async function GET(req: Request) {
         hayPendientes: activos.some(
           (a) => a.estado === 'pendiente' || a.estado === 'pago_pendiente'
         ),
+        // Swipe to Sell: chequeado de entrada, no al final del gesto (ver
+        // usuarioTieneDatosBancarios() en garaje.service.ts).
+        tieneDatosBancarios,
       },
       { headers: { 'cache-control': 'no-store' } }
     )
