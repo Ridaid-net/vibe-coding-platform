@@ -793,7 +793,20 @@ export async function obtenerAnaliticaPersonal(
             SELECT DISTINCT ON (b.id)
               b.id AS bici_id,
               c.estado AS cit_estado,
-              (c.estado = 'activo' AND c.fecha_vencimiento > NOW()) AS activo_vigente
+              -- Mismo criterio del fix del 2026-07-13 (obtenerActivosUsuario()/
+              -- app/api/v1/bicicletas/route.ts): fecha_vencimiento IS NULL no es
+              -- "vencido", es "sin fecha fija" (CIT Completo por diseno). El OR
+              -- con metadata_json es la misma defensa en profundidad -- un CIT
+              -- que arranco como Express (con fecha_vencimiento real) y despues
+              -- se sello como Completo via inspeccion fisica conserva esa fecha
+              -- vieja; sin este OR, ese caso seguiria leyendose como vencido.
+              COALESCE(
+                c.estado = 'activo' AND (
+                  (c.fecha_vencimiento IS NULL OR c.fecha_vencimiento > NOW())
+                  OR c.metadata_json -> 'inspeccionFisica' ->> 'resultado' = 'APROBADA'
+                ),
+                FALSE
+              ) AS activo_vigente
             FROM bicicletas b
             LEFT JOIN cits c ON c.bicicleta_id = b.id
             WHERE b.propietario_id = $1

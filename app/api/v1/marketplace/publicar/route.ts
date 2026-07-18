@@ -186,7 +186,7 @@ export async function POST(req: Request) {
     //    no puede publicarse (403).
     const citResult = await client.query<{
       id: string
-      fecha_vencimiento: string
+      fecha_vencimiento: string | null
     }>(
       `
         SELECT id, fecha_vencimiento
@@ -208,7 +208,14 @@ export async function POST(req: Request) {
         'La bicicleta no esta verificada con un CIT activo.'
       )
     }
-    if (new Date(cit.fecha_vencimiento).getTime() <= Date.now()) {
+    // fecha_vencimiento NULL no es "vencido" -- CIT Completo no tiene fecha
+    // fija por diseno. Sin esta guarda, new Date(null) resuelve al epoch Unix
+    // (1/1/1970), asi que 0 <= Date.now() siempre da true -- bloqueaba
+    // publicar CUALQUIER bici con CIT Completo. Barrido 2026-07-18.
+    if (
+      cit.fecha_vencimiento !== null &&
+      new Date(cit.fecha_vencimiento).getTime() <= Date.now()
+    ) {
       throw new ApiError(
         403,
         'CIT_EXPIRED',
