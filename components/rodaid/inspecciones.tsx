@@ -377,6 +377,7 @@ function ResultadoInspeccion({
               <Acciones
                 ctx={ctx}
                 cit={cit}
+                bici={b}
                 onRefrescar={onRefrescar}
               />
             </>
@@ -470,10 +471,12 @@ function PipelineInfo({ resultado }: { resultado: BusquedaInspeccion }) {
 function Acciones({
   ctx,
   cit,
+  bici,
   onRefrescar,
 }: {
   ctx: InspectorContextoCliente
   cit: NonNullable<BusquedaInspeccion['cit']>
+  bici: NonNullable<BusquedaInspeccion['bicicleta']>
   onRefrescar: () => void
 }) {
   const [notas, setNotas] = useState('')
@@ -523,7 +526,8 @@ function Acciones({
   const aprobarConChecklist = async (
     checklist: ChecklistInspeccion,
     fotosPorPunto: Record<string, File>,
-    notasChecklist: string
+    notasChecklist: string,
+    checklistPremium: ChecklistInspeccion
   ) => {
     if (enviando) return
     const { aprobada } = calcularResultadoChecklist(checklist)
@@ -535,7 +539,8 @@ function Acciones({
           cit.id,
           notasChecklist.trim() || undefined,
           checklist,
-          fotosPorPunto
+          fotosPorPunto,
+          checklistPremium
         )
         if (r.bloqueadaPorSeguridad) {
           toast.warning('Aprobada, pero bloqueada por seguridad', {
@@ -676,7 +681,11 @@ function Acciones({
               Completá el checklist una vez que puedas firmar (wallet configurada, fuera de modo vista previa).
             </p>
           ) : (
-            <ChecklistCIT onSubmit={aprobarConChecklist} enviando={enviando === 'aprobar'} />
+            <ChecklistCIT
+              bici={{ tipo: bici.tipo, suspensionTrasera: bici.suspensionTrasera }}
+              onSubmit={aprobarConChecklist}
+              enviando={enviando === 'aprobar'}
+            />
           )}
           <button
             onClick={() => setModo('idle')}

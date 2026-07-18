@@ -67,6 +67,61 @@ export interface ComponenteCapturado {
   marca?: string
   modelo?: string
   numeroSerie?: string
+  /** Solo PR07 (motor) y PR08 (batería) lo usan hoy -- ver PUNTOS_INSPECCION_PREMIUM. */
+  especificaciones?: Record<string, number>
+}
+
+/**
+ * Checklist Premium — suspensión trasera, suspensión delantera con bloqueo,
+ * tija telescópica, cambios/shifters electrónicos, pata de cambio, motor y
+ * batería de e-bike. Estándar propio de RODAID (confirmado por Federico
+ * 2026-07-18: la Ley 9.556 no exige los 20 puntos base, son un piso propio
+ * de RODAID -- sin restricción normativa para este módulo adicional),
+ * deliberadamente SEPARADO de PUNTOS_INSPECCION por prolijidad de producto
+ * -- calcularResultadoChecklist() NUNCA itera esta lista: el módulo premium
+ * no gatea la aprobación/discrepancia del CIT, es puramente informativo /
+ * antifraude / de valor de reventa (por eso los 8 son `critico: false`).
+ *
+ * IDs con prefijo "PR" (no continúan la numeración P21..) a propósito, para
+ * que nunca se confundan con los 20 puntos base en una fila de datos.
+ */
+export const PUNTOS_INSPECCION_PREMIUM: PuntoInspeccion[] = [
+  { id: 'PR01', categoria: 'Suspensión', descripcion: 'Suspensión trasera (Fox u otras)', critico: false },
+  { id: 'PR02', categoria: 'Suspensión', descripcion: 'Suspensión delantera con bloqueo', critico: false },
+  { id: 'PR03', categoria: 'Componentes Electrónicos', descripcion: 'Tija telescópica (hidráulica o eléctrica)', critico: false },
+  { id: 'PR04', categoria: 'Componentes Electrónicos', descripcion: 'Cambios electrónicos (Sram/Shimano)', critico: false },
+  { id: 'PR05', categoria: 'Componentes Electrónicos', descripcion: 'Shifters electrónicos', critico: false },
+  { id: 'PR06', categoria: 'Componentes Electrónicos', descripcion: 'Pata de cambio (electrónica o mecánica)', critico: false },
+  { id: 'PR07', categoria: 'Sistema Eléctrico (E-bike)', descripcion: 'Motor de e-bike', critico: false },
+  { id: 'PR08', categoria: 'Sistema Eléctrico (E-bike)', descripcion: 'Batería de e-bike', critico: false },
+]
+
+/** Los 8 puntos premium SIEMPRE capturan componente -- a diferencia de los
+ * 20 base, donde solo 5-de-20 son candidatos (ver PUNTOS_CON_COMPONENTE). */
+export const PUNTOS_PREMIUM_CON_COMPONENTE = [
+  'PR01', 'PR02', 'PR03', 'PR04', 'PR05', 'PR06', 'PR07', 'PR08',
+] as const
+export type PuntoPremiumConComponente = (typeof PUNTOS_PREMIUM_CON_COMPONENTE)[number]
+
+/**
+ * Filtro de aplicabilidad -- coarse, no una matriz fina por tipo de bici.
+ * Solo PR01 (suspensión trasera) y PR07/PR08 (motor/batería) tienen un
+ * atributo de la bici que realmente los determina; PR02-PR06 son
+ * transversales a varias disciplinas (ej. cambios electrónicos existen en
+ * Ruta, Gravel y MTB por igual) -- forzar una matriz de compatibilidad por
+ * tipo inventaría precisión que no existe. Para esos, el filtro real es el
+ * mismo patrón ya usado por P14 ("si aplica"): el inspector los ve todos
+ * cuando activa el módulo premium, y marca 'no_aplica' el que no corresponda.
+ */
+export function puntosPremiumAplicables(bici: {
+  tipo: string
+  suspensionTrasera: boolean | null
+}): PuntoInspeccion[] {
+  return PUNTOS_INSPECCION_PREMIUM.filter((p) => {
+    if (p.id === 'PR01') return bici.suspensionTrasera === true
+    if (p.id === 'PR07' || p.id === 'PR08') return bici.tipo === 'Eléctrica'
+    return true
+  })
 }
 
 export interface ChecklistInspeccion {

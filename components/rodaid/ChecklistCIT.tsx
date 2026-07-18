@@ -8,6 +8,7 @@ import {
   ResultadoPunto,
   calcularResultadoChecklist,
   esPuntoConComponente,
+  puntosPremiumAplicables,
 } from '@/lib/puntos-inspeccion'
 
 const RESULTADO_CONFIG: Record<ResultadoPunto, { label: string; color: string; icono: typeof CheckCircle }> = {
@@ -18,11 +19,19 @@ const RESULTADO_CONFIG: Record<ResultadoPunto, { label: string; color: string; i
 }
 
 interface Props {
-  onSubmit: (checklist: ChecklistInspeccion, fotosPorPunto: Record<string, File>, notas: string) => void
+  /** Tipo y suspensión trasera de la bici -- decide qué puntos premium
+   * (suspensión/e-bike) son candidatos a mostrarse. */
+  bici: { tipo: string; suspensionTrasera: boolean | null }
+  onSubmit: (
+    checklist: ChecklistInspeccion,
+    fotosPorPunto: Record<string, File>,
+    notas: string,
+    checklistPremium: ChecklistInspeccion
+  ) => void
   enviando?: boolean
 }
 
-export function ChecklistCIT({ onSubmit, enviando = false }: Props) {
+export function ChecklistCIT({ bici, onSubmit, enviando = false }: Props) {
   const [checklist, setChecklist] = useState<ChecklistInspeccion>({})
   const [notasGlobal, setNotasGlobal] = useState('')
   const [fotosPorPunto, setFotosPorPunto] = useState<Record<string, File>>({})
@@ -37,6 +46,16 @@ export function ChecklistCIT({ onSubmit, enviando = false }: Props) {
     'Seguridad': true,
   })
   const fileRefs = useRef<Record<string, HTMLInputElement | null>>({})
+
+  // Checklist Premium (suspensión trasera / e-bike) -- módulo opcional
+  // anidado dentro del checklist completo, nunca gatea el submit principal
+  // (ver lib/puntos-inspeccion.ts::PUNTOS_INSPECCION_PREMIUM).
+  const [moduloPremiumActivo, setModuloPremiumActivo] = useState(false)
+  const [checklistPremium, setChecklistPremium] = useState<ChecklistInspeccion>({})
+  const [categoriasPremiumAbiertas, setCategoriasPremiumAbiertas] = useState<Record<string, boolean>>({})
+  // Fotos/previews/fileRefs se comparten con el checklist base -- ambos son
+  // diccionarios keyeados por puntoId, y P01-P20 nunca colisiona con
+  // PR01-PR08 (prefijos distintos).
 
   // Revoca todas las URL de preview al desmontar (no antes -- se revocan
   // individualmente al reemplazar/quitar una foto, ver adjuntarFotoPunto).
@@ -87,12 +106,55 @@ export function ChecklistCIT({ onSubmit, enviando = false }: Props) {
     })
   }
 
+  const setResultadoPremium = (puntoId: string, resultado: ResultadoPunto) => {
+    setChecklistPremium(prev => ({ ...prev, [puntoId]: { ...prev[puntoId], resultado } }))
+  }
+
+  const setNotaPremium = (puntoId: string, nota: string) => {
+    setChecklistPremium(prev => ({ ...prev, [puntoId]: { ...prev[puntoId], nota } }))
+  }
+
+  const setComponentePremiumCampo = (puntoId: string, campo: keyof ComponenteCapturado, valor: string) => {
+    setChecklistPremium(prev => ({
+      ...prev,
+      [puntoId]: {
+        ...prev[puntoId],
+        componente: { ...prev[puntoId]?.componente, [campo]: valor },
+      },
+    }))
+  }
+
+  /** Solo PR07 (potencia_w) y PR08 (capacidad_wh/voltaje/ciclos_carga_estimados). */
+  const setEspecificacionPremiumCampo = (puntoId: string, campo: string, valor: string) => {
+    const num = valor === '' ? undefined : Number(valor)
+    setChecklistPremium(prev => {
+      const especificaciones = { ...prev[puntoId]?.componente?.especificaciones }
+      if (num === undefined || Number.isNaN(num)) delete especificaciones[campo]
+      else especificaciones[campo] = num
+      return {
+        ...prev,
+        [puntoId]: {
+          ...prev[puntoId],
+          componente: { ...prev[puntoId]?.componente, especificaciones },
+        },
+      }
+    })
+  }
+
   const resultado = calcularResultadoChecklist(checklist)
   const completados = Object.keys(checklist).length
   const progreso = Math.round((completados / PUNTOS_INSPECCION.length) * 100)
 
+  const puntosPremiumAplic = puntosPremiumAplicables(bici)
+  const categoriasPremium = [...new Set(puntosPremiumAplic.map(p => p.categoria))]
+  const completadosPremium = Object.keys(checklistPremium).length
+
   const toggleCategoria = (cat: string) => {
     setCategoriasAbiertas(prev => ({ ...prev, [cat]: !prev[cat] }))
+  }
+
+  const toggleCategoriaPremium = (cat: string) => {
+    setCategoriasPremiumAbiertas(prev => ({ ...prev, [cat]: !prev[cat] }))
   }
 
   const handleSubmit = () => {
@@ -100,7 +162,9 @@ export function ChecklistCIT({ onSubmit, enviando = false }: Props) {
       alert(`Faltan ${PUNTOS_INSPECCION.length - completados} puntos por evaluar.`)
       return
     }
-    onSubmit(checklist, fotosPorPunto, notasGlobal)
+    // El checklist premium nunca bloquea el submit -- es opcional, sin
+    // "faltan N puntos" (ver puntos-inspeccion.ts).
+    onSubmit(checklist, fotosPorPunto, notasGlobal, moduloPremiumActivo ? checklistPremium : {})
   }
 
   return (
@@ -244,6 +308,156 @@ export function ChecklistCIT({ onSubmit, enviando = false }: Props) {
           </div>
         )
       })}
+
+      {/* Checklist Premium (suspensión trasera / e-bike) -- solo si hay al
+          menos un punto candidato para esta bici (tipo/suspensión). Módulo
+          opcional, nunca gatea el submit principal. */}
+      {puntosPremiumAplic.length > 0 && (
+        <div className="rounded-2xl border border-[#2BBCB8]/30 bg-white overflow-hidden">
+          <button type="button" onClick={() => setModuloPremiumActivo(v => !v)}
+            className="w-full flex items-center justify-between px-5 py-4 hover:bg-[#2BBCB8]/5">
+            <div className="text-left">
+              <span className="font-display text-sm font-semibold text-[#0F1E35]">Checklist Premium</span>
+              <p className="text-[11px] text-slate-warm">Suspensión trasera, componentes electrónicos, e-bike (opcional)</p>
+            </div>
+            <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${moduloPremiumActivo ? 'bg-[#2BBCB8] text-white' : 'bg-slate-100 text-slate-500'}`}>
+              {moduloPremiumActivo ? `Activado · ${completadosPremium}/${puntosPremiumAplic.length}` : 'Activar'}
+            </span>
+          </button>
+
+          {moduloPremiumActivo && categoriasPremium.map(cat => {
+            const puntosCat = puntosPremiumAplic.filter(p => p.categoria === cat)
+            const abierta = categoriasPremiumAbiertas[cat] ?? true
+            return (
+              <div key={cat} className="border-t border-slate-100">
+                <button type="button" onClick={() => toggleCategoriaPremium(cat)}
+                  className="w-full flex items-center justify-between px-5 py-3 hover:bg-slate-50">
+                  <span className="font-semibold text-sm text-[#0F1E35]">{cat}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-warm">
+                      {puntosCat.filter(p => checklistPremium[p.id]?.resultado).length}/{puntosCat.length}
+                    </span>
+                    {abierta ? <ChevronUp className="size-4 text-slate-warm" /> : <ChevronDown className="size-4 text-slate-warm" />}
+                  </div>
+                </button>
+                {abierta && (
+                  <div className="border-t border-slate-100 divide-y divide-slate-50">
+                    {puntosCat.map(punto => {
+                      const r = checklistPremium[punto.id]?.resultado
+                      const componente = checklistPremium[punto.id]?.componente
+                      const foto = fotosPorPunto[punto.id]
+                      const preview = previewsPorPunto[punto.id]
+                      const tieneEspecificaciones = punto.id === 'PR07' || punto.id === 'PR08'
+                      return (
+                        <div key={punto.id} className="px-5 py-4">
+                          <div className="flex items-start gap-3 mb-2">
+                            <span className="shrink-0 text-xs font-mono font-bold text-[#2BBCB8] mt-0.5">{punto.id}</span>
+                            <p className="flex-1 text-sm text-[#0F1E35]">{punto.descripcion}</p>
+                          </div>
+                          <div className="flex gap-2 flex-wrap ml-8">
+                            {(['ok', 'observacion', 'falla', 'no_aplica'] as ResultadoPunto[]).map(res => {
+                              const cfg = RESULTADO_CONFIG[res]
+                              const Icono = cfg.icono
+                              const activo = r === res
+                              return (
+                                <button key={res} type="button"
+                                  onClick={() => setResultadoPremium(punto.id, res)}
+                                  className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border text-xs font-semibold transition-all ${activo ? cfg.color + ' border-current' : 'border-slate-200 text-slate-400 hover:border-slate-300'}`}>
+                                  <Icono className="size-3" />
+                                  {cfg.label}
+                                </button>
+                              )
+                            })}
+                          </div>
+                          {(r === 'observacion' || r === 'falla') && (
+                            <input type="text"
+                              placeholder={r === 'falla' ? 'Describí el defecto encontrado...' : 'Descripción de la observación...'}
+                              value={checklistPremium[punto.id]?.nota ?? ''}
+                              onChange={e => setNotaPremium(punto.id, e.target.value)}
+                              className="mt-2 ml-8 w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs outline-none focus:border-[#2BBCB8]" />
+                          )}
+
+                          <div className="mt-3 ml-8 rounded-xl border border-[#2BBCB8]/25 bg-[#2BBCB8]/5 p-3 space-y-2">
+                            <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#2BBCB8]">
+                              <Tag className="size-3" /> Componente tokenizado (opcional)
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                              <input type="text" placeholder="Marca"
+                                value={componente?.marca ?? ''}
+                                onChange={e => setComponentePremiumCampo(punto.id, 'marca', e.target.value)}
+                                className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus:border-[#2BBCB8]" />
+                              <input type="text" placeholder="Modelo"
+                                value={componente?.modelo ?? ''}
+                                onChange={e => setComponentePremiumCampo(punto.id, 'modelo', e.target.value)}
+                                className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus:border-[#2BBCB8]" />
+                              <input type="text" placeholder="N° de serie"
+                                value={componente?.numeroSerie ?? ''}
+                                onChange={e => setComponentePremiumCampo(punto.id, 'numeroSerie', e.target.value)}
+                                className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-mono outline-none focus:border-[#2BBCB8]" />
+                            </div>
+
+                            {tieneEspecificaciones && (
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                                {punto.id === 'PR07' && (
+                                  <input type="number" placeholder="Potencia (W)"
+                                    value={componente?.especificaciones?.potencia_w ?? ''}
+                                    onChange={e => setEspecificacionPremiumCampo(punto.id, 'potencia_w', e.target.value)}
+                                    className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus:border-[#2BBCB8]" />
+                                )}
+                                {punto.id === 'PR08' && (
+                                  <>
+                                    <input type="number" placeholder="Capacidad (Wh)"
+                                      value={componente?.especificaciones?.capacidad_wh ?? ''}
+                                      onChange={e => setEspecificacionPremiumCampo(punto.id, 'capacidad_wh', e.target.value)}
+                                      className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus:border-[#2BBCB8]" />
+                                    <input type="number" placeholder="Voltaje (V)"
+                                      value={componente?.especificaciones?.voltaje ?? ''}
+                                      onChange={e => setEspecificacionPremiumCampo(punto.id, 'voltaje', e.target.value)}
+                                      className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus:border-[#2BBCB8]" />
+                                    <input type="number" placeholder="Ciclos de carga (est.)"
+                                      value={componente?.especificaciones?.ciclos_carga_estimados ?? ''}
+                                      onChange={e => setEspecificacionPremiumCampo(punto.id, 'ciclos_carga_estimados', e.target.value)}
+                                      className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus:border-[#2BBCB8]" />
+                                  </>
+                                )}
+                              </div>
+                            )}
+
+                            <div className="flex items-center gap-2">
+                              {preview ? (
+                                <div className="relative size-14 shrink-0 overflow-hidden rounded-lg bg-slate-100">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img src={preview} alt={`Foto ${punto.id}`} className="size-full object-cover" />
+                                  <button type="button" onClick={() => quitarFotoPunto(punto.id)}
+                                    className="absolute top-0.5 right-0.5 flex size-4 items-center justify-center rounded-full bg-black/60 text-white">
+                                    <X className="size-2.5" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <label className="inline-flex items-center gap-1 rounded-full bg-[#F47B20] px-2.5 py-1 text-[11px] font-semibold text-white cursor-pointer hover:bg-[#F47B20]/80">
+                                  <Camera className="size-3" /> Foto del componente
+                                  <input
+                                    ref={el => { fileRefs.current[punto.id] = el }}
+                                    type="file" accept="image/*" className="hidden"
+                                    onChange={e => {
+                                      const file = e.target.files?.[0]
+                                      if (file) adjuntarFotoPunto(punto.id, file)
+                                    }} />
+                                </label>
+                              )}
+                              {foto && <span className="text-[11px] text-slate-warm">{foto.name}</span>}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* Notas generales */}
       <div className="rounded-2xl border border-ink/10 bg-white p-5">
