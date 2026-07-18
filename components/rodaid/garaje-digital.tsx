@@ -30,6 +30,7 @@ import {
   revocarCompartirBici,
   useActivosGaraje,
   useEstadoCompartir,
+  useGemeloDigital,
   useMiPerfil,
   type ActivoGaraje,
 } from '@/lib/garaje-digital'
@@ -43,6 +44,7 @@ import { MisSalidas } from './MisSalidas'
 import { PushNotificaciones } from './PushNotificaciones'
 import { authedFetch, clearSession, getSession } from '@/lib/session'
 import { BiciSeguraShare } from './BiciSeguraShare'
+import { GemeloDigitalBici } from './GemeloDigitalBici'
 import { SolicitarVerificacionModal } from './solicitar-verificacion-modal'
 import { DenunciaMpfModal } from './denuncia-mpf-modal'
 
@@ -298,6 +300,12 @@ function ActivoCard({
     activo.estado === 'verificado' ? activo.id : null
   )
 
+  // Gemelo Digital: mismo gate que el resto de los widgets de salud -- solo
+  // tiene sentido para bicis con identidad verificada.
+  const { data: gemelo } = useGemeloDigital(
+    activo.estado === 'verificado' ? activo.id : null
+  )
+
   return (
     <li
       className={`flex flex-col rounded-3xl border bg-white p-5 ${visual.acento}`}
@@ -340,6 +348,13 @@ function ActivoCard({
 
       {/* Score de Confianza de la Bici */}
       <ScoreConfianzaBloque activo={activo} />
+
+      {/* Gemelo Digital Interactivo (puntos de calor) */}
+      {activo.estado === 'verificado' && gemelo && (
+        <div className="mt-4">
+          <GemeloDigitalBici gemelo={gemelo} />
+        </div>
+      )}
 
       {/* Pipeline en vivo (72hs) */}
       {activo.estado === 'pendiente' && <PipelineEstado activo={activo} />}
