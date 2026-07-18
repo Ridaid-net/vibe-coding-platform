@@ -63,10 +63,18 @@ const WHEEL_R = 62 // llanta/cubierta exterior
 const RIM_R = 32 // llanta interior/buje -- zona clickeable de rueda
 const BB = { x: 185, y: 158 } // eje pedalier
 const ST_TOP = { x: 150, y: 75 } // union tubo superior + tubo de asiento
-const HT_TOP = { x: 295, y: 65 } // cabeza de direccion, arriba
-const HT_BOTTOM = { x: 280, y: 100 } // cabeza de direccion, abajo (corona de horquilla)
+// Cabeza de direccion + horquilla en angulo real de MTB (65-69 grados desde
+// la horizontal, mas acostado que ruta 72-74; referencia usada: 67).
+// FRONT_AXLE (fijo, ancla el resto del cuadro/ruedas) y HT_TOP quedan sobre
+// la misma recta: tubo de direccion HT_TOP->HT_BOTTOM ~68.2 grados, horquilla
+// HT_BOTTOM->FRONT_AXLE ~66.7 grados -- practicamente colineales (sin quiebre
+// visible), y el eje delantero queda proyectado ADELANTE de la cabeza de
+// direccion, no apilado debajo (bug corregido: HT_TOP.x antes era mayor que
+// HT_BOTTOM.x, la cabeza de direccion se inclinaba hacia atras al subir).
+const HT_TOP = { x: 258, y: 65 } // cabeza de direccion, arriba
+const HT_BOTTOM = { x: 272, y: 100 } // cabeza de direccion, abajo (corona de horquilla)
 const SEATPOST_TOP = { x: 145, y: 55 }
-const STEM_TOP = { x: 308, y: 48 }
+const STEM_TOP = { x: 271, y: 48 }
 const PEDAL = { x: 200, y: 172 }
 
 // Cadena: tramo plato (BB) → piñon (buje trasero). El recorrido real de la
@@ -79,7 +87,7 @@ const CADENA_END = { x: 103, y: 157 }
 // depende de si la vaina trasera es recta (rigida) o un basculante (doble
 // suspension): el freno se monta sobre la llanta en ambos casos.
 const FRENO_TRASERO_POS = { x: 120, y: 129 }
-const FRENO_DELANTERO_POS = { x: 287, y: 123 }
+const FRENO_DELANTERO_POS = { x: 282, y: 123 }
 
 // Triangulo trasero de doble suspension: pivote principal + basculante
 // (reemplaza la vaina inferior recta) + el amortiguador como tensor propio
@@ -162,7 +170,7 @@ export function GemeloDigitalBici({ gemelo }: { gemelo: GemeloDigital }) {
         <g stroke="#94a3b8" strokeWidth={4} fill="none" strokeLinecap="round">
           <path d={`M ${ST_TOP.x} ${ST_TOP.y} L ${SEATPOST_TOP.x} ${SEATPOST_TOP.y}`} />
           <path d={`M ${HT_TOP.x} ${HT_TOP.y} L ${STEM_TOP.x} ${STEM_TOP.y}`} />
-          <path d="M 292 46 Q 308 38 324 46" />
+          <path d="M 255 46 Q 271 38 287 46" />
         </g>
         <ellipse cx={138} cy={53} rx={15} ry={5} fill="#94a3b8" />
 
