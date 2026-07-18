@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getPool } from '@/lib/marketplace'
+import { cifrarStrava } from '@/src/services/cifrado.service'
 
 const STRAVA_CLIENT_ID = process.env.STRAVA_CLIENT_ID ?? ''
 const STRAVA_CLIENT_SECRET = process.env.STRAVA_CLIENT_SECRET ?? ''
@@ -54,7 +55,7 @@ export async function GET(req: NextRequest) {
          refresh_token = EXCLUDED.refresh_token,
          expires_at = EXCLUDED.expires_at,
          updated_at = NOW()`,
-      [userId, String(data.athlete.id), data.access_token, data.refresh_token, data.expires_at]
+      [userId, String(data.athlete.id), cifrarStrava(data.access_token), cifrarStrava(data.refresh_token), data.expires_at]
     )
 
     return NextResponse.redirect(new URL('/garaje?strava=vinculada', req.url))

@@ -1,5 +1,6 @@
 import { getPool } from '@/lib/marketplace'
 import { withTenant } from '@/lib/tenant'
+import { cifrarStrava, descifrarStravaSeguro } from '@/src/services/cifrado.service'
 
 /**
  * RODAID — Hito 17 BYOD: Ingesta de eventos Strava (webhook).
@@ -29,6 +30,18 @@ import { withTenant } from '@/lib/tenant'
  * `c.estado = 'activo'` (minuscula) SI se verifico contra datos reales de
  * produccion antes de este port (2 filas 'activo', 1 'pendiente', ambas
  * minuscula) -- no es un casing sin confirmar.
+ *
+ * 2026-07-18 (mismo dia, hallazgo aparte): `access_token`/`refresh_token`
+ * de `oauth_connections` se guardaban en texto plano -- confirmado via una
+ * consulta de solo lectura contra produccion (los valores reales son
+ * strings hex de 40 caracteres, el formato nativo de Strava, no el formato
+ * `v1.gcm.<iv>.<tag>.<ct>` del resto de los buckets cifrados de RODAID).
+ * Cerrado con `cifrarStrava()`/`descifrarStravaSeguro()` (clave dedicada
+ * `RODAID_STRAVA_AES_KEY`, mismo patron que Ministerio/IoT/denuncias/
+ * inspeccion). `descifrarStravaSeguro()` tolera la UNICA fila legada en
+ * texto plano que ya existia al momento de este fix -- auto-migra (re-guarda
+ * cifrada) la primera vez que se toca, en vez de necesitar un script aparte
+ * (el cifrado vive en Node, no se puede hacer en una migracion SQL).
  */
 
 // ─── Helper: Decodificador de Google Encoded Polyline ────────────────────────
@@ -99,8 +112,19 @@ async function getTokenValido(conn: ConexionOauth): Promise<string> {
   // Si el token expira en menos de 5 minutos, renovamos
   const expiraEn = new Date(conn.expires_at).getTime()
   if (expiraEn > Date.now() + 5 * 60 * 1000) {
-    return conn.access_token
+    const { texto: accessToken, eraLegado } = descifrarStravaSeguro(conn.access_token)
+    if (eraLegado) {
+      // Auto-migracion: esta fila fue creada antes de que existiera este
+      // cifrado. Se re-guarda cifrada ahora que ya se pudo usar en claro.
+      await getPool().query(`UPDATE oauth_connections SET access_token = $1 WHERE id = $2`, [
+        cifrarStrava(accessToken),
+        conn.id,
+      ])
+    }
+    return accessToken
   }
+
+  const { texto: refreshToken } = descifrarStravaSeguro(conn.refresh_token)
 
   const res = await fetch('https://www.strava.com/oauth/token', {
     method: 'POST',
@@ -108,7 +132,7 @@ async function getTokenValido(conn: ConexionOauth): Promise<string> {
     body: JSON.stringify({
       client_id: STRAVA_CLIENT_ID,
       client_secret: STRAVA_CLIENT_SECRET,
-      refresh_token: conn.refresh_token,
+      refresh_token: refreshToken,
       grant_type: 'refresh_token',
     }),
   })
@@ -129,7 +153,7 @@ async function getTokenValido(conn: ConexionOauth): Promise<string> {
       expires_at    = to_timestamp($3),
       updated_at    = NOW()
     WHERE id = $4`,
-    [data.access_token, data.refresh_token, data.expires_at, conn.id]
+    [cifrarStrava(data.access_token), cifrarStrava(data.refresh_token), data.expires_at, conn.id]
   )
 
   return data.access_token

@@ -40,6 +40,7 @@ let cachedKey: Buffer | null = null
 let cachedIotKey: Buffer | null = null
 let cachedDenunciaKey: Buffer | null = null
 let cachedInspeccionKey: Buffer | null = null
+let cachedStravaKey: Buffer | null = null
 
 /** Indica si hay una clave AES real configurada (vs. derivada en preview). */
 export function cifradoConfigurado(): boolean {
@@ -62,6 +63,12 @@ export function denunciaCifradoConfigurado(): boolean {
 /** Indica si hay una clave AES real para las fotos de componentes de inspeccion (vs. derivada). */
 export function inspeccionCifradoConfigurado(): boolean {
   const raw = process.env.RODAID_INSPECCION_AES_KEY
+  return typeof raw === 'string' && raw.trim().length > 0
+}
+
+/** Indica si hay una clave AES real para los tokens OAuth de Strava (vs. derivada). */
+export function stravaCifradoConfigurado(): boolean {
+  const raw = process.env.RODAID_STRAVA_AES_KEY
   return typeof raw === 'string' && raw.trim().length > 0
 }
 
@@ -153,6 +160,55 @@ function getInspeccionKey(): Buffer {
   const secret = getAuthSecret() ?? 'rodaid-inspeccion-fallback'
   cachedInspeccionKey = scryptSync(secret, 'rodaid-inspeccion-aes-v1', KEY_BYTES)
   return cachedInspeccionKey
+}
+
+/**
+ * Resuelve (y cachea) la clave AES-256 de los tokens OAuth de Strava (Hito 17
+ * BYOD). Es una clave INDEPENDIENTE -- el access_token/refresh_token de un
+ * usuario da acceso activo en su nombre a la API de Strava (no solo datos
+ * SOBRE el usuario, como el resto de los buckets cifrados), asi que merece
+ * su propia identidad criptografica igual que las demas. En LIVE se toma de
+ * `RODAID_STRAVA_AES_KEY`; en preview se deriva de forma estable del secreto
+ * de la app (igual que el resto de los modos del proyecto).
+ */
+function getStravaKey(): Buffer {
+  if (cachedStravaKey) return cachedStravaKey
+  const raw = process.env.RODAID_STRAVA_AES_KEY
+  if (raw && raw.trim().length > 0) {
+    cachedStravaKey = parseClaveConfigurada(raw)
+    return cachedStravaKey
+  }
+  const secret = getAuthSecret() ?? 'rodaid-strava-fallback'
+  cachedStravaKey = scryptSync(secret, 'rodaid-strava-aes-v1', KEY_BYTES)
+  return cachedStravaKey
+}
+
+/** Cifra un token OAuth de Strava (access_token o refresh_token). */
+export function cifrarStrava(plaintext: string): string {
+  return cifrarCon(getStravaKey(), plaintext)
+}
+
+/** Descifra un token producido por `cifrarStrava`. Lanza si el formato es invalido. */
+export function descifrarStrava(token: string): string {
+  return descifrarCon(getStravaKey(), token)
+}
+
+/**
+ * Descifra un token de Strava tolerando filas legadas en texto plano (creadas
+ * antes de que este cifrado existiera). Si `descifrarStrava` falla por
+ * formato invalido, asume que el valor es el token crudo de Strava y lo
+ * devuelve tal cual con `eraLegado: true` -- el caller debe re-guardarlo
+ * cifrado en ese mismo paso para que la fila se auto-migre. NO usar esto
+ * para nada que no sea "texto plano legado conocido" -- cualquier otro
+ * fallo de formato (dato corrupto/manipulado) queda enmascarado igual que
+ * un legado real.
+ */
+export function descifrarStravaSeguro(valor: string): { texto: string; eraLegado: boolean } {
+  try {
+    return { texto: descifrarStrava(valor), eraLegado: false }
+  } catch {
+    return { texto: valor, eraLegado: true }
+  }
 }
 
 /** Cifra un texto en claro con una clave dada. Devuelve el token portable. */

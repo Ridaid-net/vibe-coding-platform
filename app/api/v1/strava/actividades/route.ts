@@ -1,6 +1,7 @@
 export const runtime = 'nodejs'
 import { NextResponse } from 'next/server'
 import { getPool, requireUser } from '@/lib/marketplace'
+import { cifrarStrava, descifrarStravaSeguro } from '@/src/services/cifrado.service'
 
 export async function GET(req: Request) {
   try {
@@ -21,17 +22,29 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, conectado: false, mensaje: 'Cuenta Strava no conectada.' })
     }
 
+    // access_token/refresh_token se guardan cifrados (RODAID_STRAVA_AES_KEY) --
+    // descifrarStravaSeguro() tolera una fila legada en texto plano (previa a
+    // este cifrado) y la re-guarda cifrada la primera vez que se toca.
+    const { texto: accessTokenDescifrado, eraLegado } = descifrarStravaSeguro(row.access_token)
+    if (eraLegado) {
+      await pool.query(
+        `UPDATE oauth_connections SET access_token = $1 WHERE user_id = $2 AND provider = 'strava'`,
+        [cifrarStrava(accessTokenDescifrado), user.id]
+      ).catch(() => undefined)
+    }
+
     // Verificar y refrescar token si es necesario
-    let token = row.access_token
+    let token = accessTokenDescifrado
     if (row.expires_at && new Date(row.expires_at) < new Date()) {
       try {
+        const { texto: refreshTokenDescifrado } = descifrarStravaSeguro(row.refresh_token)
         const refresh = await fetch('https://www.strava.com/oauth/token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             client_id: process.env.STRAVA_CLIENT_ID,
             client_secret: process.env.STRAVA_CLIENT_SECRET,
-            refresh_token: row.refresh_token,
+            refresh_token: refreshTokenDescifrado,
             grant_type: 'refresh_token'
           })
         }).then(r => r.json())
@@ -39,13 +52,13 @@ export async function GET(req: Request) {
         if (refresh.access_token) {
           token = refresh.access_token
           await pool.query(
-            `UPDATE oauth_connections 
+            `UPDATE oauth_connections
              SET access_token = $1, refresh_token = $2, expires_at = to_timestamp($3)
              WHERE user_id = $4 AND provider = 'strava'`,
-            [refresh.access_token, refresh.refresh_token, refresh.expires_at, user.id]
+            [cifrarStrava(refresh.access_token), cifrarStrava(refresh.refresh_token), refresh.expires_at, user.id]
           ).catch(() => undefined)
         }
-      } catch { /* continuar con token viejo */ }
+      } catch { /* continuar con token viejo (ya descifrado arriba) */ }
     }
 
     // Obtener actividades recientes
