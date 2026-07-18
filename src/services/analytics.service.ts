@@ -330,6 +330,18 @@ function kAnonConsultas(): number {
   return Number.isFinite(v) && v >= 1 ? Math.floor(v) : 1
 }
 
+/**
+ * Minimo de eventos por celda para el mapa de rutas ciclistas (bike_activities,
+ * uso institucional -- Ministerio/municipios). Default MAS estricto que el mapa
+ * personal del Garaje (2) y que la capa publica de consultas (1): este dataset
+ * sale hacia un tercero externo con sus propias bases para cruzar, mayor riesgo
+ * de re-identificacion que un mapa interno.
+ */
+function kAnonRutasCiclistas(): number {
+  const v = Number(process.env.ANALITICA_BICI_KANON_MIN)
+  return Number.isFinite(v) && v >= 1 ? Math.floor(v) : 10
+}
+
 function feature(
   lat: number,
   lon: number,
@@ -743,4 +755,76 @@ export async function actualizarEstadoAlerta(
     [id, estado]
   )
   return res.rows[0] ? mapAlerta(res.rows[0]) : null
+}
+
+// ── Mapa de rutas ciclistas (bike_activities, uso institucional) ─────────────
+
+export interface CeldaRutaCiclista {
+  celda: string
+  lat: number
+  lon: number
+  intensidad: number
+}
+
+interface RutaCiclistaCeldaRow {
+  coordinate: { coordinates: [number, number] }
+  intensity: string
+}
+
+/**
+ * Agrega las rutas GPS reales de `bike_activities` (Strava) en celdas de la
+ * misma grilla de barrio (`ANALITICA_GRID_DEG`) que el resto de la analitica
+ * -- "por donde anda realmente la gente en bici", para el dataset
+ * institucional (zonas de robo / donde mejorar ciclovias), no seguridad.
+ *
+ * `bike_activities.geom` guarda la ruta CRUDA sin recortar a proposito (utilidad
+ * futura: mostrarle al usuario su propio recorrido exacto en "Mis actividades").
+ * Esta funcion es el UNICO punto por donde esa geometria cruda se agrega antes
+ * de exponerse -- ninguna fila individual ni coordenada exacta sale de aca,
+ * solo celdas con `COUNT(*) >= kAnonRutasCiclistas()` (default 10).
+ *
+ * Deliberadamente NO es una VIEW de SQL: una vista no puede leer `process.env`,
+ * y ANALITICA_GRID_DEG/ANALITICA_BICI_KANON_MIN tienen que seguir siendo
+ * configurables en runtime como el resto de esta analitica -- mismo patron que
+ * construirMapaCalor(), no una tabla/vista agregada nueva.
+ */
+export async function construirMapaRutasCiclistas(): Promise<{
+  celdas: CeldaRutaCiclista[]
+  gridDeg: number
+  kAnonMin: number
+}> {
+  const grid = gridDeg()
+  const kMin = kAnonRutasCiclistas()
+
+  const result = await getPool().query<RutaCiclistaCeldaRow>(
+    `
+    SELECT
+      ST_AsGeoJSON(ST_Centroid(ST_Collect(geom_dump.geom)))::json AS coordinate,
+      COUNT(*) AS intensity
+    FROM (
+      SELECT (ST_DumpPoints(ba.geom)).geom
+      FROM bike_activities ba
+      WHERE ba.geom IS NOT NULL
+    ) AS geom_dump
+    GROUP BY ST_SnapToGrid(geom_dump.geom, $1)
+    HAVING COUNT(*) >= $2
+    ORDER BY intensity DESC
+    LIMIT 5000
+    `,
+    [grid, kMin]
+  )
+
+  return {
+    gridDeg: grid,
+    kAnonMin: kMin,
+    celdas: result.rows.map((r: RutaCiclistaCeldaRow) => {
+      const [lon, lat] = r.coordinate.coordinates
+      return {
+        celda: clipCoordenada(lat, lon, grid).celda,
+        lat: round5(lat),
+        lon: round5(lon),
+        intensidad: parseInt(r.intensity, 10),
+      }
+    }),
+  }
 }

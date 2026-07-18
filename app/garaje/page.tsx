@@ -4,6 +4,7 @@ import { Nav } from '@/components/rodaid/nav'
 import { GarajeDigital } from '@/components/rodaid/garaje-digital'
 import { MisPublicaciones } from '@/components/rodaid/mis-publicaciones'
 import { MisCompras } from '@/components/rodaid/mis-compras'
+import { VenderSwipe } from '@/components/rodaid/VenderSwipe'
 import { GarajeAnalitica } from '@/components/rodaid/garaje-analitica'
 import { IotTiempoReal } from '@/components/rodaid/iot-tiempo-real'
 import { ServiciosCTA } from '@/components/rodaid/ServiciosCTA'
@@ -26,6 +27,7 @@ export default function GarajePage() {
       <Nav />
       <main className="mx-auto max-w-5xl px-5 py-10 sm:px-8 sm:py-14">
         <GarajeDigital />
+        <VenderSwipe />
         <MisPublicaciones />
         <MisCompras />
         <GarajeAnalitica />

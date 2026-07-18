@@ -71,6 +71,10 @@ export interface ActivoGaraje {
   rodado: number | null
   talleCuadro: string | null
   creadoEn: string
+  /** NULL = no declarado todavía. Distinto de FALSE (confirmado rígida). */
+  suspensionTrasera: boolean | null
+  /** true si la última inspección Checklist Premium marcó PR08 (batería) en 'falla'. */
+  bateriaFalla: boolean
   estado: EstadoActivo
   citId: string | null
   citEstado: string | null
@@ -91,6 +95,9 @@ export interface ActivoGaraje {
 export interface ActivosResponse {
   activos: ActivoGaraje[]
   hayPendientes: boolean
+  /** Swipe to Sell: si el usuario ya tiene CBU/alias cargado. Chequeado de
+   * entrada (no al final del gesto) -- ver usuarioTieneDatosBancarios(). */
+  tieneDatosBancarios: boolean
 }
 
 export interface MiPublicacion {
