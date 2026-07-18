@@ -369,3 +369,88 @@ export async function contarTalleresAliadosActivos(): Promise<number> {
   )
   return Number(res.rows[0]?.count ?? 0)
 }
+
+// ── Boton de Panico "Modo Robo": alerta a talleres cercanos (PREPARADA, APAGADA) ──
+
+export interface TallerCercano {
+  aliadoId: string
+  nombre: string
+  tipo: string
+  distanciaMetros: number
+}
+
+/**
+ * CODIGO MUERTO A PROPOSITO -- NINGUN endpoint ni componente llama a esta
+ * funcion todavia. Ver la auditoria del Boton de Panico "Modo Robo"
+ * (CLAUDE.md): la 3ra pata original del boton ("alertar a talleres cercanos
+ * por geolocalizacion") quedo fuera de alcance del MVP porque, confirmado con
+ * una consulta de solo lectura contra produccion, los 4 aliados hoy
+ * `aprobado` (3 `tienda` + 1 `taller` de prueba interno) tienen
+ * `talleres.lat`/`talleres.lng` en NULL -- nadie registro su geocerca real
+ * todavia (el endpoint para hacerlo, PUT /api/v1/aliados/geocerca, existe y
+ * funciona, simplemente nadie lo uso). Conectar este boton a la UI hoy
+ * mostraria "sin talleres cerca" siempre, sin ningun valor real para el
+ * usuario -- de ahi que la funcion quede escrita y lista, pero apagada.
+ *
+ * Misma matematica de Haversine que `lib/geo.ts::calcularDistanciaHaversine`
+ * (geocercado del intake CIT), reimplementada en SQL nativo de Postgres
+ * (`acos`/`cos`/`sin`/`radians`) para no traer todos los aliados a Node y
+ * filtrar en memoria. Razonable mientras el numero de aliados aprobados sea
+ * chico (hoy: 4); si escala a miles, esto merece una revision (indice
+ * geoespacial dedicado, p. ej. PostGIS/earthdistance) antes de activarse.
+ *
+ * Para activar cuando corresponda, en este orden:
+ *   1. Confirmar que hay talleres reales con geocerca cargada (repetir la
+ *      consulta de solo lectura de `talleres` que motivo este apagado).
+ *   2. Definir el radio de alerta por defecto (`radioMetros`) -- no hay
+ *      todavia un valor de negocio confirmado por Federico para esto.
+ *   3. Conectar esta funcion a un endpoint nuevo + un boton real en la UI del
+ *      Boton de Panico (garaje-digital.tsx).
+ *   4. Definir el mecanismo de notificacion saliente HACIA el aliado (push,
+ *      email, WhatsApp) -- hoy `notificaciones` solo modela avisos hacia
+ *      usuarios/ciclistas, no existe ningun canal saliente hacia un aliado.
+ */
+export async function buscarTalleresCercanos(
+  lat: number,
+  lng: number,
+  radioMetros: number
+): Promise<TallerCercano[]> {
+  const res = await getPool().query<{
+    aliado_id: string
+    nombre: string
+    tipo: string
+    distancia_metros: number
+  }>(
+    `
+      SELECT aliado_id, nombre, tipo, distancia_metros FROM (
+        SELECT
+          a.id AS aliado_id,
+          a.nombre,
+          a.tipo,
+          (
+            6371000 * acos(
+              LEAST(1, GREATEST(-1,
+                cos(radians($1)) * cos(radians(t.lat)) *
+                  cos(radians(t.lng) - radians($2)) +
+                sin(radians($1)) * sin(radians(t.lat))
+              ))
+            )
+          ) AS distancia_metros
+        FROM aliados a
+        JOIN talleres t ON t.id = a.id
+        WHERE a.estado = 'aprobado'
+          AND t.lat IS NOT NULL
+          AND t.lng IS NOT NULL
+      ) sub
+      WHERE distancia_metros <= $3
+      ORDER BY distancia_metros ASC
+    `,
+    [lat, lng, radioMetros]
+  )
+  return res.rows.map((r: { aliado_id: string; nombre: string; tipo: string; distancia_metros: number }) => ({
+    aliadoId: r.aliado_id,
+    nombre: r.nombre,
+    tipo: r.tipo,
+    distanciaMetros: Math.round(Number(r.distancia_metros)),
+  }))
+}

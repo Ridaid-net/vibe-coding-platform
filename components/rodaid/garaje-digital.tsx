@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import {
+  AlertTriangle,
   ArrowRight,
   Award,
   BadgeCheck,
@@ -19,9 +20,18 @@ import {
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
+  Siren,
   Store,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { parseApiError } from '@/lib/api-errors'
 import {
   activarCompartirBici,
   descargarCertificadoActivo,
@@ -69,6 +79,7 @@ export function GarajeDigital() {
   const { data: perfil } = useMiPerfil()
   const [verificar, setVerificar] = useState<ActivoGaraje | null>(null)
   const [denunciar, setDenunciar] = useState<ActivoGaraje | null>(null)
+  const [modoPanico, setModoPanico] = useState<ActivoGaraje | null>(null)
   const [agregando, setAgregando] = useState(false)
 
   const activos = data?.activos ?? null
@@ -246,6 +257,7 @@ export function GarajeDigital() {
                 onVerificar={() => setVerificar(a)}
                 puedeDenunciar={true}
                 onDenunciar={() => setDenunciar(a)}
+                onModoPanico={() => setModoPanico(a)}
               />
             ))}
           </ul>
@@ -266,7 +278,173 @@ export function GarajeDigital() {
         onOpenChange={(o) => !o && setDenunciar(null)}
         onDenunciada={() => mutate()}
       />
+
+      <ModoPanicoStepUp
+        bici={modoPanico}
+        open={modoPanico !== null}
+        onOpenChange={(o) => !o && setModoPanico(null)}
+        onConfirmado={() => {
+          setDenunciar(modoPanico)
+          setModoPanico(null)
+        }}
+      />
     </section>
+  )
+}
+
+/**
+ * Boton de Panico "Modo Robo" — paso de confirmacion antes de saltar al
+ * formulario de denuncia ya existente (DenunciaMpfModal), pre-cargado con la
+ * bici. NO es un mecanismo nuevo de bloqueo: el flujo de destino es el mismo
+ * de siempre (PDF real del MPF + aprobacion en Moderacion), asi que este
+ * paso solo protege el ATAJO en si (que alguien con el telefono desbloqueado
+ * no dispare por error/de mala fe el flujo con la identidad de otra persona).
+ *
+ * Se evaluo reusar el "Re-verificar MFA" del Admin Dashboard
+ * (lib/admin-panel.ts) para esto y se descarto: esta scopeado a `rol=admin`
+ * con un TOTP ya enrolado, algo que ningun ciclista tiene ni jamas configuro
+ * -- exigirlo aca hubiera significado construir un enrolamiento de 2FA nuevo
+ * de punta a punta, y la primera vez que un ciclista lo veria seria en medio
+ * de un robo real. En su lugar se reusa `verifyPassword()` (el mismo
+ * primitivo que ya usa "cambiar contraseña"), vía POST /api/v1/usuario/
+ * reautenticar. Las cuentas de Mendoza x Mi no tienen contraseña local
+ * (`password_hash IS NULL`) -- para esas, el GET de ese mismo endpoint
+ * devuelve `requierePassword: false` y este paso se salta solo, porque su
+ * identidad ya viene verificada por el Estado.
+ */
+function ModoPanicoStepUp({
+  bici,
+  open,
+  onOpenChange,
+  onConfirmado,
+}: {
+  bici: ActivoGaraje | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onConfirmado: () => void
+}) {
+  const [requierePassword, setRequierePassword] = useState<boolean | null>(null)
+  const [password, setPassword] = useState('')
+  const [verificando, setVerificando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open) {
+      setRequierePassword(null)
+      setPassword('')
+      setError(null)
+      setVerificando(false)
+      return
+    }
+    let cancelado = false
+    authedFetch('/api/v1/usuario/reautenticar')
+      .then((r) => r.json())
+      .then((data: { requierePassword: boolean }) => {
+        if (cancelado) return
+        if (!data.requierePassword) {
+          onConfirmado()
+          return
+        }
+        setRequierePassword(true)
+      })
+      .catch(() => {
+        // Fail-safe: si no podemos confirmar el estado de la cuenta, pedimos
+        // la contraseña igual en vez de saltear el paso de confirmacion.
+        if (!cancelado) setRequierePassword(true)
+      })
+    return () => {
+      cancelado = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  const confirmar = async () => {
+    if (!password || verificando) return
+    setVerificando(true)
+    setError(null)
+    try {
+      const res = await authedFetch('/api/v1/usuario/reautenticar', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ password }),
+      })
+      if (!res.ok) {
+        const info = await parseApiError(res)
+        setError(info.message)
+        return
+      }
+      onConfirmado()
+    } catch {
+      setError('No pudimos verificar tu conexión. Probá de nuevo.')
+    } finally {
+      setVerificando(false)
+    }
+  }
+
+  if (!bici) return null
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="rounded-2xl border border-ink/10 bg-paper">
+        <DialogHeader>
+          <span className="flex size-12 items-center justify-center rounded-xl bg-clay/15 text-clay">
+            <Siren className="size-6" />
+          </span>
+          <DialogTitle className="font-display text-ink">Modo Robo</DialogTitle>
+          <DialogDescription className="text-slate-warm">
+            Confirmá que sos vos para continuar con {etiquetaActivo(bici)}.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex items-start gap-2 rounded-2xl bg-amber-50 px-3.5 py-3 text-xs text-amber-700">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <span>
+            Esto te lleva al formulario de denuncia con tu bici precargada.
+            No bloquea tu bici al instante: vas a necesitar subir el PDF real
+            de tu denuncia ante el MPF, y un equipo de RODAID tiene que
+            aprobarla.
+          </span>
+        </div>
+
+        {requierePassword === null ? (
+          <div className="flex items-center justify-center gap-2 py-6 text-sm text-slate-warm">
+            <Loader2 className="size-4 animate-spin" />
+            Verificando tu sesión…
+          </div>
+        ) : (
+          <>
+            <input
+              type="password"
+              autoFocus
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && confirmar()}
+              placeholder="Tu contraseña"
+              className="w-full rounded-xl border border-ink/15 bg-white px-3.5 py-2.5 text-sm text-ink outline-none focus:border-clay/50"
+            />
+            {error && <p className="text-xs text-clay">{error}</p>}
+            <button
+              type="button"
+              onClick={confirmar}
+              disabled={verificando || !password}
+              className="mt-1 inline-flex w-full items-center justify-center gap-2 rounded-full bg-clay px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-clay/90 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {verificando ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Verificando…
+                </>
+              ) : (
+                <>
+                  <Siren className="size-4" />
+                  Confirmar y continuar
+                </>
+              )}
+            </button>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -277,11 +455,13 @@ function ActivoCard({
   onVerificar,
   puedeDenunciar,
   onDenunciar,
+  onModoPanico,
 }: {
   activo: ActivoGaraje
   onVerificar: () => void
   puedeDenunciar: boolean
   onDenunciar: () => void
+  onModoPanico: () => void
 }) {
   const visual = ESTADO_VISUAL[activo.estado]
   const specs = [
@@ -463,6 +643,24 @@ function ActivoCard({
             </Link>
           ))}
 
+        {/* Boton de Panico "Modo Robo" — atajo de un toque al mismo formulario
+            de denuncia de abajo, con un paso de confirmacion (contraseña) antes.
+            Mismas condiciones que "Denunciar robo": no tiene sentido ofrecerlo
+            sobre una bici ya bloqueada. */}
+        {puedeDenunciar &&
+          (activo.estado === 'verificado' ||
+            activo.estado === 'pendiente' ||
+            activo.estado === 'vencido' ||
+            activo.estado === 'sin_verificar') && (
+            <button
+              onClick={onModoPanico}
+              className="inline-flex items-center gap-1.5 rounded-full bg-clay px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-clay/90"
+            >
+              <Siren className="size-3.5" />
+              Modo Robo
+            </button>
+          )}
+
         {/* Denuncia ciudadana (Hito 18) — solo para identidad gubernamental (MxM)
             y bicis con identidad que no estén ya bloqueadas. */}
         {puedeDenunciar &&
@@ -479,6 +677,18 @@ function ActivoCard({
             </button>
           )}
       </div>
+
+      {puedeDenunciar &&
+        (activo.estado === 'verificado' ||
+          activo.estado === 'pendiente' ||
+          activo.estado === 'vencido' ||
+          activo.estado === 'sin_verificar') && (
+          <p className="mt-2 text-[11px] leading-snug text-slate-warm">
+            Modo Robo te lleva directo al formulario de denuncia con esta bici
+            precargada. No bloquea tu bici al instante: necesita el PDF real
+            de tu denuncia ante el MPF y la aprobación de un equipo de RODAID.
+          </p>
+        )}
     </li>
   )
 }

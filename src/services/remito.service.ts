@@ -183,6 +183,10 @@ async function cargarDatosRemito(
         color: row.color,
         rodado: row.rodado === null ? null : Number(row.rodado),
         talleCuadro: row.talle_cuadro,
+        // El Remito es una orden de embalaje/despacho, no un documento de
+        // identificacion policial -- no necesita la foto de la bici. Se pasa
+        // null a proposito (tipo compartido con CertificadoBici del CIT).
+        fotoUrl: null,
       },
       vendedor: { nombre: vendedorNombre, contacto: row.vendedor_email },
       taller: {
