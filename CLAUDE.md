@@ -691,6 +691,16 @@ La idea original tenía 3 patas: (1) marcar la bici como robada al instante, (2)
 
 **Confirmado en producción (2026-07-18), de punta a punta:** (1) el certificado con anexo fotográfico se probó contra una bici real (`II1124279207`) — encontró y corrigió un bug real en el camino: `bicicletas.foto_url` es una ruta relativa (`/api/v1/marketplace/fotos/...`), no una URL absoluta, así que el primer intento generaba el PDF sin la página anexo (fallaba en silencio, por diseño) — fix en `absolutizarUrl()` en ambas rutas de certificado, confirmado después con el mismo serial dando 2 páginas / ~218KB. (2) Federico probó el botón "Modo Robo" en vivo: abre el formulario pre-cargado como se esperaba, y al subir un PDF genérico (sin denuncia real ante el MPF) el sistema correctamente NO dejó avanzar el reporte — confirma en producción que la promesa de "nunca bloqueo instantáneo, siempre exige PDF real" se cumple tal cual se diseñó.
 
+### FIXED 2026-07-18: `publicacion-detalle.tsx` rompía para visitantes anónimos en producción ("Algo salió mal")
+
+Encontrado probando el slogan de cierre en mobile con Playwright headless contra producción: cualquier visitante SIN sesión que abría `/marketplace/[id]` (p. ej. un link compartido) veía "Algo salió mal", nunca la publicación — aunque `GET /api/v1/marketplace/[id]` funciona perfecto sin sesión (confirmado con curl, 200 OK).
+
+**Causa:** `authedFetch()` (`lib/session.ts`) llama incondicionalmente a `ensureSession()` antes de cualquier request, y esta —si no hay sesión guardada— intenta crear una demo-session (`POST /api/v1/auth/demo-session`), bloqueada a propósito en producción (403 `DEMO_DESHABILITADO`, el fix de seguridad de 2026-07-08/09). El endpoint real ya es "opcionalmente autenticado" (`requireUser` envuelto en su propio try/catch, cae a `miReserva: null` sin sesión) — el bug era 100% del cliente, no del backend.
+
+**Fix:** `publicacion-detalle.tsx` (`cargar()` y el `useEffect` de `buyerId`) ahora usan `fetch()` directo + `getSession()` (lectura pura de la sesión guardada en `localStorage`, sin red, sin crear nada) — adjuntan el `Authorization` solo si ya hay sesión. `iniciarPago()` (comprar/reservar/pagar) sigue sin cambios, exigiendo sesión real vía `authedFetch()` — ahí sí corresponde. Confirmado en producción con un contexto de navegador 100% anónimo (Playwright, sin cookies/localStorage previos): la publicación carga completa, sin "Algo salió mal".
+
+**Backlog, no bloqueante, encontrado en la misma investigación:** la misma página muestra en consola un error de hidratación de React (`Minified React error #418` — mismatch entre el HTML renderizado en servidor y el cliente) tanto antes como después de este fix; no bloquea el render (la publicación carga bien igual) así que no se investigó más a fondo esta vez. Candidato para una sesión de limpieza de consola aparte.
+
 ### Mobile
 
 `android/` and `ios/` are Capacitor shells (`capacitor.config.ts`, appId `net.rodaid.app`). `server.url` points at `https://rodaid.net` — the native apps are thin WebView wrappers loading the live deployment, not bundlers of a local static `webDir` build.
