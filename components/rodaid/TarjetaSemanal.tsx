@@ -73,7 +73,16 @@ export function TarjetaSemanal() {
       </div>
 
       {!conectado ? (
+        // PAUSADO a proposito (2026-07-18): ver la nota gemela en
+        // iot-tiempo-real.tsx -- SPOTIFY_CLIENT_ID/SECRET todavia no estan
+        // cargados en Netlify, asi que el boton de conectar (comentado mas
+        // abajo) mandaria a un login de Spotify que siempre rechaza. NO
+        // reactivar hasta confirmar las credenciales (ver CLAUDE.md).
         <div className="mt-4">
+          <p className="text-xs text-slate-warm">
+            Muy pronto vas a poder conectar tu Spotify acá.
+          </p>
+          {/*
           <a
             href="/api/v1/auth/spotify"
             className="inline-flex items-center gap-2 rounded-full bg-[#1DB954] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#1DB954]/80"
@@ -84,6 +93,7 @@ export function TarjetaSemanal() {
           <p className="mt-2 text-[11px] leading-snug text-slate-warm">
             Beta — cupo limitado a pocas cuentas mientras validamos la integración con Spotify.
           </p>
+          */}
         </div>
       ) : tracks.length === 0 ? (
         <p className="mt-4 text-xs text-slate-warm">

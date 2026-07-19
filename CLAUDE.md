@@ -701,6 +701,16 @@ Encontrado probando el slogan de cierre en mobile con Playwright headless contra
 
 **Backlog, no bloqueante, encontrado en la misma investigación:** la misma página muestra en consola un error de hidratación de React (`Minified React error #418` — mismatch entre el HTML renderizado en servidor y el cliente) tanto antes como después de este fix; no bloquea el render (la publicación carga bien igual) así que no se investigó más a fondo esta vez. Candidato para una sesión de limpieza de consola aparte.
 
+### Spotify: código listo, pausado a la espera de credenciales — no reactivar el botón hasta confirmar que están cargadas en Netlify
+
+Construido 2026-07-18 (conexión de Spotify por usuario, mismo patrón OAuth2 que Strava — `src/services/spotify.service.ts`, `app/api/v1/auth/spotify/*`, `app/api/v1/spotify/top-tracks/route.ts`, `TarjetaSemanal.tsx`, cifrado dedicado con `RODAID_SPOTIFY_AES_KEY`). El código completo está mergeado y probado a nivel de rutas (redirect a Spotify, 401 limpio sin sesión, etc.) — lo único que falta es `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET`, que requieren que Federico registre la app en el Dashboard de Spotify Developers (acción que solo él puede hacer, con su propia cuenta).
+
+**Confirmado en vivo el mismo día que esto era un problema real, no hipotético:** con `SPOTIFY_CLIENT_ID` vacío, el botón "Conectar Spotify" mandaba a un usuario real a `https://accounts.spotify.com/authorize?client_id=&...` — Spotify rechaza ese login. `RODAID_SPOTIFY_AES_KEY` y `SPOTIFY_REDIRECT_URI` ya están cargados en Netlify (producción); `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET` NO.
+
+**Pausado a propósito, sin deshacer nada:** el botón "Conectar Spotify" está comentado (no eliminado) en `components/rodaid/iot-tiempo-real.tsx` y en `components/rodaid/TarjetaSemanal.tsx` (que además muestra "Muy pronto vas a poder conectar tu Spotify acá" en vez del CTA roto). Todo el resto del código (cifrado, endpoints, service, scope `user-top-read`) sigue intacto y funcionando — reactivar es solo destapar esos dos comentarios.
+
+**NO reactivar el botón hasta confirmar explícitamente que `SPOTIFY_CLIENT_ID` y `SPOTIFY_CLIENT_SECRET` están cargados en Netlify** (verificar con `netlify env:list`, no asumir). Una vez cargados, hace falta además un redeploy para que las env vars nuevas tomen efecto (Netlify no las aplica a un deploy ya construido).
+
 ### Mobile
 
 `android/` and `ios/` are Capacitor shells (`capacitor.config.ts`, appId `net.rodaid.app`). `server.url` points at `https://rodaid.net` — the native apps are thin WebView wrappers loading the live deployment, not bundlers of a local static `webDir` build.
