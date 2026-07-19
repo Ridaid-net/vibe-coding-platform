@@ -31,7 +31,7 @@ export default function NotFound() {
               className="inline-flex items-center gap-2 rounded-full border border-[#2BBCB8] px-5 py-2.5 text-sm font-semibold text-[#2BBCB8] hover:bg-[#2BBCB8]/10">
               Verificar bicicleta
             </Link>
-            <Link href="/marketplace"
+            <Link href="/#comprar"
               className="inline-flex items-center gap-2 rounded-full border border-ink/15 px-5 py-2.5 text-sm font-semibold text-ink hover:bg-ink/5">
               Marketplace
             </Link>
