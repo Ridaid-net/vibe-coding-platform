@@ -438,6 +438,20 @@ export async function usuarioTieneDatosBancarios(userId: string): Promise<boolea
   return (res.rowCount ?? 0) > 0
 }
 
+/**
+ * Si el usuario ya tiene una conexion de Strava vinculada (oauth_connections,
+ * provider='strava') -- ver app/api/v1/auth/strava/callback/route.ts, el unico
+ * escritor real de esta fila. Mismo criterio que usuarioTieneDatosBancarios():
+ * chequeado de entrada, no inferido de otra cosa.
+ */
+export async function usuarioTieneStravaConectado(userId: string): Promise<boolean> {
+  const res = await getPool().query(
+    `SELECT 1 FROM oauth_connections WHERE provider = 'strava' AND user_id = $1 LIMIT 1`,
+    [userId]
+  )
+  return (res.rowCount ?? 0) > 0
+}
+
 // ---------------------------------------------------------------------------
 // Mis publicaciones (gestion de venta)
 // ---------------------------------------------------------------------------

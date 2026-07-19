@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { jsonError, requireUser } from '@/lib/marketplace'
-import { obtenerActivosUsuario, usuarioTieneDatosBancarios } from '@/src/services/garaje.service'
+import {
+  obtenerActivosUsuario,
+  usuarioTieneDatosBancarios,
+  usuarioTieneStravaConectado,
+} from '@/src/services/garaje.service'
 import { obtenerCotizacionDolarBlue } from '@/src/services/cotizacion.service'
 
 export const runtime = 'nodejs'
@@ -17,9 +21,10 @@ export const runtime = 'nodejs'
 export async function GET(req: Request) {
   try {
     const user = await requireUser(req)
-    const [activos, tieneDatosBancarios, tipoDeCambioBlueMep] = await Promise.all([
+    const [activos, tieneDatosBancarios, stravaConectado, tipoDeCambioBlueMep] = await Promise.all([
       obtenerActivosUsuario(user.id),
       usuarioTieneDatosBancarios(user.id),
+      usuarioTieneStravaConectado(user.id),
       obtenerCotizacionDolarBlue(),
     ])
     return NextResponse.json(
@@ -34,6 +39,10 @@ export async function GET(req: Request) {
         // Swipe to Sell: chequeado de entrada, no al final del gesto (ver
         // usuarioTieneDatosBancarios() en garaje.service.ts).
         tieneDatosBancarios,
+        // Insignia "Ciclista Conectado" (InsigniasUsuario.tsx): chequeado de
+        // entrada, mismo criterio que tieneDatosBancarios (ver
+        // usuarioTieneStravaConectado() en garaje.service.ts).
+        stravaConectado,
         // Swipe to Sell: resuelto en el servidor (ver cotizacion.service.ts) --
         // precioSugerido() lo recibe ya resuelto, nunca hace su propio fetch.
         tipoDeCambioBlueMep,
