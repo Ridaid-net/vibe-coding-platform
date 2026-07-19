@@ -12,7 +12,7 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { authedFetch, ensureSession } from '@/lib/session'
+import { authedFetch, getSession } from '@/lib/session'
 import { ProteccionRodaidPay, RodaidPayBadge } from './rodaid-pay-badge'
 
 interface PublicacionData {
@@ -62,7 +62,15 @@ export function PublicacionDetalle({ id }: { id: string }) {
     setLoading(true)
     setError(null)
     try {
-      const res = await authedFetch(`/api/v1/marketplace/${id}`)
+      // Lectura publica: NO usar authedFetch() aca -- forzaria ensureSession()
+      // a crear una demo-session, bloqueada en produccion (403), tumbando la
+      // pagina para cualquier visitante anonimo aunque el endpoint en si sea
+      // publico. Si ya hay una sesion guardada la mandamos (para miReserva
+      // personalizada); si no, el GET va igual, sin sesion.
+      const session = getSession()
+      const res = await fetch(`/api/v1/marketplace/${id}`, {
+        headers: session ? { authorization: `Bearer ${session.accessToken}` } : undefined,
+      })
       if (res.status === 404) {
         setError('No encontramos esta publicación. Puede que ya no esté disponible.')
         setPub(null)
@@ -87,12 +95,12 @@ export function PublicacionDetalle({ id }: { id: string }) {
     cargar()
   }, [cargar])
 
-  // Conocemos al comprador (sesion de prueba) para detectar si la publicacion
-  // es suya y ofrecer el mensaje adecuado en lugar de un 422 del backend.
+  // Conocemos al comprador (si hay sesion) para detectar si la publicacion es
+  // suya y ofrecer el mensaje adecuado en lugar de un 422 del backend. Lectura
+  // pura de la sesion guardada -- mismo motivo que en cargar(), nunca hay que
+  // crear una sesion nueva solo para esto.
   useEffect(() => {
-    ensureSession()
-      .then((s) => setBuyerId(s.userId))
-      .catch(() => setBuyerId(null))
+    setBuyerId(getSession()?.userId ?? null)
   }, [])
 
   const iniciarPago = async (endpoint: 'comprar' | 'reservar' | 'confirmar-pago') => {
