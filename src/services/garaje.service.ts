@@ -83,7 +83,7 @@ export interface ActivoGaraje {
   creadoEn: string
   /** NULL = no declarado todavía. Distinto de FALSE (confirmado rígida). */
   suspensionTrasera: boolean | null
-  /** true si la última inspección con modulo_componentes=TRUE marcó PR08
+  /** true si la última inspección con modulo_premium=TRUE marcó PR08
    * (batería de e-bike) en 'falla' -- ver precioSugerido() en swipe-to-sell.ts. */
   bateriaFalla: boolean
 
@@ -296,7 +296,7 @@ export async function obtenerActivosUsuario(
       LEFT JOIN LATERAL (
         SELECT checklist_detalle
         FROM inspecciones_fisicas ifis
-        WHERE ifis.bicicleta_id = b.id AND ifis.modulo_componentes = TRUE
+        WHERE ifis.bicicleta_id = b.id AND ifis.modulo_premium = TRUE
         ORDER BY ifis.created_at DESC
         LIMIT 1
       ) insp_premium ON TRUE
