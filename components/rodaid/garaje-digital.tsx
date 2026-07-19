@@ -57,6 +57,7 @@ import { BiciSeguraShare } from './BiciSeguraShare'
 import { GemeloDigitalBici } from './GemeloDigitalBici'
 import { SolicitarVerificacionModal } from './solicitar-verificacion-modal'
 import { DenunciaMpfModal } from './denuncia-mpf-modal'
+import { TarjetaSemanal } from './TarjetaSemanal'
 
 /**
  * "Mi Garaje Digital" — Hito 14: el hub central del usuario.
@@ -188,6 +189,7 @@ export function GarajeDigital() {
       </div>
       <PushNotificaciones />
           <MisSalidas />
+          <TarjetaSemanal />
           <ProgramaEmbajadores
         usuarioId={perfil?.id ?? ""}
         nombreUsuario={perfil?.nombre ?? perfil?.email ?? ""}
