@@ -113,7 +113,6 @@ type Pestana =
   | 'analitica'
   | 'identidades'
   | 'bitacora'
-  | 'gobierno'
   | 'finanzas'
 
 const PESTANAS: { id: Pestana; label: string; icon: typeof Activity; permiso: AdminPermiso }[] = [
@@ -122,7 +121,6 @@ const PESTANAS: { id: Pestana; label: string; icon: typeof Activity; permiso: Ad
   { id: 'analitica', label: 'Analítica', icon: Gauge, permiso: 'analitica:ver' },
   { id: 'identidades', label: 'Identidades', icon: UserCog, permiso: 'identidades:ver' },
   { id: 'bitacora', label: 'Bitácora', icon: ScrollText, permiso: 'bitacora:ver' },
-  { id: 'gobierno', label: 'Gobierno', icon: ShieldCheck, permiso: 'identidades:ver' },
   { id: 'finanzas', label: 'Finanzas', icon: Banknote, permiso: 'finanzas:ver' },
 ]
 
