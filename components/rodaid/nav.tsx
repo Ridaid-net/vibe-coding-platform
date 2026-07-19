@@ -40,7 +40,7 @@ export function Nav() {
   return (
     <header className={`sticky top-0 z-50 transition-colors duration-300 ${scrolled ? 'border-b border-ink/10 bg-paper/85 backdrop-blur-md' : 'border-b border-transparent bg-transparent'}`}>
       <div className="mx-auto flex h-20 max-w-7xl items-center gap-6 px-5 sm:px-8">
-        <Link href="/" className="text-ink"><RodaidLogo /></Link>
+        <RodaidLogo className="text-ink" />
         <nav className="hidden flex-1 items-center justify-center gap-4 lg:flex">
           {LINKS_SECCION.map((link) => (<a key={link.href} href={link.href} className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">{link.label}</a>))}
           <span className="h-4 w-px bg-ink/15" />

@@ -100,6 +100,9 @@ export interface ActivosResponse {
   /** Swipe to Sell: si el usuario ya tiene CBU/alias cargado. Chequeado de
    * entrada (no al final del gesto) -- ver usuarioTieneDatosBancarios(). */
   tieneDatosBancarios: boolean
+  /** Insignia "Ciclista Conectado" (InsigniasUsuario.tsx) -- ver
+   * usuarioTieneStravaConectado(). */
+  stravaConectado: boolean
   /** Swipe to Sell: cotización del dólar blue, resuelta en el servidor
    * (ver src/services/cotizacion.service.ts::obtenerCotizacionDolarBlue()). */
   tipoDeCambioBlueMep: {

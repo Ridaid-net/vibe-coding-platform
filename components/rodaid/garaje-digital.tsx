@@ -199,7 +199,7 @@ export function GarajeDigital() {
       <InsigniasUsuario
         tieneCit={activos?.some(a => a.codigoCit) ?? false}
         citActivo={activos?.some(a => a.estado === "verificado") ?? false}
-        stravaConectado={false}
+        stravaConectado={data?.stravaConectado ?? false}
         kmTotales={0}
         tienePublicacion={false}
         denunciasRegistradas={0}
