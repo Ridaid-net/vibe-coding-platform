@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { MessageCircle, X, Send, Headphones, Loader2 } from 'lucide-react'
-import { authedFetch } from '@/lib/session'
 
 interface Mensaje {
   id: string
@@ -58,15 +57,6 @@ export function SoporteChat() {
 
     const msgUser: Mensaje = { id: Date.now().toString(), role: 'user', texto, timestamp: new Date() }
     setMensajes(prev => [...prev, msgUser])
-
-    // Intentar notificar al admin via API
-    try {
-      await authedFetch('/api/v1/soporte/mensaje', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ texto, timestamp: new Date().toISOString() }),
-      }).catch(() => undefined)
-    } catch { /* silencioso */ }
 
     // Respuesta automática inteligente
     await new Promise(r => setTimeout(r, 1200))
