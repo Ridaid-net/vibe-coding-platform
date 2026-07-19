@@ -41,6 +41,7 @@ let cachedIotKey: Buffer | null = null
 let cachedDenunciaKey: Buffer | null = null
 let cachedInspeccionKey: Buffer | null = null
 let cachedStravaKey: Buffer | null = null
+let cachedSpotifyKey: Buffer | null = null
 
 /** Indica si hay una clave AES real configurada (vs. derivada en preview). */
 export function cifradoConfigurado(): boolean {
@@ -69,6 +70,12 @@ export function inspeccionCifradoConfigurado(): boolean {
 /** Indica si hay una clave AES real para los tokens OAuth de Strava (vs. derivada). */
 export function stravaCifradoConfigurado(): boolean {
   const raw = process.env.RODAID_STRAVA_AES_KEY
+  return typeof raw === 'string' && raw.trim().length > 0
+}
+
+/** Indica si hay una clave AES real para los tokens OAuth de Spotify (vs. derivada). */
+export function spotifyCifradoConfigurado(): boolean {
+  const raw = process.env.RODAID_SPOTIFY_AES_KEY
   return typeof raw === 'string' && raw.trim().length > 0
 }
 
@@ -209,6 +216,38 @@ export function descifrarStravaSeguro(valor: string): { texto: string; eraLegado
   } catch {
     return { texto: valor, eraLegado: true }
   }
+}
+
+/**
+ * Resuelve (y cachea) la clave AES-256 de los tokens OAuth de Spotify. Es una
+ * clave INDEPENDIENTE de la de Strava -- mismo criterio de "una identidad
+ * criptografica por dominio" ya establecido para el resto de los buckets
+ * cifrados de este archivo. Cifrada desde el dia uno: a diferencia de Strava,
+ * esta conexion nunca tuvo filas en texto plano, asi que no hace falta un
+ * equivalente a `descifrarStravaSeguro` (sin legado que tolerar). En LIVE se
+ * toma de `RODAID_SPOTIFY_AES_KEY`; en preview se deriva de forma estable del
+ * secreto de la app (igual que el resto de los modos del proyecto).
+ */
+function getSpotifyKey(): Buffer {
+  if (cachedSpotifyKey) return cachedSpotifyKey
+  const raw = process.env.RODAID_SPOTIFY_AES_KEY
+  if (raw && raw.trim().length > 0) {
+    cachedSpotifyKey = parseClaveConfigurada(raw)
+    return cachedSpotifyKey
+  }
+  const secret = getAuthSecret() ?? 'rodaid-spotify-fallback'
+  cachedSpotifyKey = scryptSync(secret, 'rodaid-spotify-aes-v1', KEY_BYTES)
+  return cachedSpotifyKey
+}
+
+/** Cifra un token OAuth de Spotify (access_token o refresh_token). */
+export function cifrarSpotify(plaintext: string): string {
+  return cifrarCon(getSpotifyKey(), plaintext)
+}
+
+/** Descifra un token producido por `cifrarSpotify`. Lanza si el formato es invalido. */
+export function descifrarSpotify(token: string): string {
+  return descifrarCon(getSpotifyKey(), token)
 }
 
 /** Cifra un texto en claro con una clave dada. Devuelve el token portable. */
