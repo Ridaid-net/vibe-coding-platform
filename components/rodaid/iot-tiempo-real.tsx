@@ -117,7 +117,15 @@ export function IotTiempoReal() {
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
               <a href="/api/v1/auth/strava" className="inline-flex items-center gap-2 rounded-full bg-[#FC4C02] px-4 py-2 text-xs font-semibold text-white hover:bg-[#FC4C02]/80">Conectar Strava</a>
               <a href="/api/v1/auth/garmin" className="inline-flex items-center gap-2 rounded-full border border-[#007DC1] px-4 py-2 text-xs font-semibold text-[#007DC1] hover:bg-[#007DC1]/5">Conectar Garmin</a>
+              {/* Conectar Spotify -- PAUSADO a proposito (2026-07-18): SPOTIFY_CLIENT_ID/
+                  SPOTIFY_CLIENT_SECRET todavia no estan cargados en Netlify. El backend
+                  (app/api/v1/auth/spotify/*, spotify.service.ts) esta completo y probado a
+                  nivel de rutas, pero mostrar este boton hoy manda a un usuario real a
+                  https://accounts.spotify.com/authorize con client_id vacio -- Spotify
+                  rechaza el login. NO reactivar hasta confirmar que ambas credenciales estan
+                  cargadas en Netlify (ver CLAUDE.md). Reactivar es sacar este comentario.
               <a href="/api/v1/auth/spotify" className="inline-flex items-center gap-2 rounded-full bg-[#1DB954] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1DB954]/80">Conectar Spotify</a>
+              */}
             </div>
           </div>
         ) : (
