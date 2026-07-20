@@ -319,6 +319,22 @@ export async function confirmarEntregaCitCompleto(transaccionId: string): Promis
   }
 }
 
+/**
+ * El vendedor retira su propia publicacion. El backend rechaza con 409
+ * PUBLICACION_NO_RETIRABLE si hay una operacion de escrow en curso (ver
+ * retirarPublicacion() en escrow.service.ts) -- ese mensaje ya viene listo
+ * para mostrar tal cual. Nunca toca el CIT ni la titularidad de la bici.
+ */
+export async function retirarPublicacion(publicacionId: string): Promise<void> {
+  const res = await authedFetch(`/api/v1/marketplace/${publicacionId}/retirar`, {
+    method: 'POST',
+  })
+  if (!res.ok) {
+    const detalle = (await res.json().catch(() => null)) as { message?: string } | null
+    throw new Error(detalle?.message ?? `HTTP ${res.status}`)
+  }
+}
+
 // ── Presentacion del estado del activo ───────────────────────────────────────
 
 export interface EstadoVisual {
