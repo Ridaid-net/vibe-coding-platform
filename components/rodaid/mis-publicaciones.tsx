@@ -5,16 +5,30 @@ import Link from 'next/link'
 import { mutate } from 'swr'
 import { toast } from 'sonner'
 import {
+  AlertTriangle,
   Eye,
   Loader2,
   MessageCircle,
   Package,
   Store,
   Tag,
+  Trash2,
   Truck,
 } from 'lucide-react'
-import { useMisPublicaciones, type MiPublicacion } from '@/lib/garaje-digital'
+import { useMisPublicaciones, retirarPublicacion, type MiPublicacion } from '@/lib/garaje-digital'
 import { generarRemito, descargarRemitoPdf } from '@/lib/remitos'
+
+/**
+ * Estados desde los que el vendedor puede retirar su propia publicacion --
+ * espejo client-side de ESTADOS_PUBLICACION_RETIRABLES en escrow.service.ts.
+ * El backend es la fuente de verdad real (vuelve a validar bajo lock); esto
+ * solo decide si mostrar el boton.
+ */
+const ESTADOS_RETIRABLES = new Set([
+  'ACTIVA',
+  'PUBLICADO_PENDIENTE_CERTIFICACION',
+  'PUBLICADO_CERTIFICADO',
+])
 
 /**
  * "Mis publicaciones" — Hito 14: gestion de venta desde el Garaje Digital.
@@ -237,6 +251,9 @@ function PublicacionItem({ pub }: { pub: MiPublicacion }) {
             )}
           </div>
         )}
+        {ESTADOS_RETIRABLES.has(pub.estado) && (
+          <RetirarPublicacionAccion pub={pub} />
+        )}
       </div>
 
       <Link
@@ -251,6 +268,79 @@ function PublicacionItem({ pub }: { pub: MiPublicacion }) {
         Ver publicación
       </Link>
     </li>
+  )
+}
+
+/**
+ * El vendedor retira su propia publicacion. Solo se renderiza cuando
+ * ESTADOS_RETIRABLES incluye pub.estado -- sin comprador comprometido con
+ * plata en juego (el backend vuelve a validar esto bajo lock, ver
+ * retirarPublicacion() en escrow.service.ts). Mismo patron de confirmacion
+ * en dos pasos que RemitoEstadoCompra en mis-compras.tsx.
+ */
+function RetirarPublicacionAccion({ pub }: { pub: MiPublicacion }) {
+  const [modoConfirmar, setModoConfirmar] = useState(false)
+  const [retirando, setRetirando] = useState(false)
+
+  const retirar = async () => {
+    if (retirando) return
+    setRetirando(true)
+    try {
+      await retirarPublicacion(pub.id)
+      await mutate('/api/marketplace/mis-publicaciones')
+      toast.success('Publicación retirada', {
+        description: 'Tu bici y su CIT no se vieron afectados — podés volver a publicarla cuando quieras.',
+      })
+    } catch (err) {
+      toast.error('No pudimos retirar la publicación', { description: (err as Error).message })
+    } finally {
+      setRetirando(false)
+      setModoConfirmar(false)
+    }
+  }
+
+  if (modoConfirmar) {
+    return (
+      <div className="mt-2 rounded-xl border border-clay/25 bg-clay/5 px-3 py-2.5">
+        <p className="flex items-center gap-1.5 text-[11px] font-semibold text-clay">
+          <AlertTriangle className="size-3.5" />
+          ¿Retirar esta publicación del marketplace?
+        </p>
+        <p className="mt-1 text-[11px] leading-relaxed text-slate-warm">
+          Tu bici y su CIT no se ven afectados — podés volver a publicarla cuando quieras.
+        </p>
+        <div className="mt-2 flex gap-2">
+          <button
+            type="button"
+            onClick={retirar}
+            disabled={retirando}
+            className="inline-flex items-center gap-1.5 rounded-full bg-clay px-3 py-1.5 text-[11px] font-semibold text-paper disabled:opacity-50"
+          >
+            {retirando ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}
+            Sí, retirar
+          </button>
+          <button
+            type="button"
+            onClick={() => setModoConfirmar(false)}
+            disabled={retirando}
+            className="rounded-full border border-ink/15 px-3 py-1.5 text-[11px] font-semibold text-ink disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setModoConfirmar(true)}
+      className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-clay hover:underline"
+    >
+      <Trash2 className="size-3.5" />
+      Retirar publicación
+    </button>
   )
 }
 

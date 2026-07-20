@@ -59,6 +59,9 @@ async function notificarOperacionCompletada(
  *   abrirDisputa()             -> DISPUTADA  (fondos en hold)
  *   resolverDisputa(admin)     -> COMPLETADA (vendedor) | CANCELADA (comprador)
  *   procesarAutoReleases()     -> COMPLETADA (5 dias sin accion del comprador)
+ *   retirarPublicacion(vendedor) -> publicacion CANCELADA (solo si NO hay
+ *                                   ninguna escrow_transacciones no-terminal
+ *                                   asociada -- nunca toca bicicletas/cits)
  *
  *   Fase 6 (CIT Completo) — flujo de DOS pagos secuenciales, sena -> saldo,
  *   O de un pago unico si la bici ya esta certificada (ver
@@ -1501,6 +1504,95 @@ export async function cancelarTransaccion(input: {
     })
 
     return { transaccion: mapTransaccion(updated.rows[0]), reembolso }
+  })
+}
+
+// ── 5b. retirarPublicacion (vendedor, sin operacion viva) ───────────────────
+
+/**
+ * Estados de marketplace_publicaciones desde los que el vendedor puede
+ * retirar su propia publicacion unilateralmente: no hay ninguna operacion de
+ * escrow en curso (ver el mapeo EXPRESS/EN_TRANSFERENCIA/TRANSFERIDO mas
+ * arriba en este archivo -- estos tres son exactamente el equivalente
+ * "EXPRESS" a nivel publicacion). PAUSADA/RESERVADO/EJECUTANDO_LOGISTICA
+ * quedan afuera a proposito: siempre reflejan una fila de escrow_transacciones
+ * en un estado no-terminal (toda transicion del escrow actualiza ambas tablas
+ * en la misma transaccion de DB -- confirmado leyendo iniciarCompra(),
+ * iniciarReservaCitCompleto(), webhookPago() y procesarReservasVencidas()).
+ */
+const ESTADOS_PUBLICACION_RETIRABLES = new Set([
+  'ACTIVA',
+  'PUBLICADO_PENDIENTE_CERTIFICACION',
+  'PUBLICADO_CERTIFICADO',
+])
+
+/**
+ * El vendedor retira su propia publicacion. Nunca toca `bicicletas` ni
+ * `cits` -- es puramente un cambio de estado de `marketplace_publicaciones`,
+ * misma logica que ya usan cancelarTransaccion()/procesarReservasVencidas()
+ * (ninguna de las dos toca la identidad del rodado tampoco). El estado
+ * destino, CANCELADA, ya existia en el enum desde la migracion original
+ * (20260606180000) y ya tenia label en mis-publicaciones.tsx -- nunca se
+ * habia escrito hasta ahora.
+ */
+export async function retirarPublicacion(input: {
+  publicacionId: string
+  vendedorId: string
+}) {
+  return withTx(async (client) => {
+    const pubRes = await client.query<{
+      id: string
+      vendedor_id: string
+      estado: string
+    }>(
+      `SELECT id, vendedor_id, estado FROM marketplace_publicaciones WHERE id = $1 FOR UPDATE`,
+      [input.publicacionId]
+    )
+    const pub = pubRes.rows[0]
+    if (!pub) {
+      throw new ApiError(404, 'PUBLICACION_NOT_FOUND', 'La publicacion no existe.')
+    }
+    if (pub.vendedor_id !== input.vendedorId) {
+      throw new ApiError(403, 'NOT_OWNER', 'No sos el vendedor de esta publicacion.')
+    }
+    if (!ESTADOS_PUBLICACION_RETIRABLES.has(pub.estado)) {
+      throw new ApiError(
+        409,
+        'PUBLICACION_NO_RETIRABLE',
+        'Esta publicacion tiene una operacion en curso (seña o pago de un comprador) y no se puede retirar unilateralmente.'
+      )
+    }
+
+    // Defensa en profundidad: aunque el estado de la publicacion ya diga que
+    // no hay operacion viva, confirmar bajo el mismo lock que no exista
+    // ninguna fila de escrow_transacciones en un estado no-terminal para
+    // esta publicacion.
+    const txViva = await client.query(
+      `
+        SELECT id FROM escrow_transacciones
+        WHERE publicacion_id = $1
+          AND estado IN (
+            'DEPOSITO_PENDIENTE', 'RESERVA_PENDIENTE', 'RESERVADA',
+            'SALDO_PENDIENTE', 'FONDOS_RETENIDOS', 'EN_CAMINO', 'DISPUTADA'
+          )
+        LIMIT 1
+      `,
+      [input.publicacionId]
+    )
+    if ((txViva.rowCount ?? 0) > 0) {
+      throw new ApiError(
+        409,
+        'PUBLICACION_NO_RETIRABLE',
+        'Esta publicacion tiene una operacion en curso (seña o pago de un comprador) y no se puede retirar unilateralmente.'
+      )
+    }
+
+    const updated = await client.query<{ id: string; estado: string }>(
+      `UPDATE marketplace_publicaciones SET estado = 'CANCELADA' WHERE id = $1 RETURNING id, estado`,
+      [pub.id]
+    )
+
+    return { id: updated.rows[0].id, estado: updated.rows[0].estado }
   })
 }
 
