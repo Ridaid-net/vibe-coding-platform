@@ -244,9 +244,18 @@ export async function obtenerActivosUsuario(
         job.ejecutar_en AS job_ejecutar_en,
         job.resultado AS job_resultado,
         job.created_at AS job_creado_en,
+        -- Mismos 6 estados "vivos" que idx_mp_publicaciones_unica_activa_por_cit
+        -- (indice real de la DB, reindexado en 20260708000004 para cubrir
+        -- CIT Completo -- confirmado por consulta directa, no solo lectura de
+        -- migraciones). Antes solo chequeaba ACTIVA/PAUSADA (el flujo viejo):
+        -- una bici publicada via CIT Completo aparecia como si NO tuviera
+        -- publicacion activa.
         EXISTS (
           SELECT 1 FROM marketplace_publicaciones mp
-          WHERE mp.bicicleta_id = b.id AND mp.estado IN ('ACTIVA', 'PAUSADA')
+          WHERE mp.bicicleta_id = b.id AND mp.estado IN (
+            'ACTIVA', 'PAUSADA', 'PUBLICADO_PENDIENTE_CERTIFICACION',
+            'PUBLICADO_CERTIFICADO', 'RESERVADO', 'EJECUTANDO_LOGISTICA'
+          )
         ) AS tiene_publicacion_activa,
         pub.id AS publicacion_id,
         pub.slug AS publicacion_slug,
@@ -277,7 +286,10 @@ export async function obtenerActivosUsuario(
       LEFT JOIN LATERAL (
         SELECT id, slug
         FROM marketplace_publicaciones mp
-        WHERE mp.bicicleta_id = b.id AND mp.estado IN ('ACTIVA', 'PAUSADA')
+        WHERE mp.bicicleta_id = b.id AND mp.estado IN (
+          'ACTIVA', 'PAUSADA', 'PUBLICADO_PENDIENTE_CERTIFICACION',
+          'PUBLICADO_CERTIFICADO', 'RESERVADO', 'EJECUTANDO_LOGISTICA'
+        )
         ORDER BY mp.publicado_en DESC
         LIMIT 1
       ) pub ON TRUE
@@ -891,9 +903,16 @@ export async function obtenerAnaliticaPersonal(
          WHERE bicicleta_id = ANY($1::uuid[]) AND firma_valor IS NOT NULL`,
         [bicisIds]
       ),
+      // Mismos 6 estados "vivos" que idx_mp_publicaciones_unica_activa_por_cit
+      // (indice real de la DB, reindexado en 20260708000004) -- antes solo
+      // ACTIVA/PAUSADA, subcontaba publicaciones de CIT Completo en el panel
+      // de Analitica del Garaje.
       pool.query<{ total: string }>(
         `SELECT COUNT(*) AS total FROM marketplace_publicaciones
-         WHERE vendedor_id = $1 AND estado IN ('ACTIVA','PAUSADA')`,
+         WHERE vendedor_id = $1 AND estado IN (
+           'ACTIVA', 'PAUSADA', 'PUBLICADO_PENDIENTE_CERTIFICACION',
+           'PUBLICADO_CERTIFICADO', 'RESERVADO', 'EJECUTANDO_LOGISTICA'
+         )`,
         [userId]
       ),
       pool.query<{ total: string; ult30: string; ultima: string | null }>(
