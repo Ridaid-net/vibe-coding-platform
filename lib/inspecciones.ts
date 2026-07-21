@@ -14,7 +14,7 @@ export interface InspectorContextoCliente {
   rol: string
   nombre: string
   walletAddress: string | null
-  aliado: { id: string; nombre: string } | null
+  aliado: { id: string; nombre: string; tipo: string } | null
   modoVista: 'propio' | 'ver_como' | 'vista_previa'
 }
 
