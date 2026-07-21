@@ -57,6 +57,8 @@ export type AdminPermiso =
   | 'roles:gestionar'
   | 'finanzas:ver'
   | 'finanzas:accion'
+  | 'aliados:ver'
+  | 'aliados:accion'
 
 const TODOS: AdminPermiso[] = [
   'integridad:ver',
@@ -70,6 +72,8 @@ const TODOS: AdminPermiso[] = [
   'roles:gestionar',
   'finanzas:ver',
   'finanzas:accion',
+  'aliados:ver',
+  'aliados:accion',
 ]
 
 /** Matriz de permisos por sub-rol. */
@@ -86,10 +90,14 @@ const MATRIZ: Record<AdminRol, ReadonlySet<AdminPermiso>> = {
     'identidades:ver',
     'bitacora:ver',
     'finanzas:ver',
+    'aliados:ver',
+    'aliados:accion',
   ]),
   // Moderacion / soporte. Acceso justificado a datos personales para soporte
   // oficial. No gestiona roles de administracion. Finanzas fuera de su
-  // alcance (ni ver ni accionar).
+  // alcance (ni ver ni accionar). Aliados si esta a su alcance -- confirmado
+  // por Federico 2026-07-21, ya que hoy CUALQUIER admin puede aprobar/
+  // rechazar sin distincion de sub-rol (requireStaff(req,'admin') a secas).
   soporte: new Set<AdminPermiso>([
     'integridad:ver',
     'moderacion:ver',
@@ -99,6 +107,8 @@ const MATRIZ: Record<AdminRol, ReadonlySet<AdminPermiso>> = {
     'identidades:accion',
     'datos-personales:ver',
     'bitacora:ver',
+    'aliados:ver',
+    'aliados:accion',
   ]),
 }
 
