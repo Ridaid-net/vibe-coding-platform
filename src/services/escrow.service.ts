@@ -1510,17 +1510,21 @@ export async function cancelarTransaccion(input: {
 // ── 5b. retirarPublicacion (vendedor, sin operacion viva) ───────────────────
 
 /**
- * Estados de marketplace_publicaciones desde los que el vendedor puede
- * retirar su propia publicacion unilateralmente: no hay ninguna operacion de
- * escrow en curso (ver el mapeo EXPRESS/EN_TRANSFERENCIA/TRANSFERIDO mas
- * arriba en este archivo -- estos tres son exactamente el equivalente
- * "EXPRESS" a nivel publicacion). PAUSADA/RESERVADO/EJECUTANDO_LOGISTICA
- * quedan afuera a proposito: siempre reflejan una fila de escrow_transacciones
- * en un estado no-terminal (toda transicion del escrow actualiza ambas tablas
- * en la misma transaccion de DB -- confirmado leyendo iniciarCompra(),
+ * Estados de marketplace_publicaciones sin ninguna operacion de escrow en
+ * curso (ver el mapeo EXPRESS/EN_TRANSFERENCIA/TRANSFERIDO mas arriba en
+ * este archivo -- estos tres son exactamente el equivalente "EXPRESS" a
+ * nivel publicacion). PAUSADA/RESERVADO/EJECUTANDO_LOGISTICA quedan afuera a
+ * proposito: siempre reflejan una fila de escrow_transacciones en un estado
+ * no-terminal (toda transicion del escrow actualiza ambas tablas en la misma
+ * transaccion de DB -- confirmado leyendo iniciarCompra(),
  * iniciarReservaCitCompleto(), webhookPago() y procesarReservasVencidas()).
+ *
+ * Exportado: mismo set que usa retirarPublicacion() abajo Y el endpoint de
+ * editar contenido (app/api/v1/marketplace/[id]/editar/route.ts) -- mismo
+ * criterio de "sin comprador comprometido", confirmado explicitamente por
+ * Federico para reusar en vez de duplicar la lista.
  */
-const ESTADOS_PUBLICACION_RETIRABLES = new Set([
+export const ESTADOS_PUBLICACION_SIN_OPERACION_VIVA = new Set([
   'ACTIVA',
   'PUBLICADO_PENDIENTE_CERTIFICACION',
   'PUBLICADO_CERTIFICADO',
@@ -1555,7 +1559,7 @@ export async function retirarPublicacion(input: {
     if (pub.vendedor_id !== input.vendedorId) {
       throw new ApiError(403, 'NOT_OWNER', 'No sos el vendedor de esta publicacion.')
     }
-    if (!ESTADOS_PUBLICACION_RETIRABLES.has(pub.estado)) {
+    if (!ESTADOS_PUBLICACION_SIN_OPERACION_VIVA.has(pub.estado)) {
       throw new ApiError(
         409,
         'PUBLICACION_NO_RETIRABLE',

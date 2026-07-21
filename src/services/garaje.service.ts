@@ -460,6 +460,7 @@ export interface MiPublicacion {
   id: string
   slug: string
   titulo: string
+  descripcion: string
   estado: string
   precioARS: number
   precioUSD: number | null
@@ -494,6 +495,7 @@ interface PublicacionRow {
   id: string
   slug: string
   titulo: string
+  descripcion: string
   estado: string
   precio_ars: string
   precio_usd: string | null
@@ -530,7 +532,7 @@ export async function obtenerMisPublicaciones(
   const res = await pool.query<PublicacionRow>(
     `
       SELECT
-        mp.id, mp.slug, mp.titulo, mp.estado,
+        mp.id, mp.slug, mp.titulo, mp.descripcion, mp.estado,
         mp.precio_ars, mp.precio_usd, mp.fotos_urls,
         mp.vistas, mp.contactos, mp.publicado_en, mp.vence_en, mp.vendido_en,
         b.marca, b.modelo, b.numero_serie, b.tipo,
@@ -569,6 +571,7 @@ export async function obtenerMisPublicaciones(
     id: row.id,
     slug: row.slug,
     titulo: row.titulo,
+    descripcion: row.descripcion,
     estado: row.estado,
     precioARS: Number(row.precio_ars),
     precioUSD: row.precio_usd === null ? null : Number(row.precio_usd),
