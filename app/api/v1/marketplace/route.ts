@@ -8,6 +8,13 @@ import {
   normalizeStringList,
   type PublicacionRow,
 } from '@/lib/marketplace'
+import { esCitCompleto } from '@/src/services/garaje.service'
+import {
+  calcularScoresConfianza,
+  PUNTOS_CIT_COMPLETO,
+  PUNTOS_CIT_EXPRESS,
+  type InsumoScoreCit,
+} from '@/src/services/score-confianza.service'
 
 interface FacetaRow {
   valor: string
@@ -100,9 +107,12 @@ export async function GET(req: Request) {
           b.tipo,
           b.numero_serie,
           b.rodado,
-          b.talle_cuadro
+          b.talle_cuadro,
+          b.created_at AS bicicleta_creado_en,
+          c.metadata_json AS cit_metadata_json
         FROM marketplace_publicaciones mp
         INNER JOIN bicicletas b ON b.id = mp.bicicleta_id
+        LEFT JOIN cits c ON c.id = mp.cit_id
         ${whereSql}
         ORDER BY ${orderSql}
         LIMIT $${values.length + 1}
@@ -111,7 +121,22 @@ export async function GET(req: Request) {
       listValues
     )
 
-    const [countResult, marcasResult, tiposResult, rodadosResult, tallesResult, rangosResult, activasResult] =
+    // Score de Confianza (ver score-confianza.service.ts): cada publicacion
+    // listada ya tiene, por definicion del flujo de publicacion, un CIT
+    // 'activo' -- a diferencia de garaje.service.ts (que arma el Garaje
+    // completo del usuario, incluyendo bicis sin CIT), aca no hace falta la
+    // rama factorCit=0.
+    const insumosScore = new Map<string, InsumoScoreCit>()
+    for (const row of listResult.rows) {
+      insumosScore.set(row.bicicleta_id, {
+        factorCit: esCitCompleto(row.cit_metadata_json ?? null)
+          ? PUNTOS_CIT_COMPLETO
+          : PUNTOS_CIT_EXPRESS,
+        bicicletaCreadoEn: row.bicicleta_creado_en ?? null,
+      })
+    }
+
+    const [countResult, marcasResult, tiposResult, rodadosResult, tallesResult, rangosResult, activasResult, scoresConfianza] =
       await Promise.all([
         pool.query<{ total: string }>(
           `
@@ -200,15 +225,21 @@ export async function GET(req: Request) {
             WHERE estado = 'ACTIVA'
           `
         ),
+        calcularScoresConfianza(insumosScore),
       ])
 
     const total = Number(countResult.rows[0]?.total ?? 0)
     const paginas = Math.max(1, Math.ceil(total / limite))
     const tiempoMs = Math.round(performance.now() - startedAt)
 
+    const publicaciones = listResult.rows.map((row: PublicacionRow) => ({
+      ...mapPublicacion(row),
+      scoreConfianza: scoresConfianza.get(row.bicicleta_id) ?? null,
+    }))
+
     return NextResponse.json(
       {
-        publicaciones: listResult.rows.map(mapPublicacion),
+        publicaciones,
         total,
         pagina,
         paginas,

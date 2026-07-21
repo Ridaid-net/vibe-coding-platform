@@ -2,7 +2,13 @@
 import { ChatMarketplace } from './ChatMarketplace'
 
 import Link from 'next/link'
-import { Eye, Fingerprint, ShieldCheck } from 'lucide-react'
+import { Award, Eye, ShieldCheck } from 'lucide-react'
+
+/** Score de Confianza de la Bici -- ver CLAUDE.md y score-confianza.service.ts. */
+export interface ScoreConfianza {
+  total: number
+  badge: 'oro' | 'bronce' | null
+}
 
 export interface Publicacion {
   id: string
@@ -21,7 +27,10 @@ export interface Publicacion {
     modelo: string | null
     anio: number | null
     tipo: string | null
+    rodado?: number | null
+    talleCuadro?: string | null
   }
+  scoreConfianza?: ScoreConfianza | null
 }
 
 const ars = new Intl.NumberFormat('es-AR', {
@@ -32,8 +41,9 @@ const ars = new Intl.NumberFormat('es-AR', {
 
 export function ListingCard({ pub }: { pub: Publicacion }) {
   const foto = pub.fotosUrls?.[0]
-  const { marca, modelo, anio, tipo } = pub.bicicleta
+  const { marca, modelo, anio, tipo, rodado, talleCuadro } = pub.bicicleta
   const citCompleto = pub.estado != null && pub.estado !== 'ACTIVA'
+  const esOro = pub.scoreConfianza?.badge === 'oro'
 
   return (
     <article className="group flex flex-col overflow-hidden rounded-2xl border border-ink/10 bg-white transition-all duration-300 hover:-translate-y-1 hover:border-ink/20 hover:shadow-[0_24px_48px_-24px_rgba(20,22,14,0.35)]">
@@ -55,10 +65,9 @@ export function ListingCard({ pub }: { pub: Publicacion }) {
             {tipo}
           </span>
         )}
-        <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-lime px-2.5 py-1 text-[11px] font-bold text-ink">
-          <Fingerprint className="size-3" />
-          {citCompleto ? 'CIT Completo' : 'CIT'}
-        </span>
+        <div className="absolute right-3 top-3">
+          <HexSeal completo={citCompleto} oro={esOro} />
+        </div>
       </div>
 
       <div className="flex flex-1 flex-col p-4">
@@ -72,6 +81,14 @@ export function ListingCard({ pub }: { pub: Publicacion }) {
         <h3 className="mt-1.5 line-clamp-2 font-display text-base font-semibold leading-snug text-ink">
           {pub.titulo}
         </h3>
+
+        {(talleCuadro || rodado || pub.scoreConfianza?.badge) && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {pub.scoreConfianza?.badge && <ScoreBadge badge={pub.scoreConfianza.badge} />}
+            {talleCuadro && <Chip>Talle {talleCuadro}</Chip>}
+            {rodado != null && <Chip>Rodado {rodado}</Chip>}
+          </div>
+        )}
 
         <div className="mt-auto pt-4">
           <div className="flex items-end justify-between">
@@ -110,6 +127,72 @@ export function ListingCard({ pub }: { pub: Publicacion }) {
         </div>
       </div>
     </article>
+  )
+}
+
+/**
+ * Sello hexagonal del CIT -- reemplaza el badge generico "Certified" por algo
+ * propio del objeto real que se certifica: la tuerca hexagonal de un
+ * componente de bici (headset/eje/pedal), reinterpretada como sello de
+ * identidad verificada en la BFA. El anillo pasa a dorado cuando la bici
+ * tiene el badge 'oro' del Score de Confianza (ver score-confianza.service.ts)
+ * -- reusa la paleta real del proyecto (globals.css), no la que asumia el
+ * mockup original (navy/naranja/teal no son tokens reales de RODAID).
+ */
+function HexSeal({ completo, oro }: { completo: boolean; oro: boolean }) {
+  const ringClass = oro ? 'stroke-amber-400' : 'stroke-lime'
+  return (
+    <div
+      className="relative size-11 shrink-0 drop-shadow-md"
+      title={citTitulo(completo, oro)}
+    >
+      <svg viewBox="0 0 100 100" className="h-full w-full">
+        <polygon
+          points="50,3 93,26 93,74 50,97 7,74 7,26"
+          className={`fill-ink ${ringClass}`}
+          strokeWidth="5"
+        />
+        <path
+          d="M32 52 L44 64 L70 36"
+          fill="none"
+          className={ringClass}
+          strokeWidth="7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      <span className="absolute -bottom-1.5 left-1/2 flex -translate-x-1/2 items-center justify-center whitespace-nowrap rounded-full bg-ink px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-paper">
+        {completo ? 'CIT+' : 'CIT'}
+      </span>
+    </div>
+  )
+}
+
+function citTitulo(completo: boolean, oro: boolean): string {
+  const base = completo ? 'CIT Completo' : 'CIT'
+  return oro ? `${base} · Score de Confianza Oro` : base
+}
+
+function ScoreBadge({ badge }: { badge: 'oro' | 'bronce' }) {
+  const clase =
+    badge === 'oro'
+      ? 'bg-amber-100 text-amber-800'
+      : 'bg-orange-50 text-orange-700'
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${clase}`}
+    >
+      <Award className="size-3" />
+      {badge === 'oro' ? 'Confianza Oro' : 'Confianza Bronce'}
+    </span>
+  )
+}
+
+function Chip({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center rounded-md border border-ink/12 bg-paper-dim/60 px-2 py-0.5 text-[11px] font-medium text-slate-warm">
+      {children}
+    </span>
   )
 }
 
