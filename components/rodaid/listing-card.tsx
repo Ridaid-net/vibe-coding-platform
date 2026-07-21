@@ -2,6 +2,7 @@
 import { ChatMarketplace } from './ChatMarketplace'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { Award, Eye, ShieldCheck } from 'lucide-react'
 
 /** Score de Confianza de la Bici -- ver CLAUDE.md y score-confianza.service.ts. */
@@ -131,36 +132,30 @@ export function ListingCard({ pub }: { pub: Publicacion }) {
 }
 
 /**
- * Sello hexagonal del CIT -- reemplaza el badge generico "Certified" por algo
- * propio del objeto real que se certifica: la tuerca hexagonal de un
- * componente de bici (headset/eje/pedal), reinterpretada como sello de
- * identidad verificada en la BFA. El anillo pasa a dorado cuando la bici
- * tiene el badge 'oro' del Score de Confianza (ver score-confianza.service.ts)
- * -- reusa la paleta real del proyecto (globals.css), no la que asumia el
- * mockup original (navy/naranja/teal no son tokens reales de RODAID).
+ * Sello del CIT -- reemplaza el badge generico "Certified" por un escudo
+ * propio (public/cit-badge-shield.png, provisto por Federico 2026-07-21).
+ * El anillo pasa a dorado cuando la bici tiene el badge 'oro' del Score de
+ * Confianza (ver score-confianza.service.ts) -- el color del anillo reusa la
+ * paleta real del proyecto (globals.css), aunque el arte del escudo en si
+ * es una imagen rasterizada, no puede recolorearse dinamicamente como el
+ * SVG hexagonal que reemplazo.
  */
 function HexSeal({ completo, oro }: { completo: boolean; oro: boolean }) {
-  const ringClass = oro ? 'stroke-amber-400' : 'stroke-lime'
+  const ringClass = oro ? 'ring-amber-400' : 'ring-lime'
   return (
     <div
       className="relative size-11 shrink-0 drop-shadow-md"
       title={citTitulo(completo, oro)}
     >
-      <svg viewBox="0 0 100 100" className="h-full w-full">
-        <polygon
-          points="50,3 93,26 93,74 50,97 7,74 7,26"
-          className={`fill-ink ${ringClass}`}
-          strokeWidth="5"
+      <div className={`h-full w-full overflow-hidden rounded-full bg-white ring-2 ${ringClass}`}>
+        <Image
+          src="/cit-badge-shield.png"
+          alt=""
+          width={88}
+          height={88}
+          className="h-full w-full object-cover"
         />
-        <path
-          d="M32 52 L44 64 L70 36"
-          fill="none"
-          className={ringClass}
-          strokeWidth="7"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
+      </div>
       <span className="absolute -bottom-1.5 left-1/2 flex -translate-x-1/2 items-center justify-center whitespace-nowrap rounded-full bg-ink px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-paper">
         {completo ? 'CIT+' : 'CIT'}
       </span>
