@@ -35,6 +35,10 @@ export interface PublicacionRow {
   numero_serie?: string | null
   rodado?: string | null
   talle_cuadro?: string | null
+  /** Solo presentes cuando la query hace JOIN contra cits/bicicletas para
+   * calcular el Score de Confianza (ver app/api/v1/marketplace/route.ts). */
+  cit_metadata_json?: Record<string, unknown> | null
+  bicicleta_creado_en?: string | null
 }
 
 export class ApiError extends Error {
