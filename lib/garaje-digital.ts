@@ -116,6 +116,7 @@ export interface MiPublicacion {
   id: string
   slug: string
   titulo: string
+  descripcion: string
   estado: string
   precioARS: number
   precioUSD: number | null
@@ -328,6 +329,27 @@ export async function confirmarEntregaCitCompleto(transaccionId: string): Promis
 export async function retirarPublicacion(publicacionId: string): Promise<void> {
   const res = await authedFetch(`/api/v1/marketplace/${publicacionId}/retirar`, {
     method: 'POST',
+  })
+  if (!res.ok) {
+    const detalle = (await res.json().catch(() => null)) as { message?: string } | null
+    throw new Error(detalle?.message ?? `HTTP ${res.status}`)
+  }
+}
+
+/**
+ * El vendedor edita el contenido (titulo/descripcion/precio) de su propia
+ * publicacion -- sin fotos por ahora (alcance confirmado con Federico). El
+ * backend rechaza con 409 PUBLICACION_NO_EDITABLE en el mismo criterio de
+ * estados que retirarPublicacion(); ese mensaje ya viene listo para mostrar.
+ */
+export async function editarPublicacion(
+  publicacionId: string,
+  input: { titulo: string; descripcion: string; precioARS: number; precioUSD: number | null }
+): Promise<void> {
+  const res = await authedFetch(`/api/v1/marketplace/${publicacionId}/editar`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
   })
   if (!res.ok) {
     const detalle = (await res.json().catch(() => null)) as { message?: string } | null

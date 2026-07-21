@@ -10,21 +10,36 @@ import {
   Loader2,
   MessageCircle,
   Package,
+  Pencil,
   Store,
   Tag,
   Trash2,
   Truck,
+  X,
 } from 'lucide-react'
-import { useMisPublicaciones, retirarPublicacion, type MiPublicacion } from '@/lib/garaje-digital'
+import {
+  useMisPublicaciones,
+  retirarPublicacion,
+  editarPublicacion,
+  type MiPublicacion,
+} from '@/lib/garaje-digital'
 import { generarRemito, descargarRemitoPdf } from '@/lib/remitos'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 /**
- * Estados desde los que el vendedor puede retirar su propia publicacion --
- * espejo client-side de ESTADOS_PUBLICACION_RETIRABLES en escrow.service.ts.
- * El backend es la fuente de verdad real (vuelve a validar bajo lock); esto
- * solo decide si mostrar el boton.
+ * Estados sin ninguna operacion de escrow en curso -- espejo client-side de
+ * ESTADOS_PUBLICACION_SIN_OPERACION_VIVA en escrow.service.ts. Gatea tanto
+ * "Retirar" como "Editar" (mismo criterio, confirmado con Federico: sin
+ * comprador comprometido, no tiene sentido ninguna de las dos acciones). El
+ * backend es la fuente de verdad real (vuelve a validar bajo lock); esto
+ * solo decide si mostrar los botones.
  */
-const ESTADOS_RETIRABLES = new Set([
+const ESTADOS_SIN_OPERACION_VIVA = new Set([
   'ACTIVA',
   'PUBLICADO_PENDIENTE_CERTIFICACION',
   'PUBLICADO_CERTIFICADO',
@@ -251,29 +266,173 @@ function PublicacionItem({ pub }: { pub: MiPublicacion }) {
             )}
           </div>
         )}
-        {ESTADOS_RETIRABLES.has(pub.estado) && (
+        {ESTADOS_SIN_OPERACION_VIVA.has(pub.estado) && (
           <RetirarPublicacionAccion pub={pub} />
         )}
       </div>
 
-      <Link
-        // FIX (reportado en vivo 2026-07-18): la ruta real es /marketplace/[id]
-        // (ver app/api/v1/marketplace/[id]/route.ts, WHERE mp.id = $1) -- pasar
-        // el slug producia "invalid input syntax for type uuid" en Postgres,
-        // que jsonError() convertia en un 500 generico ("Algo salió mal"). Mismo
-        // patron ya correcto en listing-card.tsx/mis-compras.tsx (usan .id).
-        href={`/marketplace/${pub.id}`}
-        className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-ink/15 bg-white px-3.5 py-2 text-xs font-semibold text-ink transition-colors hover:border-ink/40"
-      >
-        Ver publicación
-      </Link>
+      <div className="flex shrink-0 flex-col items-stretch gap-2">
+        {ESTADOS_SIN_OPERACION_VIVA.has(pub.estado) && (
+          <EditarPublicacionAccion pub={pub} />
+        )}
+        <Link
+          // FIX (reportado en vivo 2026-07-18): la ruta real es /marketplace/[id]
+          // (ver app/api/v1/marketplace/[id]/route.ts, WHERE mp.id = $1) -- pasar
+          // el slug producia "invalid input syntax for type uuid" en Postgres,
+          // que jsonError() convertia en un 500 generico ("Algo salió mal"). Mismo
+          // patron ya correcto en listing-card.tsx/mis-compras.tsx (usan .id).
+          href={`/marketplace/${pub.id}`}
+          className="inline-flex items-center justify-center gap-1.5 rounded-full border border-ink/15 bg-white px-3.5 py-2 text-xs font-semibold text-ink transition-colors hover:border-ink/40"
+        >
+          Ver publicación
+        </Link>
+      </div>
     </li>
   )
 }
 
 /**
+ * El vendedor edita titulo/descripcion/precio de su propia publicacion --
+ * sin fotos por ahora (alcance confirmado con Federico). Mismo gate de
+ * estados que RetirarPublicacionAccion (ESTADOS_SIN_OPERACION_VIVA -- el
+ * backend vuelve a validar esto bajo lock, ver editarPublicacion() /
+ * ESTADOS_PUBLICACION_SIN_OPERACION_VIVA en escrow.service.ts).
+ */
+function EditarPublicacionAccion({ pub }: { pub: MiPublicacion }) {
+  const [abierto, setAbierto] = useState(false)
+  const [guardando, setGuardando] = useState(false)
+  const [titulo, setTitulo] = useState(pub.titulo)
+  const [descripcion, setDescripcion] = useState(pub.descripcion ?? '')
+  const [precioARS, setPrecioARS] = useState(String(pub.precioARS))
+  const [precioUSD, setPrecioUSD] = useState(pub.precioUSD != null ? String(pub.precioUSD) : '')
+
+  const abrir = () => {
+    setTitulo(pub.titulo)
+    setDescripcion(pub.descripcion ?? '')
+    setPrecioARS(String(pub.precioARS))
+    setPrecioUSD(pub.precioUSD != null ? String(pub.precioUSD) : '')
+    setAbierto(true)
+  }
+
+  const guardar = async () => {
+    if (guardando) return
+    const precioARSNum = Number(precioARS)
+    if (!Number.isFinite(precioARSNum) || precioARSNum <= 0) {
+      toast.error('Precio inválido', { description: 'El precio en ARS tiene que ser un número mayor a cero.' })
+      return
+    }
+    const precioUSDNum = precioUSD.trim() ? Number(precioUSD) : null
+    if (precioUSDNum !== null && (!Number.isFinite(precioUSDNum) || precioUSDNum <= 0)) {
+      toast.error('Precio en USD inválido', { description: 'Dejalo vacío o cargá un número mayor a cero.' })
+      return
+    }
+    setGuardando(true)
+    try {
+      await editarPublicacion(pub.id, {
+        titulo: titulo.trim(),
+        descripcion: descripcion.trim(),
+        precioARS: precioARSNum,
+        precioUSD: precioUSDNum,
+      })
+      await mutate('/api/marketplace/mis-publicaciones')
+      toast.success('Publicación actualizada')
+      setAbierto(false)
+    } catch (err) {
+      toast.error('No pudimos guardar los cambios', { description: (err as Error).message })
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={abrir}
+        className="inline-flex items-center justify-center gap-1.5 rounded-full border border-ink/15 bg-white px-3.5 py-2 text-xs font-semibold text-ink transition-colors hover:border-ink/40"
+      >
+        <Pencil className="size-3.5" />
+        Editar
+      </button>
+      <Dialog open={abierto} onOpenChange={setAbierto}>
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Editar publicación</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-semibold text-slate-warm">Título</label>
+              <input
+                type="text"
+                value={titulo}
+                onChange={(e) => setTitulo(e.target.value)}
+                maxLength={120}
+                className="mt-1 w-full rounded-xl border border-ink/15 px-3 py-2 text-sm outline-none focus:border-ink/40"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-warm">Descripción</label>
+              <textarea
+                value={descripcion}
+                onChange={(e) => setDescripcion(e.target.value)}
+                maxLength={5000}
+                rows={4}
+                className="mt-1 w-full resize-none rounded-xl border border-ink/15 px-3 py-2 text-sm outline-none focus:border-ink/40"
+              />
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="text-xs font-semibold text-slate-warm">Precio (ARS)</label>
+                <input
+                  type="number"
+                  value={precioARS}
+                  onChange={(e) => setPrecioARS(e.target.value)}
+                  min={1}
+                  className="mt-1 w-full rounded-xl border border-ink/15 px-3 py-2 text-sm outline-none focus:border-ink/40"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="text-xs font-semibold text-slate-warm">Precio (USD, opcional)</label>
+                <input
+                  type="number"
+                  value={precioUSD}
+                  onChange={(e) => setPrecioUSD(e.target.value)}
+                  min={1}
+                  placeholder="Sin especificar"
+                  className="mt-1 w-full rounded-xl border border-ink/15 px-3 py-2 text-sm outline-none focus:border-ink/40"
+                />
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setAbierto(false)}
+              disabled={guardando}
+              className="inline-flex items-center gap-1.5 rounded-full border border-ink/15 px-4 py-2 text-xs font-semibold text-ink disabled:opacity-50"
+            >
+              <X className="size-3.5" />
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={guardar}
+              disabled={guardando}
+              className="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-xs font-semibold text-paper disabled:opacity-50"
+            >
+              {guardando ? <Loader2 className="size-3.5 animate-spin" /> : <Pencil className="size-3.5" />}
+              Guardar cambios
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
+/**
  * El vendedor retira su propia publicacion. Solo se renderiza cuando
- * ESTADOS_RETIRABLES incluye pub.estado -- sin comprador comprometido con
+ * ESTADOS_SIN_OPERACION_VIVA incluye pub.estado -- sin comprador comprometido con
  * plata en juego (el backend vuelve a validar esto bajo lock, ver
  * retirarPublicacion() en escrow.service.ts). Mismo patron de confirmacion
  * en dos pasos que RemitoEstadoCompra en mis-compras.tsx.
