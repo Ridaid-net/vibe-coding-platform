@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   Siren,
   Store,
+  Wrench,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -37,12 +38,15 @@ import {
   descargarCertificadoActivo,
   ESTADO_VISUAL,
   etiquetaActivo,
+  listarTalleresAprobados,
+  reservarCit,
   revocarCompartirBici,
   useActivosGaraje,
   useEstadoCompartir,
   useGemeloDigital,
   useMiPerfil,
   type ActivoGaraje,
+  type TallerAprobado,
 } from '@/lib/garaje-digital'
 import { AgregarBicicletaForm } from './garaje'
 import { BiciSaludBot } from './BiciSaludBot'
@@ -81,6 +85,7 @@ export function GarajeDigital() {
   const [verificar, setVerificar] = useState<ActivoGaraje | null>(null)
   const [denunciar, setDenunciar] = useState<ActivoGaraje | null>(null)
   const [modoPanico, setModoPanico] = useState<ActivoGaraje | null>(null)
+  const [reservar, setReservar] = useState<ActivoGaraje | null>(null)
   const [agregando, setAgregando] = useState(false)
 
   const activos = data?.activos ?? null
@@ -260,6 +265,7 @@ export function GarajeDigital() {
                 puedeDenunciar={true}
                 onDenunciar={() => setDenunciar(a)}
                 onModoPanico={() => setModoPanico(a)}
+                onReservarCit={() => setReservar(a)}
               />
             ))}
           </ul>
@@ -289,6 +295,12 @@ export function GarajeDigital() {
           setDenunciar(modoPanico)
           setModoPanico(null)
         }}
+      />
+
+      <ReservarCitModal
+        bici={reservar}
+        open={reservar !== null}
+        onOpenChange={(o) => !o && setReservar(null)}
       />
 
       <p className="mt-10 flex items-center justify-center gap-2.5 text-center text-[11px] font-bold uppercase tracking-[0.16em] text-[#2BBCB8]">
@@ -456,6 +468,149 @@ function ModoPanicoStepUp({
   )
 }
 
+/**
+ * "Reservar CIT" — reserva simple, sin horario y sin pago: el ciclista elige
+ * un Taller Aliado desde su Garaje y el taller lo ve en su panel para
+ * contactarlo por fuera del sistema. El tipo de CIT (Express/Completo) se
+ * define recien en esa conversacion, no aca.
+ */
+function ReservarCitModal({
+  bici,
+  open,
+  onOpenChange,
+}: {
+  bici: ActivoGaraje | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const [talleres, setTalleres] = useState<TallerAprobado[] | null>(null)
+  const [aliadoId, setAliadoId] = useState<string | null>(null)
+  const [nota, setNota] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [enviado, setEnviado] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open) {
+      setTalleres(null)
+      setAliadoId(null)
+      setNota('')
+      setEnviando(false)
+      setEnviado(false)
+      setError(null)
+      return
+    }
+    listarTalleresAprobados()
+      .then(setTalleres)
+      .catch(() => setError('No pudimos cargar la lista de talleres. Probá de nuevo.'))
+  }, [open])
+
+  const enviar = async () => {
+    if (!bici || !aliadoId || enviando) return
+    setEnviando(true)
+    setError(null)
+    try {
+      await reservarCit(bici.id, aliadoId, nota)
+      setEnviado(true)
+    } catch (err) {
+      setError((err as Error).message || 'No pudimos enviar la reserva. Probá de nuevo.')
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  if (!bici) return null
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="rounded-2xl border border-ink/10 bg-paper">
+        <DialogHeader>
+          <span className="flex size-12 items-center justify-center rounded-xl bg-lime/20 text-ink">
+            <Wrench className="size-6" />
+          </span>
+          <DialogTitle className="font-display text-ink">Reservar CIT</DialogTitle>
+          <DialogDescription className="text-slate-warm">
+            Elegí un Taller Aliado para certificar {etiquetaActivo(bici)}. Sin
+            horario ni pago: el taller te contacta para coordinar.
+          </DialogDescription>
+        </DialogHeader>
+
+        {enviado ? (
+          <div className="flex flex-col items-center gap-2 py-6 text-center">
+            <CheckCircle2 className="size-8 text-lime-deep" />
+            <p className="text-sm font-semibold text-ink">¡Listo! Le avisamos al taller.</p>
+            <p className="text-xs text-slate-warm">
+              Te va a contactar para coordinar la certificación.
+            </p>
+          </div>
+        ) : talleres === null ? (
+          <div className="flex items-center justify-center gap-2 py-6 text-sm text-slate-warm">
+            <Loader2 className="size-4 animate-spin" />
+            Cargando talleres…
+          </div>
+        ) : talleres.length === 0 ? (
+          <p className="py-4 text-sm text-slate-warm">
+            Todavía no hay talleres aliados aprobados disponibles.
+          </p>
+        ) : (
+          <>
+            <div className="max-h-64 space-y-2 overflow-y-auto">
+              {talleres.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setAliadoId(t.id)}
+                  className={`flex w-full items-center gap-3 rounded-2xl border px-3.5 py-3 text-left transition-colors ${
+                    aliadoId === t.id
+                      ? 'border-ink bg-ink/5'
+                      : 'border-ink/12 bg-white hover:border-ink/30'
+                  }`}
+                >
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-lime/20 text-ink">
+                    <Store className="size-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-ink">{t.nombre}</p>
+                    <p className="truncate text-xs text-slate-warm">
+                      {[t.tipo, t.ciudad].filter(Boolean).join(' · ')}
+                    </p>
+                  </span>
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={nota}
+              onChange={(e) => setNota(e.target.value)}
+              placeholder="Nota opcional para el taller (ej. horarios en los que podés ir)"
+              rows={2}
+              className="w-full resize-none rounded-xl border border-ink/15 bg-white px-3.5 py-2.5 text-sm text-ink outline-none focus:border-ink/40"
+            />
+            {error && <p className="text-xs text-clay">{error}</p>}
+            <button
+              type="button"
+              onClick={enviar}
+              disabled={!aliadoId || enviando}
+              className="mt-1 inline-flex w-full items-center justify-center gap-2 rounded-full bg-ink px-5 py-3 text-sm font-semibold text-paper transition-colors hover:bg-ink-soft disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {enviando ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Enviando…
+                </>
+              ) : (
+                <>
+                  <Wrench className="size-4" />
+                  Reservar
+                </>
+              )}
+            </button>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ── Tarjeta de activo ──────────────────────────────────────────────────────
 
 function ActivoCard({
@@ -464,12 +619,14 @@ function ActivoCard({
   puedeDenunciar,
   onDenunciar,
   onModoPanico,
+  onReservarCit,
 }: {
   activo: ActivoGaraje
   onVerificar: () => void
   puedeDenunciar: boolean
   onDenunciar: () => void
   onModoPanico: () => void
+  onReservarCit: () => void
 }) {
   const visual = ESTADO_VISUAL[activo.estado]
   const specs = [
@@ -599,6 +756,18 @@ function ActivoCard({
           >
             <Fingerprint className="size-3.5" />
             {activo.estado === 'vencido' ? 'Renovar CIT' : 'Verificar identidad'}
+          </button>
+        )}
+
+        {(activo.estado === 'sin_verificar' ||
+          activo.estado === 'vencido' ||
+          activo.estado === 'rechazado') && (
+          <button
+            onClick={onReservarCit}
+            className="inline-flex items-center gap-1.5 rounded-full border border-ink/15 bg-white px-3.5 py-2 text-xs font-semibold text-ink transition-colors hover:border-ink/40"
+          >
+            <Wrench className="size-3.5" />
+            Reservar CIT
           </button>
         )}
 

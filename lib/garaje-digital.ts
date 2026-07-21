@@ -357,6 +357,44 @@ export async function editarPublicacion(
   }
 }
 
+// ── Reserva simple de CIT (elegir un Taller Aliado desde el Garaje) ─────────
+
+export interface TallerAprobado {
+  id: string
+  nombre: string
+  tipo: string
+  ciudad: string | null
+}
+
+/** Listado publico de Aliados aprobados (sin geolocalizacion, MVP). Sin auth. */
+export async function listarTalleresAprobados(): Promise<TallerAprobado[]> {
+  const res = await fetch('/api/v1/aliados/publicos')
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const data = (await res.json()) as { talleres: TallerAprobado[] }
+  return data.talleres
+}
+
+/**
+ * Reserva simple: sin horario, sin pago. El taller elegido la ve en su panel
+ * y contacta por fuera del sistema para coordinar (ahi se define el tipo de
+ * CIT, Express o Completo).
+ */
+export async function reservarCit(
+  bicicletaId: string,
+  aliadoId: string,
+  nota?: string
+): Promise<void> {
+  const res = await authedFetch('/api/v1/garaje/reservar-cit', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ bicicletaId, aliadoId, nota: nota || undefined }),
+  })
+  if (!res.ok) {
+    const detalle = (await res.json().catch(() => null)) as { message?: string } | null
+    throw new Error(detalle?.message ?? `HTTP ${res.status}`)
+  }
+}
+
 // ── Presentacion del estado del activo ───────────────────────────────────────
 
 export interface EstadoVisual {
