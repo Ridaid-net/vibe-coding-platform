@@ -22,7 +22,7 @@ const FILTROS = [
  * solicitudes de talleres/tiendas. Al aprobar, la cuenta dueña recibe el rol
  * 'aliado' y puede inspeccionar sus bicis vinculadas.
  */
-export function AliadosAdmin() {
+export function AliadosAdmin({ puedeAccionar = true }: { puedeAccionar?: boolean } = {}) {
   const [filtro, setFiltro] = useState('pendiente')
   const [aliados, setAliados] = useState<AliadoPublico[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -143,7 +143,7 @@ export function AliadosAdmin() {
                   </p>
                 </div>
                 <EstadoAliado estado={a.estado} />
-                {a.estado === 'pendiente' && (
+                {a.estado === 'pendiente' && puedeAccionar && (
                   <div className="flex gap-2">
                     <button
                       onClick={() => resolver(a.id, 'aprobar')}
