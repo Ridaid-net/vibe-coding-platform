@@ -141,6 +141,25 @@ export interface PublicarSwipeResultado {
   publicacion: { id: string; slug: string }
 }
 
+/**
+ * `bicicletas.foto_url` se guarda como ruta relativa (`/api/v1/marketplace/
+ * fotos/...` -- mismo formato ya documentado en los endpoints de
+ * certificado, `absolutizarUrl()` ahi). El schema de `POST
+ * /api/v1/marketplace/publicar` exige `fotosUrls` como URLs absolutas
+ * (`z.string().url()`) -- el formulario normal nunca choca con esto porque
+ * sube el archivo en el mismo request y la URL absoluta la resuelve el
+ * servidor recien despues de la validacion. Swipe to Sell reenvia la URL YA
+ * guardada (relativa) como si fuera nueva, asi que hay que absolutizarla
+ * client-side antes de mandarla -- mismo criterio que `absolutizarUrl()`,
+ * adaptado a que aca no hay `Request` del servidor, solo `window.location`.
+ */
+function absolutizarFotoUrl(url: string | null): string | null {
+  if (!url) return null
+  if (/^https?:\/\//i.test(url)) return url
+  if (typeof window === 'undefined') return null
+  return `${window.location.origin}${url.startsWith('/') ? '' : '/'}${url}`
+}
+
 /** Publica la bici con los datos generados/editados. Reusa el endpoint normal
  * de publicación (POST /api/v1/marketplace/publicar) -- Swipe to Sell no
  * duplica esa lógica de negocio (CIT activo, datos bancarios, duplicados),
@@ -152,6 +171,7 @@ export async function publicarPorSwipe(input: {
   precioARS: number
   fotoUrl: string | null
 }): Promise<PublicarSwipeResultado> {
+  const fotoUrlAbsoluta = absolutizarFotoUrl(input.fotoUrl)
   return leer(
     await authedFetch('/api/v1/marketplace/publicar', {
       method: 'POST',
@@ -161,7 +181,7 @@ export async function publicarPorSwipe(input: {
         titulo: input.titulo,
         descripcion: input.descripcion,
         precioARS: input.precioARS,
-        fotosUrls: input.fotoUrl ? [input.fotoUrl] : [],
+        fotosUrls: fotoUrlAbsoluta ? [fotoUrlAbsoluta] : [],
       }),
     })
   )
