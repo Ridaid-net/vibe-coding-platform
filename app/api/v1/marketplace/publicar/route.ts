@@ -243,13 +243,24 @@ export async function POST(req: Request) {
       )
     }
 
-    // 4. Una sola publicacion activa/pausada por CIT (respaldado por indice unico).
+    // 4. Una sola publicacion viva por CIT -- respaldado por el indice unico
+    //    real idx_mp_publicaciones_unica_activa_por_cit, que cubre los 6
+    //    estados vivos (reindexado en 20260708000004 para CIT Completo).
+    //    Este pre-chequeo tenia el MISMO gap que el bug del slug (2026-07-21):
+    //    solo miraba ACTIVA/PAUSADA, asi que una bici con una publicacion viva
+    //    en PUBLICADO_*/RESERVADO/EJECUTANDO_LOGISTICA pasaba este chequeo sin
+    //    error y chocaba recien en el INSERT contra el indice real -- 23505
+    //    crudo, jsonError() lo convertia en 500 generico en vez de este 409
+    //    limpio.
     const duplicateResult = await client.query(
       `
         SELECT 1
         FROM marketplace_publicaciones
         WHERE cit_id = $1
-          AND estado IN ('ACTIVA', 'PAUSADA')
+          AND estado IN (
+            'ACTIVA', 'PAUSADA', 'PUBLICADO_PENDIENTE_CERTIFICACION',
+            'PUBLICADO_CERTIFICADO', 'RESERVADO', 'EJECUTANDO_LOGISTICA'
+          )
         LIMIT 1
       `,
       [cit.id]
@@ -258,7 +269,7 @@ export async function POST(req: Request) {
       throw new ApiError(
         409,
         'DUPLICATE_LISTING',
-        'Ya existe una publicacion activa o pausada para esta bicicleta.'
+        'Ya existe una publicacion activa para esta bicicleta.'
       )
     }
 

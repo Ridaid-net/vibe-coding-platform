@@ -61,11 +61,19 @@ export async function GET(req: Request) {
             c.estado = 'activo' AND (c.fecha_vencimiento IS NULL OR c.fecha_vencimiento > NOW()),
             FALSE
           ) AS cit_activo,
+          -- Mismos 6 estados "vivos" que idx_mp_publicaciones_unica_activa_por_cit
+          -- (indice real de la DB, reindexado en 20260708000004 para cubrir
+          -- CIT Completo). Antes solo ACTIVA/PAUSADA -- una bici publicada via
+          -- CIT Completo bloqueaba el formulario de publicar como si NO
+          -- tuviera identidad verificada con publicacion activa.
           EXISTS (
             SELECT 1
             FROM marketplace_publicaciones mp
             WHERE mp.bicicleta_id = b.id
-              AND mp.estado IN ('ACTIVA', 'PAUSADA')
+              AND mp.estado IN (
+                'ACTIVA', 'PAUSADA', 'PUBLICADO_PENDIENTE_CERTIFICACION',
+                'PUBLICADO_CERTIFICADO', 'RESERVADO', 'EJECUTANDO_LOGISTICA'
+              )
           ) AS tiene_publicacion_activa
         FROM bicicletas b
         LEFT JOIN LATERAL (
