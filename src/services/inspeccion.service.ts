@@ -67,7 +67,7 @@ export interface InspectorContexto {
   nombre: string
   walletAddress: string | null
   /** Aliado aprobado del usuario, si su rol es 'aliado'. */
-  aliado: { id: string; nombre: string } | null
+  aliado: { id: string; nombre: string; tipo: string } | null
   modoVista: ModoVistaAliado
 }
 
@@ -136,15 +136,16 @@ function buildActaPayload(opts: {
 interface AliadoRow {
   id: string
   nombre: string
+  tipo: string
 }
 
 /** Aliado APROBADO cuya cuenta duena es `usuarioId` (o null si no tiene). */
 export async function resolverAliadoDeUsuario(
   usuarioId: string
-): Promise<{ id: string; nombre: string } | null> {
+): Promise<{ id: string; nombre: string; tipo: string } | null> {
   const res = await getPool().query<AliadoRow>(
     `
-      SELECT id, nombre FROM aliados
+      SELECT id, nombre, tipo FROM aliados
       WHERE usuario_id = $1 AND estado = 'aprobado'
       ORDER BY resuelto_en DESC NULLS LAST, created_at DESC
       LIMIT 1
@@ -157,7 +158,7 @@ export async function resolverAliadoDeUsuario(
 export type ModoVistaAliado = 'propio' | 'ver_como' | 'vista_previa'
 
 export interface ResolucionAliadoLectura {
-  aliado: { id: string; nombre: string } | null
+  aliado: { id: string; nombre: string; tipo: string } | null
   modo: ModoVistaAliado
 }
 
@@ -194,7 +195,7 @@ export async function resolverAliadoParaLectura(
   }
   if (user.rol === 'admin' && aliadoIdSolicitado) {
     const res = await getPool().query<AliadoRow>(
-      `SELECT id, nombre FROM aliados WHERE id = $1 AND estado = 'aprobado' LIMIT 1`,
+      `SELECT id, nombre, tipo FROM aliados WHERE id = $1 AND estado = 'aprobado' LIMIT 1`,
       [aliadoIdSolicitado]
     )
     return { aliado: res.rows[0] ?? null, modo: 'ver_como' }
@@ -307,13 +308,32 @@ export async function puedeInspeccionar(
 /**
  * Resuelve el alcance de inspeccion para una accion sobre un CIT: carga la bici
  * del CIT, valida que el inspector pueda inspeccionarla y devuelve el aliado_id
- * a registrar en el acta. Lanza 404 si el CIT no existe y 403 si esta fuera de
- * alcance (un aliado sobre una bici que no es suya).
+ * a registrar en el acta. Lanza 404 si el CIT no existe, 403 TIPO_ALIADO_NO_
+ * HABILITADO si el aliado no es de tipo 'taller' (decision de producto
+ * confirmada con Federico 2026-07-21: solo un taller tiene capacidad mecanica
+ * real para certificar una inspeccion fisica de 20 puntos -- una 'tienda'
+ * puede seguir siendo aliado, aparecer en el directorio y vender servicios,
+ * pero no puede sellar), y 403 FUERA_DE_ALCANCE si esta fuera de alcance (un
+ * aliado taller sobre una bici que no es suya).
+ *
+ * Deliberadamente NO se mete el chequeo de tipo dentro de puedeInspeccionar():
+ * esa funcion tambien la usan la busqueda del panel (aviso suave, no bloqueo
+ * duro) y verificarActaPorId() (ver un acta YA firmada, una accion de lectura
+ * distinta a sellar una nueva) -- el gate de tipo aplica solo a las dos
+ * acciones que realmente firman/sellan (aprobarInspeccionFisica() /
+ * reportarDiscrepancia()), ambas via este mismo punto de entrada.
  */
 export async function autorizarCitParaInspeccion(
   ctx: InspectorContexto,
   citId: string
 ): Promise<{ aliadoId: string | null }> {
+  if (ctx.rol === 'aliado' && ctx.aliado && ctx.aliado.tipo !== 'taller') {
+    throw new ApiError(
+      403,
+      'TIPO_ALIADO_NO_HABILITADO',
+      'Tu perfil de aliado no tiene capacidad mecánica registrada (tipo taller) -- no podés certificar inspecciones físicas.'
+    )
+  }
   const res = await getPool().query<{ bicicleta_id: string }>(
     `SELECT bicicleta_id FROM cits WHERE id = $1 LIMIT 1`,
     [citId]
