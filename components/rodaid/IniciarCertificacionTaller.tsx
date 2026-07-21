@@ -163,6 +163,16 @@ function IniciarCertificacionModal({
             >
               Ver link de pago ({resultado.montoARS.toLocaleString('es-AR')} ARS)
             </a>
+            <a
+              href={`https://wa.me/?text=${encodeURIComponent(
+                `¡Hola ${clienteNombre}! Este es el link para pagar tu CIT Express en RODAID (${resultado.montoARS.toLocaleString('es-AR')} ARS): ${resultado.initPoint}`
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#25D366] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#25D366]/80"
+            >
+              Compartir por WhatsApp
+            </a>
           </div>
         ) : (
           <>
