@@ -786,6 +786,16 @@ Bug reportado en producción: un vendedor "retira" su publicación (`retirarPubl
 
 **Probado de punta a punta por Federico en el deploy preview, con la Raleigh Mojave real** (`CIT-II1124-530D29`) — retirada y republicada con éxito tras ambos fixes. Confirmado también vía API: `estado: "ACTIVA"`, mismo slug reutilizado sin chocar (`raleigh-mojave-5-0-2022-6eab28`), `fotosUrls` con URL ya absoluta. PR #143.
 
+### "Editar publicación" (Mis publicaciones, Garaje Digital) — construido 2026-07-21
+
+El vendedor puede editar título/descripción/precio de su propia publicación desde `mis-publicaciones.tsx` — alcance confirmado con Federico: sin fotos por ahora (queda para otra pasada). Mismos estados que "Retirar" (sin comprador comprometido con plata en juego): `ESTADOS_PUBLICACION_RETIRABLES` se renombró a `ESTADOS_PUBLICACION_SIN_OPERACION_VIVA` y se exportó de `escrow.service.ts` para que el endpoint nuevo lo reuse en vez de duplicar la lista.
+
+`POST /api/v1/marketplace/[id]/editar` — mismo patrón que los endpoints hermanos (`retirar`/`comprar`/`reservar`): lockea la fila `FOR UPDATE`, valida ownership + estado, `UPDATE` de `titulo`/`descripcion`/`precio_ars`/`precio_usd`. No toca `bicicletas`/`cits` ni el `slug` (se deriva de marca/modelo/año/bicicleta_id, nunca del título de la publicación, así que editar el título no lo afecta).
+
+De paso, se encontró y corrigió un gap chico: `MiPublicacion` (tanto en `garaje.service.ts` como en su espejo `lib/garaje-digital.ts`) no traía `descripcion` — faltaba en el tipo y en la query de `obtenerMisPublicaciones()`. Necesario para poder precargar el formulario de edición con el valor actual.
+
+Mergeado por Federico directamente (PR #144, merge commit `3cab87e`). PR #144.
+
 ### Mobile
 
 `android/` and `ios/` are Capacitor shells (`capacitor.config.ts`, appId `net.rodaid.app`). `server.url` points at `https://rodaid.net` — the native apps are thin WebView wrappers loading the live deployment, not bundlers of a local static `webDir` build.
