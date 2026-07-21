@@ -1,4 +1,5 @@
 import { ApiError, getPool, type DbClient } from '@/lib/marketplace'
+import { enviarEmail } from '@/lib/email'
 
 /**
  * RODAID — Hito 11: Gestion de Aliados (talleres / tiendas).
@@ -453,4 +454,179 @@ export async function buscarTalleresCercanos(
     tipo: r.tipo,
     distanciaMetros: Math.round(Number(r.distancia_metros)),
   }))
+}
+
+// ── Reserva simple de CIT (Garaje Digital -> Taller Aliado) ─────────────────
+
+export interface TallerAprobado {
+  id: string
+  nombre: string
+  tipo: string
+  ciudad: string | null
+}
+
+/** Listado publico de Aliados aprobados, sin geolocalizacion (MVP). */
+export async function listarTalleresAprobados(): Promise<TallerAprobado[]> {
+  const res = await getPool().query<{ id: string; nombre: string; tipo: string; ciudad: string | null }>(
+    `SELECT id, nombre, tipo, ciudad FROM aliados WHERE estado = 'aprobado' ORDER BY nombre ASC`
+  )
+  return res.rows.map((r: { id: string; nombre: string; tipo: string; ciudad: string | null }) => ({
+    id: r.id,
+    nombre: r.nombre,
+    tipo: r.tipo,
+    ciudad: r.ciudad,
+  }))
+}
+
+export interface SolicitudReserva {
+  id: string
+  bicicletaId: string
+  bicicletaMarca: string
+  bicicletaModelo: string
+  aliadoId: string
+  usuarioNombre: string | null
+  usuarioEmail: string
+  nota: string | null
+  estado: string
+  createdAt: string
+}
+
+/**
+ * Reserva simple: el ciclista elige un taller desde su Garaje Digital, sin
+ * horario ni pago -- el taller la ve en su panel y contacta por fuera del
+ * sistema (email/telefono, ya tiene el dato del ciclista). El tipo de CIT
+ * (Express/Completo) se define recien en esa conversacion, no aca.
+ */
+export async function crearSolicitudReserva(input: {
+  usuarioId: string
+  bicicletaId: string
+  aliadoId: string
+  nota?: string | null
+}): Promise<{ id: string }> {
+  const pool = getPool()
+
+  const bici = await pool.query<{ id: string; propietario_id: string }>(
+    `SELECT id, propietario_id FROM bicicletas WHERE id = $1 LIMIT 1`,
+    [input.bicicletaId]
+  )
+  if (!bici.rows[0]) {
+    throw new ApiError(404, 'BICICLETA_NOT_FOUND', 'La bicicleta indicada no existe.')
+  }
+  if (bici.rows[0].propietario_id !== input.usuarioId) {
+    throw new ApiError(403, 'NOT_OWNER', 'No sos el propietario de esta bicicleta.')
+  }
+
+  const aliado = await pool.query<{ id: string; nombre: string; email: string }>(
+    `SELECT id, nombre, email FROM aliados WHERE id = $1 AND estado = 'aprobado' LIMIT 1`,
+    [input.aliadoId]
+  )
+  if (!aliado.rows[0]) {
+    throw new ApiError(404, 'ALIADO_NOT_FOUND', 'El taller elegido no existe o no esta aprobado.')
+  }
+
+  const nota = input.nota?.trim() || null
+  const insert = await pool.query<{ id: string }>(
+    `
+      INSERT INTO solicitudes_reserva_taller (bicicleta_id, usuario_id, aliado_id, nota)
+      VALUES ($1, $2, $3, $4)
+      RETURNING id
+    `,
+    [input.bicicletaId, input.usuarioId, input.aliadoId, nota]
+  )
+
+  // Best-effort: no existe todavia ningun canal saliente hacia un aliado
+  // (mismo hallazgo que buscarTalleresCercanos(), arriba) mas alla de email.
+  // Un fallo de envio no debe tumbar la reserva ya guardada.
+  try {
+    await enviarEmail({
+      to: aliado.rows[0].email,
+      subject: 'RODAID — Nueva solicitud de reserva de CIT',
+      html: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;">
+        <h2>Nueva solicitud de reserva</h2>
+        <p>Un ciclista eligio a <strong>${aliado.rows[0].nombre}</strong> para certificar su bici en RODAID.</p>
+        ${nota ? `<p><strong>Nota:</strong> ${nota}</p>` : ''}
+        <p>Entra a tu <a href="https://rodaid.net/taller">Panel de Taller Aliado</a> para ver el contacto y coordinar.</p>
+      </div>`,
+    })
+  } catch (err) {
+    console.error('Error email solicitud de reserva:', err)
+  }
+
+  return { id: insert.rows[0].id }
+}
+
+/** Listado de solicitudes de reserva de un taller (panel /taller). */
+export async function listarSolicitudesReservaPorAliado(
+  aliadoId: string,
+  estado?: string
+): Promise<SolicitudReserva[]> {
+  const filtro = estado && ['pendiente', 'contactado', 'cerrada'].includes(estado) ? estado : null
+  const res = await getPool().query<{
+    id: string
+    bicicleta_id: string
+    marca: string
+    modelo: string
+    aliado_id: string
+    nombre: string | null
+    email: string
+    nota: string | null
+    estado: string
+    created_at: string
+  }>(
+    `
+      SELECT
+        s.id, s.bicicleta_id, b.marca, b.modelo, s.aliado_id,
+        u.datos_perfil->>'nombre' AS nombre, u.email, s.nota, s.estado, s.created_at
+      FROM solicitudes_reserva_taller s
+      JOIN bicicletas b ON b.id = s.bicicleta_id
+      JOIN usuarios u ON u.id = s.usuario_id
+      WHERE s.aliado_id = $1
+        AND ($2::solicitud_reserva_taller_estado IS NULL OR s.estado = $2::solicitud_reserva_taller_estado)
+      ORDER BY s.created_at DESC
+      LIMIT 100
+    `,
+    [aliadoId, filtro]
+  )
+  return res.rows.map((r: {
+    id: string
+    bicicleta_id: string
+    marca: string
+    modelo: string
+    aliado_id: string
+    nombre: string | null
+    email: string
+    nota: string | null
+    estado: string
+    created_at: string
+  }) => ({
+    id: r.id,
+    bicicletaId: r.bicicleta_id,
+    bicicletaMarca: r.marca,
+    bicicletaModelo: r.modelo,
+    aliadoId: r.aliado_id,
+    usuarioNombre: r.nombre,
+    usuarioEmail: r.email,
+    nota: r.nota,
+    estado: r.estado,
+    createdAt: r.created_at,
+  }))
+}
+
+/** El taller marca una solicitud como contactada (o cerrada). Ownership-scoped. */
+export async function marcarSolicitudReserva(
+  aliadoId: string,
+  solicitudId: string,
+  estado: 'contactado' | 'cerrada'
+): Promise<void> {
+  const res = await getPool().query(
+    `
+      UPDATE solicitudes_reserva_taller
+      SET estado = $3::solicitud_reserva_taller_estado, updated_at = NOW()
+      WHERE id = $1 AND aliado_id = $2
+    `,
+    [solicitudId, aliadoId, estado]
+  )
+  if (!res.rowCount) {
+    throw new ApiError(404, 'SOLICITUD_NOT_FOUND', 'La solicitud indicada no existe.')
+  }
 }
