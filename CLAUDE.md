@@ -753,6 +753,23 @@ El vendedor puede cancelar su propia publicación desde `mis-publicaciones.tsx`,
 
 **Probado de punta a punta en producción por Federico** (login real en el deploy preview del PR, no un mock): retiró la publicación real de la Raleigh Mojave (`CIT-II1124-530D29`, id `4db3acb3-e890-40e4-8645-10f2a55313fc`, el camino "permitido" — estaba en `ACTIVA` sin reserva). Confirmado con la API tras la acción: `estado: "CANCELADA"`. PR #139.
 
+### Tarjeta del Marketplace: sello hexagonal CIT + Score de Confianza — construido 2026-07-20
+
+Federico entregó `rodaid-marketplace-card.jsx` (archivo suelto en la raíz del repo, no versionado, un mockup autocontenido con datos de muestra) rediseñando la tarjeta de producto del Marketplace: un sello hexagonal ("HexSeal" — la tuerca hexagonal de un componente de bici reinterpretada como sello de token verificado) en vez del badge "Certified" genérico, más un `ScoreBadge` oro/bronce y chips de specs.
+
+**El propio comentario del mockup afirmaba que su paleta (navy `#0B1E3D`, naranja `#F0752A`, teal `#1E9E96`) "ya está definida en el proyecto" — confirmado que es falso.** Los tokens reales (`app/globals.css`) son `ink` (`#14160e`, casi negro, no navy), `paper` (`#f2efe4`), `lime` (`#c8f24e`), `clay` (`#d8542f`), `slate-warm` (`#6f7363`) — una paleta completamente distinta. El puerto a `components/rodaid/listing-card.tsx` (el componente real que renderiza la grilla en producción, vía `components/rodaid/marketplace.tsx` en el home) usa la paleta real, no la asumida por el mockup.
+
+**Auditoría de qué del mockup era dato real vs. inventado, antes de portar (mismo criterio que el resto de esta semana — no fabricar datos):**
+- Real y ya disponible en `GET /api/v1/marketplace` (`mapPublicacion()`, `lib/marketplace.ts`) pero sin usar en la tarjeta: `rodado` y `talleCuadro`. Reemplazan los chips inventados del mockup ("Shimano 105", "Carbono" — `grupo`/`material` no existen como columnas en `bicicletas`, confirmado contra el schema completo).
+- `departamento` (ubicación del vendedor) — no existe ese campo, y exponerlo en una tarjeta pública habría chocado directo con el criterio de privacidad-por-diseño ya establecido en el resto del proyecto (k-anonimato, recorte de coordenadas). Sacado.
+- `originalPrice`/cinta de descuento — sin mecanismo de "precio original vs. rebajado" en el pricing model real. Sacado.
+- Precio en USD como principal — el mockup lo mostraba así; la tarjeta real mantiene ARS como moneda principal (USD como referencia secundaria), la decisión ya tomada para el contexto económico argentino. No se invirtió.
+- **`ScoreBadge` (oro/bronce) — existía en el backend pero nunca se había conectado al Marketplace.** `calcularScoresConfianza()` (`score-confianza.service.ts`) tiene un comentario explícito desde su creación: *"para poder calcularse una sola vez por pantalla (Garaje, **marketplace**)"* — diseñado para esto, pero confirmado por grep que solo lo llamaban `garaje.service.ts` y `garaje-publico.service.ts`, nunca `app/api/v1/marketplace/route.ts`. Conectado en esta pasada: nuevo `LEFT JOIN cits` en la query de listado (para `metadata_json`/`created_at` de la bici), batcheado dentro del mismo `Promise.all` que ya corría las queries de facetas — nunca N+1.
+
+**Confirmado en el deploy preview con la Raleigh Mojave real** (`CIT-II1124-530D29`): la API devuelve `scoreConfianza: { total: 73, badge: "bronce", ... }`, la tarjeta renderiza el HexSeal (anillo lime, "CIT") y el badge "Confianza Bronce" correctamente, sin errores de consola. PR #141.
+
+**Nota de proceso, para la próxima vez que se renombre una rama no-default vía la API de GitHub:** renombrar `feat/marketplace-card-hexseal-score` → `claude/marketplace-card-design-vnbnye` (`POST /branches/{branch}/rename`) preservó el commit correctamente, pero **cerró automáticamente el PR ya abierto** contra el nombre viejo (a diferencia de renombrar la rama default de un repo, que sí migra los PRs abiertos automáticamente — esto NO aplica a una rama cualquiera). Hubo que abrir un PR nuevo (#141, reemplazando al #140 cerrado) contra el nombre ya renombrado. Ningún commit se perdió, solo el PR original quedó cerrado sin mergear.
+
 ### Mobile
 
 `android/` and `ios/` are Capacitor shells (`capacitor.config.ts`, appId `net.rodaid.app`). `server.url` points at `https://rodaid.net` — the native apps are thin WebView wrappers loading the live deployment, not bundlers of a local static `webDir` build.
