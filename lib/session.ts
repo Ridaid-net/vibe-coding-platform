@@ -217,6 +217,18 @@ export async function register(
 }
 
 /**
+ * Reclama una cuenta creada por un Taller Aliado ("Iniciar Certificación"):
+ * el cliente elige su propia contraseña con el link que le llegó por mail, y
+ * queda con la sesión ya iniciada, mismo criterio que `register()`.
+ */
+export async function reclamarCuenta(
+  token: string,
+  password: string
+): Promise<RodaidSession> {
+  return authenticate('/api/v1/auth/reclamar-cuenta', { token, password })
+}
+
+/**
  * Completa el ingreso con Mendoza por Mí (Hito 9). Tras el callback OIDC, el
  * servidor entrega un ticket de un solo uso; aca se canjea por la sesion real
  * (mismos tokens que el login local) y se persiste. La estructura de la sesion
