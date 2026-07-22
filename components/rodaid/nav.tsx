@@ -29,6 +29,10 @@ export function Nav() {
   const [menuOpen, setMenuOpen] = useState(false)
   const { user, loading } = useAuth()
   const isAdmin = user?.role === 'admin'
+  // Scoping de Nav para Taller Aliado (rol='aliado'): ve solo "Mi Taller",
+  // nada del resto del menu -- pedido explicito, no aplica a 'inspector'
+  // (comparte el link "Mi Taller" pero conserva el nav completo de siempre).
+  const isTallerAliado = user?.role === 'aliado'
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12)
@@ -42,13 +46,19 @@ export function Nav() {
       <div className="mx-auto flex h-20 max-w-7xl items-center gap-6 px-5 sm:px-8">
         <RodaidLogo className="text-ink" />
         <nav className="hidden flex-1 items-center justify-center gap-4 lg:flex">
-          {LINKS_SECCION.map((link) => (<a key={link.href} href={link.href} className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">{link.label}</a>))}
-          <span className="h-4 w-px bg-ink/15" />
-          {LINKS_APP.map((link) => (<Link key={link.href} href={link.href} className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">{link.label}</Link>))}
-          {isAdmin && (<Link href="/admin" className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">Administración</Link>)}
-          {isAdmin && (<Link href="/admin/noticias" className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">Noticias</Link>)}
-          {isAdmin && (<Link href="/admin/gov" className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">Panel Gov</Link>)}
-          {(user?.role === "aliado" || user?.role === "inspector") && (<Link href="/taller" className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">Mi Taller</Link>)}
+          {isTallerAliado ? (
+            <Link href="/taller" className="text-xs font-semibold text-white transition-colors px-3 py-1.5 rounded-full bg-[#1E9E96] hover:bg-[#1E9E96]/90">Mi Taller</Link>
+          ) : (
+            <>
+              {LINKS_SECCION.map((link) => (<a key={link.href} href={link.href} className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">{link.label}</a>))}
+              <span className="h-4 w-px bg-ink/15" />
+              {LINKS_APP.map((link) => (<Link key={link.href} href={link.href} className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">{link.label}</Link>))}
+              {isAdmin && (<Link href="/admin" className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">Administración</Link>)}
+              {isAdmin && (<Link href="/admin/noticias" className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">Noticias</Link>)}
+              {isAdmin && (<Link href="/admin/gov" className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">Panel Gov</Link>)}
+              {user?.role === "inspector" && (<Link href="/taller" className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">Mi Taller</Link>)}
+            </>
+          )}
         </nav>
         <div className="flex items-center gap-2">
           <Link href="/empezar" className="hidden rounded-full px-3 py-1.5 text-xs font-medium text-ink/70 transition-colors hover:text-ink sm:inline-flex border border-ink/15">Ingresar</Link>
@@ -62,9 +72,16 @@ export function Nav() {
       {menuOpen && (
         <div className="border-t border-ink/10 bg-paper/95 px-5 py-4 lg:hidden">
           <nav className="flex flex-col gap-3">
-            {LINKS_SECCION.map((link) => (<a key={link.href} href={link.href} onClick={() => setMenuOpen(false)} className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">{link.label}</a>))}
-            <hr className="border-ink/10" />
-            {LINKS_APP.map((link) => (<Link key={link.href} href={link.href} onClick={() => setMenuOpen(false)} className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">{link.label}</Link>))}
+            {isTallerAliado ? (
+              <Link href="/taller" onClick={() => setMenuOpen(false)} className="text-xs font-semibold text-white transition-colors px-3 py-1.5 rounded-full bg-[#1E9E96] hover:bg-[#1E9E96]/90 w-fit">Mi Taller</Link>
+            ) : (
+              <>
+                {LINKS_SECCION.map((link) => (<a key={link.href} href={link.href} onClick={() => setMenuOpen(false)} className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">{link.label}</a>))}
+                <hr className="border-ink/10" />
+                {LINKS_APP.map((link) => (<Link key={link.href} href={link.href} onClick={() => setMenuOpen(false)} className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">{link.label}</Link>))}
+                {user?.role === "inspector" && (<Link href="/taller" onClick={() => setMenuOpen(false)} className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">Mi Taller</Link>)}
+              </>
+            )}
             <hr className="border-ink/10" />
             <Link href="/empezar" onClick={() => setMenuOpen(false)} className="text-sm font-medium text-ink/70 transition-colors hover:text-ink">Ingresar</Link>
           </nav>
