@@ -17,6 +17,22 @@ export function StravaActividades() {
   const [conectado, setConectado] = useState(false)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
+  const [confirmandoDesconectar, setConfirmandoDesconectar] = useState(false)
+  const [desconectando, setDesconectando] = useState(false)
+
+  const desconectar = async () => {
+    setDesconectando(true)
+    try {
+      await authedFetch('/api/v1/auth/strava', { method: 'DELETE' })
+      setConectado(false)
+      setActividades([])
+      setConfirmandoDesconectar(false)
+    } catch {
+      setError('No pudimos desconectar tu cuenta de Strava. Probá de nuevo.')
+    } finally {
+      setDesconectando(false)
+    }
+  }
 
   useEffect(() => {
     authedFetch('/api/v1/strava/actividades')
@@ -70,10 +86,29 @@ export function StravaActividades() {
             <p className="text-xs text-slate-warm">Últimas salidas en bicicleta</p>
           </div>
         </div>
-        <a href="https://strava.com/athlete/training" target="_blank" rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-xs text-[#FC4C02] hover:underline">
-          Ver en Strava <ExternalLink className="size-3" />
-        </a>
+        <div className="flex items-center gap-3">
+          <a href="https://strava.com/athlete/training" target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-[#FC4C02] hover:underline">
+            Ver en Strava <ExternalLink className="size-3" />
+          </a>
+          {!confirmandoDesconectar ? (
+            <button onClick={() => setConfirmandoDesconectar(true)}
+              className="text-xs text-slate-warm hover:text-clay">
+              Desconectar
+            </button>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <button onClick={desconectar} disabled={desconectando}
+                className="text-xs font-semibold text-clay hover:underline disabled:opacity-50">
+                {desconectando ? 'Desconectando…' : 'Confirmar'}
+              </button>
+              <button onClick={() => setConfirmandoDesconectar(false)}
+                className="text-xs text-slate-warm hover:underline">
+                Cancelar
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {error ? (
