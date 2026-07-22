@@ -1,6 +1,7 @@
 import { randomUUID, createHash, createHmac } from 'node:crypto'
 import { ApiError, getPool } from '@/lib/marketplace'
 import {
+  buscarPagosPorExternalReference,
   consultarPago,
   crearPreferencia,
   getModo,
@@ -279,6 +280,76 @@ export async function webhookPagoCitExpress(input: {
   }
 
   return { accion: 'IGNORADO', solicitudId }
+}
+
+export interface EstadoSolicitudCitExpress {
+  id: string
+  ciclistaId: string
+  estado: string
+  montoARS: number
+  feePaymentId: string | null
+}
+
+/**
+ * Estado de una solicitud de pago del CIT Express -- usado por la pantalla de
+ * resultado del checkout (app/checkout/resultado/page.tsx), que hasta ahora
+ * solo sabia consultar escrow_transacciones (una tabla distinta) y por eso
+ * mostraba "No pudimos confirmar el pago" para CUALQUIER pago de CIT Express,
+ * tanto el flujo self-service de siempre como el nuevo de "Iniciar
+ * Certificacion" -- bug real, encontrado 2026-07-21 probando ese flujo nuevo
+ * de punta a punta por primera vez.
+ */
+export async function getEstadoSolicitudCitExpress(
+  solicitudId: string
+): Promise<EstadoSolicitudCitExpress | null> {
+  const res = await getPool().query<{
+    id: string
+    ciclista_id: string
+    estado: string
+    monto_ars: string
+    fee_payment_id: string | null
+  }>(
+    `SELECT id, ciclista_id, estado, monto_ars, fee_payment_id FROM solicitudes_cit_express WHERE id = $1`,
+    [solicitudId]
+  )
+  const row = res.rows[0]
+  if (!row) return null
+  return {
+    id: row.id,
+    ciclistaId: row.ciclista_id,
+    estado: row.estado,
+    montoARS: Number(row.monto_ars),
+    feePaymentId: row.fee_payment_id,
+  }
+}
+
+/**
+ * Re-consulta a MercadoPago el pago de una solicitud de CIT Express y reaplica
+ * el estado -- mismo criterio que escrow.service.ts::refrescarPago(), pero a
+ * diferencia de esa, acá `fee_payment_id` recien se completa cuando el webhook
+ * ya proceso el pago (no antes), asi que si todavia no lo tenemos buscamos por
+ * external_reference directo contra MercadoPago (buscarPagosPorExternalReference)
+ * en vez de asumir que no hay nada que refrescar.
+ */
+export async function refrescarPagoCitExpress(
+  solicitudId: string
+): Promise<{ accion: AccionWebhookCitExpress | 'SIN_PAGO'; solicitud: EstadoSolicitudCitExpress | null }> {
+  const solicitud = await getEstadoSolicitudCitExpress(solicitudId)
+  if (!solicitud) {
+    throw new ApiError(404, 'SOLICITUD_NOT_FOUND', 'La solicitud de CIT Express no existe.')
+  }
+
+  let paymentId = solicitud.feePaymentId
+  if (!paymentId) {
+    const pagos = await buscarPagosPorExternalReference(solicitudId)
+    paymentId = pagos.find((p) => p.status === 'approved')?.paymentId ?? pagos[0]?.paymentId ?? null
+  }
+  if (!paymentId) {
+    return { accion: 'SIN_PAGO', solicitud }
+  }
+
+  const resultado = await webhookPagoCitExpress({ paymentId, externalReferenceHint: solicitudId })
+  return { accion: resultado.accion, solicitud: await getEstadoSolicitudCitExpress(solicitudId) }
 }
 
 /**
