@@ -42,6 +42,7 @@ let cachedDenunciaKey: Buffer | null = null
 let cachedInspeccionKey: Buffer | null = null
 let cachedStravaKey: Buffer | null = null
 let cachedSpotifyKey: Buffer | null = null
+let cachedAutorizadosKey: Buffer | null = null
 
 /** Indica si hay una clave AES real configurada (vs. derivada en preview). */
 export function cifradoConfigurado(): boolean {
@@ -76,6 +77,12 @@ export function stravaCifradoConfigurado(): boolean {
 /** Indica si hay una clave AES real para los tokens OAuth de Spotify (vs. derivada). */
 export function spotifyCifradoConfigurado(): boolean {
   const raw = process.env.RODAID_SPOTIFY_AES_KEY
+  return typeof raw === 'string' && raw.trim().length > 0
+}
+
+/** Indica si hay una clave AES real para el DNI/direccion de "Uso autorizado" (vs. derivada). */
+export function autorizadosCifradoConfigurado(): boolean {
+  const raw = process.env.RODAID_AUTORIZADOS_AES_KEY
   return typeof raw === 'string' && raw.trim().length > 0
 }
 
@@ -248,6 +255,38 @@ export function cifrarSpotify(plaintext: string): string {
 /** Descifra un token producido por `cifrarSpotify`. Lanza si el formato es invalido. */
 export function descifrarSpotify(token: string): string {
   return descifrarCon(getSpotifyKey(), token)
+}
+
+/**
+ * Resuelve (y cachea) la clave AES-256 del DNI/direccion de personas con
+ * "Uso autorizado" de una bici (Garaje Digital). Es una clave INDEPENDIENTE
+ * -- mismo criterio de "una identidad criptografica por dominio" que el
+ * resto de este archivo. Solo se descifra en dos contextos: el propio dueño
+ * viendo su Garaje, o el canal gov/verificar cuando tenantSlug ==
+ * 'ministerio_seguridad' -- nunca en el verificador publico. En LIVE se
+ * toma de `RODAID_AUTORIZADOS_AES_KEY`; en preview se deriva de forma
+ * estable del secreto de la app (igual que el resto de los modos).
+ */
+function getAutorizadosKey(): Buffer {
+  if (cachedAutorizadosKey) return cachedAutorizadosKey
+  const raw = process.env.RODAID_AUTORIZADOS_AES_KEY
+  if (raw && raw.trim().length > 0) {
+    cachedAutorizadosKey = parseClaveConfigurada(raw)
+    return cachedAutorizadosKey
+  }
+  const secret = getAuthSecret() ?? 'rodaid-autorizados-fallback'
+  cachedAutorizadosKey = scryptSync(secret, 'rodaid-autorizados-aes-v1', KEY_BYTES)
+  return cachedAutorizadosKey
+}
+
+/** Cifra un dato (DNI o direccion) de una persona con Uso autorizado. */
+export function cifrarAutorizado(plaintext: string): string {
+  return cifrarCon(getAutorizadosKey(), plaintext)
+}
+
+/** Descifra un valor producido por `cifrarAutorizado`. Lanza si fue manipulado. */
+export function descifrarAutorizado(token: string): string {
+  return descifrarCon(getAutorizadosKey(), token)
 }
 
 /** Cifra un texto en claro con una clave dada. Devuelve el token portable. */

@@ -11,6 +11,7 @@ import { NextResponse } from 'next/server'
 import { withTenant, getTenantFromHeader, auditTenant, TenantSlug } from '@/lib/tenant'
 import { getPool } from '@/lib/marketplace'
 import { checkRateLimit, rateLimitHeaders } from '@/lib/gov-rate-limit'
+import { contarAutorizados, listarAutorizadosCompleto } from '@/src/services/autorizados.service'
 
 export async function GET(req: Request) {
   const url = new URL(req.url)
@@ -42,7 +43,8 @@ export async function GET(req: Request) {
     // Bypass RLS para verificacion publica inter-tenant
     await pool.query("SET app.bypass_rls = true").catch(() => undefined)
     const result = await pool.query(`
-      SELECT 
+      SELECT
+        a.id AS bici_id,
         a.numero_serie,
         a.marca,
         a.modelo,
@@ -85,6 +87,30 @@ export async function GET(req: Request) {
     }
 
     const bici = result.rows[0]
+
+    // "Uso autorizado": booleano/cantidad para TODOS los tenants (comparten
+    // un unico token, GOV_API_TOKEN) -- el array completo (nombre/DNI/
+    // direccion/telefono, descifrado) SOLO para Ministerio de Seguridad.
+    // MPF y municipios ven lo mismo que el verificador publico.
+    const cantidadAutorizados = await contarAutorizados(bici.bici_id)
+    const usoAutorizado: {
+      autorizado: boolean
+      cantidad: number
+      personas?: Array<{ nombre_completo: string; dni: string; direccion: string; telefono: string | null }>
+    } = {
+      autorizado: cantidadAutorizados > 0,
+      cantidad: cantidadAutorizados,
+    }
+    if (tenantSlug === 'ministerio_seguridad' && cantidadAutorizados > 0) {
+      const personas = await listarAutorizadosCompleto(bici.bici_id)
+      usoAutorizado.personas = personas.map((p) => ({
+        nombre_completo: p.nombreCompleto,
+        dni: p.dni,
+        direccion: p.direccion,
+        telefono: p.telefono,
+      }))
+    }
+
     return NextResponse.json({
       encontrado: true,
       bicicleta: {
@@ -116,6 +142,7 @@ export async function GET(req: Request) {
         tipo: 'DENUNCIA_ACTIVA',
         message: 'Esta bicicleta tiene una denuncia de hurto activa en la red RODAID.',
       } : null,
+      uso_autorizado: usoAutorizado,
       consultado_en: new Date().toISOString(),
       tenant: tenantSlug,
       fuente: 'RODAID · Registro Digital de Identidad de Bicicletas · Ley Provincial N° 9.556',
