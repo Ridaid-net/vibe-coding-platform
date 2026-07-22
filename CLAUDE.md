@@ -873,6 +873,14 @@ Bug reportado por Federico: un Taller Aliado logueado veía el mismo Nav complet
 
 **Color del botón activo:** teal sólido `#1E9E96` — de 4 propuestas visuales (naranja sólido, teal sólido, outline con acento, degradé), Federico eligió teal porque ya es el color que el resto del Nav usa para "activo/verificado", sin competir con el naranja reservado a conversión ("Publicar mi bici"). PR #152.
 
+### FIXED 2026-07-22: `solicitarAliado()` rompía para visitantes sin sesión en producción
+
+Mismo bug, mismo mecanismo, que el ya arreglado en `publicacion-detalle.tsx` (ver "FIXED 2026-07-18" arriba) — nunca replicado en `lib/aliados.ts`. Reportado por Federico al intentar enviar el formulario "Sumate como Aliado" (`/aliados`) justo después de que se le borrara su cuenta (PR #153): sin sesión guardada.
+
+`solicitarAliado()` usaba `authedFetch()`, que llama incondicionalmente a `ensureSession()` antes de cualquier request — sin sesión previa, en producción eso intenta un demo-session bloqueado (`DEMO_DESHABILITADO`) y tumba el envío, aunque `POST /api/v1/aliados/solicitar` está explícitamente diseñado como endpoint abierto que acepta solicitudes anónimas (la cuenta dueña es opcional, ver el comentario del propio endpoint). Mismo fix que la vez pasada: `fetch()` directo + `getSession()` (lectura pura de localStorage, sin red, sin crear nada) — adjunta el `Authorization` solo si ya hay sesión guardada. `authedFetch()` se mantiene sin cambios para las funciones admin del mismo archivo (`listarAliados`/`resolverAliado`), que sí requieren sesión real.
+
+**Patrón a tener en mente para el futuro:** cualquier endpoint documentado como "abierto"/"anónimo" cuyo cliente use `authedFetch()` tiene el mismo riesgo — vale la pena revisar si hay más casos la próxima vez que aparezca un bug similar. PR #154.
+
 ### Mobile
 
 `android/` and `ios/` are Capacitor shells (`capacitor.config.ts`, appId `net.rodaid.app`). `server.url` points at `https://rodaid.net` — the native apps are thin WebView wrappers loading the live deployment, not bundlers of a local static `webDir` build.
