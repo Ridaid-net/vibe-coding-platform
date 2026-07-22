@@ -1,6 +1,6 @@
 'use client'
 
-import { authedFetch, ensureRoleSession } from '@/lib/session'
+import { authedFetch, ensureRoleSession, getSession } from '@/lib/session'
 
 /**
  * Cliente de Gestion de Aliados (Hito 11): solicitud publica de talleres/tiendas
@@ -43,16 +43,26 @@ async function leer<T>(res: Response): Promise<T> {
 }
 
 /**
- * Envia la solicitud para ser Aliado. Usa `authedFetch` para que, si hay sesion,
- * esa cuenta quede vinculada como duena del aliado (y reciba el rol al aprobarse).
+ * Envia la solicitud para ser Aliado -- endpoint ABIERTO (funciona sin
+ * sesion). Si ya hay una sesion guardada, se adjunta el token para que esa
+ * cuenta quede vinculada como duena del aliado (y reciba el rol al
+ * aprobarse) -- pero NUNCA se fuerza a crear una (authedFetch() llama a
+ * ensureSession(), que en produccion intenta un demo-session bloqueado y
+ * tumbaba el envio para cualquier visitante anonimo -- mismo bug ya
+ * encontrado y arreglado en publicacion-detalle.tsx, 2026-07-18).
  */
 export async function solicitarAliado(
   input: SolicitudAliadoInput
 ): Promise<{ aliado: AliadoPublico }> {
+  const session = getSession()
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (session?.accessToken) {
+    headers.authorization = `Bearer ${session.accessToken}`
+  }
   return leer(
-    await authedFetch('/api/v1/aliados/solicitar', {
+    await fetch('/api/v1/aliados/solicitar', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers,
       body: JSON.stringify(input),
     })
   )
