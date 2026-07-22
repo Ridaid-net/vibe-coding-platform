@@ -6,10 +6,11 @@ import { KeyRound, Loader2 } from 'lucide-react'
 import { reclamarCuenta } from '@/lib/session'
 
 /**
- * Página pública donde un cliente creado por un Taller Aliado ("Iniciar
- * Certificación") reclama su cuenta: elige su propia contraseña usando el
- * link que le llegó por mail. El token en sí es la credencial -- sin login
- * previo.
+ * Página pública donde una cuenta creada por otra persona (un Taller Aliado
+ * via "Iniciar Certificación", o un admin invitando a un inspector) reclama
+ * su cuenta: elige su propia contraseña usando el link que le llegó por
+ * mail. El token en sí es la credencial -- sin login previo. El destino
+ * post-activación depende del rol de la cuenta reclamada.
  */
 export function ReclamarCuentaForm() {
   const router = useRouter()
@@ -26,7 +27,7 @@ export function ReclamarCuentaForm() {
       <div className="rounded-3xl border border-clay/30 bg-clay/5 px-6 py-12 text-center">
         <p className="font-display text-lg font-bold text-ink">Link inválido</p>
         <p className="mt-1 text-sm text-slate-warm">
-          Falta el token de invitación. Pedile al taller que te genere un link nuevo.
+          Falta el token de invitación. Pedile a quien te invitó que te genere un link nuevo.
         </p>
       </div>
     )
@@ -45,8 +46,9 @@ export function ReclamarCuentaForm() {
     setEnviando(true)
     setError(null)
     try {
-      await reclamarCuenta(token, password)
-      router.replace('/garaje')
+      const sesion = await reclamarCuenta(token, password)
+      const destino = sesion.rol === 'inspector' || sesion.rol === 'aliado' ? '/admin/inspecciones' : '/garaje'
+      router.replace(destino)
     } catch (err) {
       setError((err as Error).message || 'No pudimos activar tu cuenta. Probá de nuevo.')
     } finally {
@@ -61,7 +63,7 @@ export function ReclamarCuentaForm() {
       </span>
       <h1 className="mt-4 font-display text-2xl font-bold text-ink">Activá tu cuenta</h1>
       <p className="mt-2 text-sm text-slate-warm">
-        El taller ya inició la certificación de tu bici. Elegí tu contraseña para acceder a tu Garaje Digital.
+        Elegí tu contraseña para activar tu cuenta RODAID.
       </p>
 
       <div className="mt-6 space-y-3">

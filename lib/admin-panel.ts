@@ -1,12 +1,13 @@
 import { getStore } from '@netlify/blobs'
 import { SignJWT, jwtVerify } from 'jose'
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import {
   ApiError,
   getAuthSecret,
   getPool,
 } from '@/lib/marketplace'
-import { requireRole, type AuthUser } from '@/lib/auth'
+import { hashPassword, requireRole, type AuthUser } from '@/lib/auth'
+import { enviarEmail } from '@/lib/email'
 import { getModo } from '@/src/services/mercadopago.service'
 import { getBfaModo } from '@/src/services/blockchain.service'
 import { getMtlsModo } from '@/src/services/mtls.service'
@@ -1360,6 +1361,82 @@ export async function listarInspectores(): Promise<InspectorAdmin[]> {
     talleres: porInspector.get(r.id) ?? [],
     inspecciones: Number(r.inspecciones),
   }))
+}
+
+const INVITACION_INSPECTOR_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 dias, mismo criterio que "Iniciar Certificacion"
+
+export interface InvitarInspectorInput {
+  nombre: string
+  email: string
+}
+
+/**
+ * Invita a un inspector real (rol 'inspector' -- personal de fuerzas de
+ * seguridad, dado de alta por un admin). Solo `roles:gestionar`
+ * (superadmin). Mismo patron que "Iniciar Certificacion" del Taller Aliado
+ * (certificacion-mostrador.service.ts): cuenta con contrasena aleatoria de
+ * alta entropia (nadie la conoce, nunca se expone) + token en
+ * `invitaciones_cuenta` para que la persona elija su propia contrasena via
+ * /reclamar-cuenta. Rechaza si el email ya tiene cuenta -- no reasigna el
+ * rol de una cuenta existente por esta via.
+ */
+export async function invitarInspector(
+  ctx: AdminContext,
+  input: InvitarInspectorInput
+): Promise<{ inspectorId: string }> {
+  const pool = getPool()
+  const email = input.email.trim().toLowerCase()
+
+  const existente = await pool.query<{ id: string }>(
+    `SELECT id FROM usuarios WHERE lower(email) = $1 LIMIT 1`,
+    [email]
+  )
+  if (existente.rows[0]) {
+    throw new ApiError(409, 'EMAIL_EN_USO', 'Ya existe una cuenta registrada con ese email.')
+  }
+
+  const passwordAleatoria = randomBytes(24).toString('hex')
+  const passwordHash = await hashPassword(passwordAleatoria)
+  const creado = await pool.query<{ id: string }>(
+    `INSERT INTO usuarios (email, password_hash, rol, datos_perfil, proveedor)
+     VALUES ($1, $2, 'inspector', $3::jsonb, 'local')
+     RETURNING id`,
+    [email, passwordHash, JSON.stringify({ nombre: input.nombre, origen: 'invitacion_admin' })]
+  )
+  const inspectorId = creado.rows[0].id
+
+  const token = randomBytes(32).toString('hex')
+  const tokenHash = createHash('sha256').update(token).digest('hex')
+  await pool.query(
+    `INSERT INTO invitaciones_cuenta (usuario_id, token_hash, expira_en)
+     VALUES ($1, $2, $3)`,
+    [inspectorId, tokenHash, new Date(Date.now() + INVITACION_INSPECTOR_TTL_MS)]
+  )
+
+  // Best-effort: un fallo de envio no debe tumbar el alta ya creada -- el
+  // admin puede ver el estado y, si hace falta, resolverlo por otro medio.
+  try {
+    await enviarEmail({
+      to: email,
+      subject: 'RODAID — Invitación al Panel de Inspecciones',
+      html: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;">
+        <h2>¡Hola ${input.nombre}!</h2>
+        <p>Fuiste invitado a operar el Panel de Inspecciones de RODAID.</p>
+        <p><a href="https://rodaid.net/reclamar-cuenta?token=${token}">Hacé click acá para activar tu cuenta</a> y elegir tu contraseña.</p>
+      </div>`,
+    })
+  } catch (err) {
+    console.error('Error email invitar-inspector:', err)
+  }
+
+  await auditarAdmin(ctx, {
+    accion: 'inspector.invitar',
+    recursoTipo: 'inspector',
+    recursoId: inspectorId,
+    detalle: { email: enmascararEmail(email) },
+  })
+
+  return { inspectorId }
 }
 
 /** Talleres (aliados aprobados) disponibles para asignar a un inspector. */
