@@ -187,12 +187,20 @@ export async function ensureRoleSession(
     nombre?: string
     rol?: string
   }
+  // El rol devuelto puede no coincidir con el pedido -- demo-session lo
+  // hardcodea a 'ciclista' sin excepcion desde el fix de seguridad del
+  // 2026-07-08/09 (ver demo-session/route.ts). Si no califica, no hay forma
+  // de operar el panel: no persistir esta sesion como si hubiera funcionado.
+  if (!data.rol || !permitidos.includes(data.rol)) {
+    if (current) return toSession(current)
+    throw new Error('No se pudo iniciar la sesion con el rol requerido.')
+  }
   const stored: StoredSession = {
     accessToken: data.accessToken ?? data.token ?? '',
     refreshToken: data.refreshToken ?? null,
     userId: data.userId,
     nombre: data.nombre ?? 'Usuario',
-    rol: data.rol ?? demoRol,
+    rol: data.rol,
   }
   write(stored)
   return toSession(stored)
