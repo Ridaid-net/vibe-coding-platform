@@ -309,6 +309,12 @@ function Panel({ rol, onLogout }: { rol: AdminRol | null; onLogout: () => void }
               <ShieldCheck className="size-3.5 text-lime" /> {ROL_LABEL[rol]}
             </span>
           )}
+          <a
+            href="/perfil"
+            className="inline-flex items-center gap-1.5 rounded-full border border-ink/15 bg-white px-3 py-1.5 text-xs font-semibold text-ink transition-colors hover:border-ink/40"
+          >
+            <KeyRound className="size-3.5" /> Mi cuenta
+          </a>
           <button
             onClick={onLogout}
             className="inline-flex items-center gap-1.5 rounded-full border border-ink/15 bg-white px-3 py-1.5 text-xs font-semibold text-ink transition-colors hover:border-ink/40"

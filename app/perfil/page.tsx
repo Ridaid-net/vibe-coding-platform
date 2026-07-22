@@ -2,7 +2,8 @@
 import { useState, useEffect } from 'react'
 import { Nav } from '@/components/rodaid/nav'
 import { Footer } from '@/components/rodaid/footer'
-import { User, Mail, Shield, Calendar, Edit3, Save, X, TrendingUp, DollarSign, ShoppingBag, Star, Route } from 'lucide-react'
+import { User, Mail, Shield, Calendar, Edit3, Save, X, TrendingUp, DollarSign, ShoppingBag, Star, Route, Lock } from 'lucide-react'
+import { toast } from 'sonner'
 import { getSession, authedFetch } from '@/lib/session'
 
 interface Perfil {
@@ -46,6 +47,11 @@ export default function PerfilPage() {
   const [facturacion, setFacturacion] = useState<Facturacion | null>(null)
   const [stats, setStats] = useState<{bicicletas:number;cits_activos:number;ventas:{total:number;monto_total:number};valoraciones:{total:number;promedio:number};salidas_organizadas:number} | null>(null)
   const [mesSeleccionado, setMesSeleccionado] = useState('')
+  const [cambiandoPass, setCambiandoPass] = useState(false)
+  const [passActual, setPassActual] = useState('')
+  const [passNuevo, setPassNuevo] = useState('')
+  const [passNuevo2, setPassNuevo2] = useState('')
+  const [guardandoPass, setGuardandoPass] = useState(false)
 
   useEffect(() => {
     const sesion = getSession()
@@ -89,6 +95,38 @@ export default function PerfilPage() {
       if (perfil) setPerfil({ ...perfil, datosPerfil: { ...perfil.datosPerfil, nombre } })
       setEditando(false)
     } finally { setGuardando(false) }
+  }
+
+  const cambiarPassword = async () => {
+    if (!perfil) return
+    if (passNuevo.length < 8) {
+      toast.error('La contraseña nueva debe tener al menos 8 caracteres.')
+      return
+    }
+    if (passNuevo !== passNuevo2) {
+      toast.error('Las contraseñas nuevas no coinciden.')
+      return
+    }
+    setGuardandoPass(true)
+    try {
+      const res = await authedFetch('/api/v1/auth/cambiar-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: perfil.email, passwordActual: passActual, passwordNuevo: passNuevo }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        toast.error(data?.error ?? 'No pudimos cambiar la contraseña.')
+        return
+      }
+      toast.success('Contraseña actualizada correctamente.')
+      setCambiandoPass(false)
+      setPassActual('')
+      setPassNuevo('')
+      setPassNuevo2('')
+    } finally {
+      setGuardandoPass(false)
+    }
   }
 
   if (cargando) return <div className="flex items-center justify-center min-h-screen"><p className="text-slate-warm">Cargando perfil...</p></div>
@@ -246,8 +284,36 @@ export default function PerfilPage() {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-sm text-slate-warm">Contraseña</p>
-              <a href="/ingresar" className="text-xs font-semibold text-[#2BBCB8] hover:underline">Cambiar contraseña</a>
+              {!cambiandoPass && (
+                <button type="button" onClick={() => setCambiandoPass(true)}
+                  className="text-xs font-semibold text-[#2BBCB8] hover:underline">
+                  Cambiar contraseña
+                </button>
+              )}
             </div>
+            {cambiandoPass && (
+              <div className="space-y-2 rounded-xl bg-slate-50 p-4">
+                <input type="password" value={passActual} onChange={e => setPassActual(e.target.value)}
+                  placeholder="Contraseña actual"
+                  className="w-full rounded-lg border border-ink/15 px-3 py-2 text-sm outline-none focus:border-[#2BBCB8]" />
+                <input type="password" value={passNuevo} onChange={e => setPassNuevo(e.target.value)}
+                  placeholder="Contraseña nueva (mínimo 8 caracteres)"
+                  className="w-full rounded-lg border border-ink/15 px-3 py-2 text-sm outline-none focus:border-[#2BBCB8]" />
+                <input type="password" value={passNuevo2} onChange={e => setPassNuevo2(e.target.value)}
+                  placeholder="Repetir contraseña nueva"
+                  className="w-full rounded-lg border border-ink/15 px-3 py-2 text-sm outline-none focus:border-[#2BBCB8]" />
+                <div className="flex gap-2 pt-1">
+                  <button type="button" onClick={cambiarPassword} disabled={guardandoPass || !passActual || !passNuevo}
+                    className="inline-flex items-center gap-1 rounded-full bg-[#2BBCB8] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
+                    <Lock className="size-3" /> {guardandoPass ? 'Guardando...' : 'Guardar contraseña'}
+                  </button>
+                  <button type="button" onClick={() => { setCambiandoPass(false); setPassActual(''); setPassNuevo(''); setPassNuevo2('') }}
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600">
+                    <X className="size-3" /> Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <p className="text-sm text-slate-warm">Email verificado</p>
               <span className={`text-xs font-semibold ${perfil?.emailVerificado ? 'text-green-600' : 'text-amber-600'}`}>
