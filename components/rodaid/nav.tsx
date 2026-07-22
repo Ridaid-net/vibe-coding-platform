@@ -29,9 +29,10 @@ export function Nav() {
   const [menuOpen, setMenuOpen] = useState(false)
   const { user, loading } = useAuth()
   const isAdmin = user?.role === 'admin'
-  // Scoping de Nav para Taller Aliado (rol='aliado'): ve solo "Mi Taller",
-  // nada del resto del menu -- pedido explicito, no aplica a 'inspector'
-  // (comparte el link "Mi Taller" pero conserva el nav completo de siempre).
+  // Scoping de Nav para Taller Aliado (rol='aliado'): ve solo "Mi Garaje"
+  // (para publicar las bicis de su tienda) y "Mi Taller" (para hacer los
+  // CIT) -- nada del resto del menu. No aplica a 'inspector' (comparte el
+  // link "Mi Taller" pero conserva el nav completo de siempre).
   const isTallerAliado = user?.role === 'aliado'
 
   useEffect(() => {
@@ -47,7 +48,10 @@ export function Nav() {
         <RodaidLogo className="text-ink" />
         <nav className="hidden flex-1 items-center justify-center gap-4 lg:flex">
           {isTallerAliado ? (
-            <Link href="/taller" className="text-xs font-semibold text-white transition-colors px-3 py-1.5 rounded-full bg-[#1E9E96] hover:bg-[#1E9E96]/90">Mi Taller</Link>
+            <>
+              <Link href="/garaje" className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">Mi Garaje</Link>
+              <Link href="/taller" className="text-xs font-semibold text-white transition-colors px-3 py-1.5 rounded-full bg-[#1E9E96] hover:bg-[#1E9E96]/90">Mi Taller</Link>
+            </>
           ) : (
             <>
               {LINKS_SECCION.map((link) => (<a key={link.href} href={link.href} className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">{link.label}</a>))}
@@ -73,7 +77,10 @@ export function Nav() {
         <div className="border-t border-ink/10 bg-paper/95 px-5 py-4 lg:hidden">
           <nav className="flex flex-col gap-3">
             {isTallerAliado ? (
-              <Link href="/taller" onClick={() => setMenuOpen(false)} className="text-xs font-semibold text-white transition-colors px-3 py-1.5 rounded-full bg-[#1E9E96] hover:bg-[#1E9E96]/90 w-fit">Mi Taller</Link>
+              <>
+                <Link href="/garaje" onClick={() => setMenuOpen(false)} className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5 w-fit">Mi Garaje</Link>
+                <Link href="/taller" onClick={() => setMenuOpen(false)} className="text-xs font-semibold text-white transition-colors px-3 py-1.5 rounded-full bg-[#1E9E96] hover:bg-[#1E9E96]/90 w-fit">Mi Taller</Link>
+              </>
             ) : (
               <>
                 {LINKS_SECCION.map((link) => (<a key={link.href} href={link.href} onClick={() => setMenuOpen(false)} className="text-xs font-medium text-ink/70 transition-colors hover:text-ink px-2 py-1 rounded-full hover:bg-ink/5">{link.label}</a>))}
