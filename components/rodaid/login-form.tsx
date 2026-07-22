@@ -58,7 +58,12 @@ export function LoginForm() {
         await register(normalizarIdentificador(identificador), password, nombre.trim() || undefined, cuil.replace(/[-s]/g, "") || undefined)
       }
       const sesion = getSession()
-      const dest = sesion?.rol === 'admin' && returnTo === '/garaje' ? '/admin' : returnTo
+      const dest =
+        sesion?.rol === 'admin' && returnTo === '/garaje'
+          ? '/admin'
+          : sesion?.rol === 'aliado' && returnTo === '/garaje'
+            ? '/taller'
+            : returnTo
       window.location.href = dest
     } catch (err) {
       toast.error('No pudimos iniciar sesión', {
