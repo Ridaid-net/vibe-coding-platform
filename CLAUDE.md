@@ -335,7 +335,18 @@ Decisión explícita de Federico: arreglar **solo** `ensureRoleSession()` (fix q
 
 **Deliberadamente no tocado, anotado para más adelante:**
 - **Agregar guardia de sesión propia a `/admin`, `/admin/pagos` y `/admin/aliados`** (mismo patrón que ya tiene `/admin/inspecciones` y `/taller`) — encontrado en esta misma investigación, confirmado con Federico que queda para otra sesión.
-- **No existe ningún alta real para el rol `inspector`.** Las únicas 2 cuentas que lo tienen son artefactos de demo-session. Si en algún momento se quiere sumar personal de inspección real (no admin, no aliado), ese onboarding no existe todavía y hay que construirlo desde cero.
+
+**FIXED 2026-07-22, mismo día — "No existe ningún alta real para el rol `inspector`" cerrado.** Ver la sección "Alta real para el rol inspector" más abajo.
+
+### Alta real para el rol `inspector` — construido 2026-07-22
+
+Confirmado con Federico: `inspector` es el rol para personal de **fuerzas de seguridad**, dado de alta por un admin (**cualquier `superadmin`, sin sub-rol nuevo**), con alcance **solo al Panel de Inspecciones** por ahora — no al Panel Gubernamental (`/admin/gov`, gateado por un token estático compartido, `X-Gov-Token`/`GOV_API_TOKEN`, un sistema de auth completamente distinto al de `usuarios.rol`/JWT; fusionar ambos quedó explícitamente descartado para este build).
+
+**Toda la gestión de inspectores YA existía** (tab "Inspectores" dentro de "Identidades" en el Dashboard de Administración: `listarInspectores()`/`accionInspector()` en `lib/admin-panel.ts`, licencia activar/suspender, asignar/quitar talleres autorizados, auditado) — lo único que faltaba era la acción de **crear** uno nuevo.
+
+**Construido:** `invitarInspector()` (nueva, `lib/admin-panel.ts`, junto a `listarInspectores`) — mismo patrón que "Iniciar Certificación" del Taller Aliado (`certificacion-mostrador.service.ts`): crea la cuenta (`rol='inspector'`, contraseña aleatoria de alta entropía que nadie conoce, nunca expuesta) y un token en `invitaciones_cuenta` (7 días, misma tabla ya genérica usada por el flujo de taller) para que la persona elija su propia contraseña vía `/reclamar-cuenta`. Rechaza con `409 EMAIL_EN_USO` si el email ya tiene cuenta — no reasigna el rol de una cuenta existente por esta vía. `POST /api/v1/admin/panel/identidades/inspectores` (nuevo, junto al `GET` que ya existía), gateado con `requireAdminPanel(req, 'roles:gestionar')` — el permiso que ya estaba reservado solo para `superadmin` en la matriz de sub-roles y **no lo usaba ningún endpoint todavía**, encaja exacto con "cualquier superadmin ya alcanza". Botón "Invitar inspector" (nombre + email) en la misma tab, visible solo con ese permiso.
+
+**`ReclamarCuentaForm.tsx` generalizado** (antes asumía siempre el caso taller-cliente): el copy pasó de "El taller ya inició la certificación de tu bici..." a un texto neutral, y el redirect post-activación ahora depende del rol de la cuenta reclamada (`inspector`/`aliado` → `/admin/inspecciones`; cualquier otro caso, incluido el flujo de taller existente → `/garaje`, sin cambio de comportamiento para ese flujo).
 
 ### Auth / admin RBAC
 
@@ -445,9 +456,9 @@ Federico floated a hypothesis for *why* `lib/bfa.ts`/`cit.service.ts::acunarCITE
 
 **Conclusion: no evidence of an external origin. Discarded.** The sync bugs are fully explained by what the 2026-07-11/12 investigations already established — Generación 1 (this session, `6a248be413060e5e5072e309`, 2026-06-06/07) and Generación 2 (`blockchain.service.ts`+`bfa-anclaje-worker.mts`, a separate session ten days later, `6a30cb434d2da08aeec04947`, 2026-06-16) were both written directly inside this repo by the same kind of automated agent-session workflow, and nobody deleted Generación 1 when Generación 2 superseded it for the live pipeline. This closes the investigation chain opened by the `/transferir` regression on 2026-07-11.
 
-### Known gap, low priority: `inspector_licencias.estado` is a prepared column with zero functionality built on top of it
+### CORRECCIÓN 2026-07-22: la nota de "`inspector_licencias` sin funcionalidad" estaba desactualizada — el sistema SÍ existe y está en uso
 
-Found during the schema sweep above, unrelated to the casing pattern (this one isn't a mismatch — it's simply unused). `netlify/database/migrations/20260617180000_create_admin_dashboard.sql:136-143` creates `inspector_licencias` (inspector license number, `estado` — `'activa'`/`'suspendida'`/`'vencida'` — and expiration date), clearly meant to back an inspector-license-management feature. A full-repo grep found **zero** code anywhere (`inspeccion.service.ts`, the admin panel, any route) that reads or writes this table — it's not a casing bug, there's simply no feature built on top of the table yet. No urgency; noted here for whenever inspector license management gets picked up, so that work starts from "the table already exists, empty" instead of rediscovering it from scratch.
+Nota original (2026-07-12, ya incorrecta, corregida acá): decía que `inspector_licencias` era una tabla preparada sin ningún código que la leyera o escribiera. Encontrado falso al auditar el Panel de Inspecciones (ver la sección de abajo, "Alta real para el rol inspector"): el Dashboard de Administración tiene una tab completa "Inspectores" (dentro de "Identidades") — `listarInspectores()`/`accionInspector()` en `lib/admin-panel.ts`, endpoints `GET`/`POST /api/v1/admin/panel/identidades/inspectores/[id]`, UI en `admin-dashboard.tsx` — que gestiona licencia (activar/suspender), asignación/quita de talleres autorizados, y muestra volumen de inspecciones por inspector, todo auditado vía `auditarAdmin()`. Lo único que faltaba (cerrado el mismo día, ver abajo) era la acción de **crear** un inspector nuevo — la gestión de los ya existentes siempre estuvo completa.
 
 ### FIXED 2026-07-13 (urgent): `cits.actualizado_en`/`bicicletas.actualizado_en` — a second, distinct column-name bug from the same 2026-06-18 recreation, in 9 sites across 6 files
 

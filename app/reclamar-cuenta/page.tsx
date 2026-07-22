@@ -5,7 +5,7 @@ import { ReclamarCuentaForm } from '@/components/rodaid/ReclamarCuentaForm'
 
 export const metadata = {
   title: 'Activá tu cuenta — RODAID',
-  description: 'Elegí tu contraseña para acceder a tu Garaje Digital.',
+  description: 'Elegí tu contraseña para activar tu cuenta RODAID.',
 }
 
 export default function ReclamarCuentaPage() {

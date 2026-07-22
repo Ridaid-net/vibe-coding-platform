@@ -27,6 +27,7 @@ import {
   Truck,
   Unlock,
   UserCog,
+  UserPlus,
   Users,
   XCircle,
 } from 'lucide-react'
@@ -46,6 +47,7 @@ import {
   obtenerAnalitica,
   obtenerApiKeys,
   obtenerBitacora,
+  invitarInspector,
   obtenerDenuncias,
   obtenerInspectores,
   obtenerIntegridad,
@@ -1050,6 +1052,28 @@ function Inspectores() {
   )
   const [busy, setBusy] = useState<string | null>(null)
   const accionar = puede('identidades:accion')
+  const puedeInvitar = puede('roles:gestionar')
+  const [invitando, setInvitando] = useState(false)
+  const [nombreInv, setNombreInv] = useState('')
+  const [emailInv, setEmailInv] = useState('')
+  const [enviandoInv, setEnviandoInv] = useState(false)
+
+  const invitar = async () => {
+    if (!nombreInv.trim() || !emailInv.trim()) return
+    setEnviandoInv(true)
+    try {
+      await invitarInspector(nombreInv.trim(), emailInv.trim())
+      toast.success('Invitación enviada', { description: `${emailInv} recibió el link para activar su cuenta.` })
+      setNombreInv('')
+      setEmailInv('')
+      setInvitando(false)
+      recargar()
+    } catch (err) {
+      toast.error('No se pudo invitar', { description: (err as Error).message })
+    } finally {
+      setEnviandoInv(false)
+    }
+  }
 
   const cambiarLicencia = async (id: string, estado: string) => {
     setBusy(id)
@@ -1114,6 +1138,53 @@ function Inspectores() {
         desc="Asigná talleres autorizados y gestioná las licencias (Hito 11). Los datos personales se muestran enmascarados."
         onRefresh={recargar}
       />
+      {puedeInvitar && (
+        <div className="mb-4 rounded-2xl border border-ink/12 bg-white p-4">
+          {!invitando ? (
+            <button
+              onClick={() => setInvitando(true)}
+              className="inline-flex items-center gap-1.5 rounded-full bg-ink px-3.5 py-2 text-xs font-semibold text-paper transition-colors hover:bg-ink-soft"
+            >
+              <UserPlus className="size-3.5 text-lime" /> Invitar inspector
+            </button>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs text-slate-warm">
+                Personal de fuerzas de seguridad. Se le crea la cuenta y le llega un mail para elegir su contraseña.
+              </p>
+              <input
+                type="text"
+                value={nombreInv}
+                onChange={(e) => setNombreInv(e.target.value)}
+                placeholder="Nombre y apellido"
+                className="w-full rounded-lg border border-ink/15 px-3 py-2 text-sm outline-none focus:border-ink/40"
+              />
+              <input
+                type="email"
+                value={emailInv}
+                onChange={(e) => setEmailInv(e.target.value)}
+                placeholder="Email"
+                className="w-full rounded-lg border border-ink/15 px-3 py-2 text-sm outline-none focus:border-ink/40"
+              />
+              <div className="flex gap-1.5 pt-1">
+                <button
+                  onClick={invitar}
+                  disabled={enviandoInv || !nombreInv.trim() || !emailInv.trim()}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-ink px-3.5 py-2 text-xs font-semibold text-paper transition-colors hover:bg-ink-soft disabled:opacity-50"
+                >
+                  <UserPlus className="size-3.5 text-lime" /> {enviandoInv ? 'Enviando…' : 'Enviar invitación'}
+                </button>
+                <button
+                  onClick={() => { setInvitando(false); setNombreInv(''); setEmailInv('') }}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-ink/15 bg-white px-3.5 py-2 text-xs font-semibold text-ink transition-colors hover:border-ink/40"
+                >
+                  <XCircle className="size-3.5" /> Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       {error ? (
         <ErrorBox msg={error} />
       ) : !data ? (

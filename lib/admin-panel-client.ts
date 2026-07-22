@@ -377,6 +377,9 @@ export const obtenerInspectores = () =>
     '/api/v1/admin/panel/identidades/inspectores'
   )
 
+export const invitarInspector = (nombre: string, email: string) =>
+  postJson<{ inspectorId: string }>('/api/v1/admin/panel/identidades/inspectores', { nombre, email })
+
 export const obtenerApiKeys = () =>
   getJson<{ apps: ApiKeyAdmin[] }>('/api/v1/admin/panel/identidades/api-keys').then((d) => d.apps)
 
