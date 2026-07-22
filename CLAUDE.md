@@ -883,6 +883,14 @@ Mismo bug, mismo mecanismo, que el ya arreglado en `publicacion-detalle.tsx` (ve
 
 **Patrón a tener en mente para el futuro:** cualquier endpoint documentado como "abierto"/"anónimo" cuyo cliente use `authedFetch()` tiene el mismo riesgo — vale la pena revisar si hay más casos la próxima vez que aparezca un bug similar. PR #154.
 
+### FIXED 2026-07-22: login de Taller Aliado no llevaba a `/taller`, más botón dedicado en `/ingresar`
+
+Encontrado probando en producción con su cuenta real recién aprobada como aliado (`contactoarribaeleste@gmail.com`, ver los fixes de Nav más arriba): después de loguearse, una cuenta `rol='aliado'` seguía cayendo en Mi Garaje por default.
+
+`login-form.tsx` ya tenía exactamente este patrón para `admin` (`dest = sesion?.rol === 'admin' && returnTo === '/garaje' ? '/admin' : returnTo`) — se sumó la misma rama para `aliado` → `/taller`. Solo pisa el destino cuando `returnTo` es el default `/garaje` (sin `?next=` explícito en la URL), así que un deep-link a una página específica se sigue respetando sea cual sea el rol. Scope: solo el login local (email+password) — el callback de Mendoza x Mí redirige server-side, no pasa por este componente.
+
+**Sumado el mismo día, a pedido de Federico ("más dinámico para los que se loguean como talleres"):** botón "Ingresar como Taller Aliado" en `/ingresar`, que reusa el mismo mecanismo `returnTo`/`next` ya existente (`/ingresar?next=/taller`) — funciona igual sea cual sea el método de login elegido después (local o MxM, ambos ya leen `returnTo` de la URL). Si `next=/taller` ya está seteado (p. ej. porque se clickeó el botón), se reemplaza por un indicador de estado ("Ingresando como Taller Aliado") en vez de mostrarse de nuevo. PR #156.
+
 ### Mobile
 
 `android/` and `ios/` are Capacitor shells (`capacitor.config.ts`, appId `net.rodaid.app`). `server.url` points at `https://rodaid.net` — the native apps are thin WebView wrappers loading the live deployment, not bundlers of a local static `webDir` build.
