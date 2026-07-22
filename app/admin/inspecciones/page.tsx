@@ -1,14 +1,19 @@
+'use client'
+import { useEffect } from 'react'
+import { getSession } from '@/lib/session'
 import { Footer } from '@/components/rodaid/footer'
 import { Nav } from '@/components/rodaid/nav'
 import { Inspecciones } from '@/components/rodaid/inspecciones'
 
-export const metadata = {
-  title: 'Panel de Inspecciones — RODAID',
-  description:
-    'Validación física delegada: inspectores y aliados aprueban la inspección de una bicicleta o reportan discrepancias.',
-}
-
 export default function InspeccionesPage() {
+  useEffect(() => {
+    const sesion = getSession()
+    if (!sesion) { window.location.replace('/ingresar?next=/admin/inspecciones'); return }
+    if (sesion.rol !== 'aliado' && sesion.rol !== 'inspector' && sesion.rol !== 'admin') {
+      window.location.replace('/garaje')
+    }
+  }, [])
+
   return (
     <div className="min-h-screen bg-paper">
       <Nav />
