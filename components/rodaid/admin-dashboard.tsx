@@ -32,6 +32,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { clearSession } from '@/lib/session'
+import { AliadosAdmin } from '@/components/rodaid/aliados-admin'
 import { PagosDashboard } from '@/components/rodaid/pagos-dashboard'
 import {
   accionarApiKey,
@@ -114,6 +115,7 @@ type Pestana =
   | 'identidades'
   | 'bitacora'
   | 'finanzas'
+  | 'aliados'
 
 const PESTANAS: { id: Pestana; label: string; icon: typeof Activity; permiso: AdminPermiso }[] = [
   { id: 'integridad', label: 'Integridad', icon: Activity, permiso: 'integridad:ver' },
@@ -122,6 +124,7 @@ const PESTANAS: { id: Pestana; label: string; icon: typeof Activity; permiso: Ad
   { id: 'identidades', label: 'Identidades', icon: UserCog, permiso: 'identidades:ver' },
   { id: 'bitacora', label: 'Bitácora', icon: ScrollText, permiso: 'bitacora:ver' },
   { id: 'finanzas', label: 'Finanzas', icon: Banknote, permiso: 'finanzas:ver' },
+  { id: 'aliados', label: 'Aliados', icon: Store, permiso: 'aliados:ver' },
 ]
 
 export function AdminDashboard() {
@@ -348,6 +351,7 @@ function Panel({ rol, onLogout }: { rol: AdminRol | null; onLogout: () => void }
         {pestana === 'identidades' && <TabIdentidades />}
         {pestana === 'bitacora' && <TabBitacora />}
         {pestana === 'finanzas' && <TabFinanzas />}
+        {pestana === 'aliados' && <TabAliados />}
       </div>
     </>
   )
@@ -1348,6 +1352,10 @@ function TabBitacora() {
 // todo en modo lectura, igual que el resto de sus tabs.
 function TabFinanzas() {
   return <PagosDashboard puedeAccionar={puede('finanzas:accion')} />
+}
+
+function TabAliados() {
+  return <AliadosAdmin puedeAccionar={puede('aliados:accion')} />
 }
 
 // ── Atomos compartidos ──────────────────────────────────────────────────────────

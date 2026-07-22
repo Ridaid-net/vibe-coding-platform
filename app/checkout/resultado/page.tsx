@@ -17,7 +17,14 @@ import { ProteccionRodaidPay } from '@/components/rodaid/rodaid-pay-badge'
 import { BotonDisputa } from '@/components/rodaid/BotonDisputa'
 import { authedFetch } from '@/lib/session'
 
-type Fase = 'verificando' | 'sena-confirmada' | 'retenido' | 'pendiente' | 'rechazado' | 'error'
+type Fase =
+  | 'verificando'
+  | 'sena-confirmada'
+  | 'retenido'
+  | 'cit-express-pagado'
+  | 'pendiente'
+  | 'rechazado'
+  | 'error'
 
 const MAX_INTENTOS = 6
 const INTERVALO_MS = 2000
@@ -58,7 +65,43 @@ function ResultadoInner() {
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
-      const data = (await res.json()) as { estado: string; plan?: string }
+      const data = (await res.json()) as {
+        tipo?: 'escrow' | 'cit_express'
+        estado: string
+        plan?: string
+      }
+
+      // CIT Express (self-service o "Iniciar Certificación") -- tabla y
+      // estados distintos de escrow_transacciones. Mismo endpoint/pantalla,
+      // resuelto server-side por tipo. Ver CLAUDE.md, bug real 2026-07-21.
+      if (data.tipo === 'cit_express') {
+        if (data.estado === 'pagada') {
+          setFase('cit-express-pagado')
+          return
+        }
+        if (data.estado === 'rechazada' || data.estado === 'vencida') {
+          setFase('rechazado')
+          setMensaje(
+            data.estado === 'vencida'
+              ? 'La solicitud venció antes de completarse el pago.'
+              : 'El pago no se aprobó. Podés intentar nuevamente desde tu Garaje.'
+          )
+          return
+        }
+        // Sigue en pago_pendiente.
+        if (statusParam === 'failure' || statusParam === 'rejected' || statusParam === 'null') {
+          setFase('rechazado')
+          setMensaje('El pago no se aprobó. Podés intentar nuevamente desde tu Garaje.')
+          return
+        }
+        if (intentos.current < MAX_INTENTOS) {
+          intentos.current += 1
+          timer.current = setTimeout(verificar, INTERVALO_MS)
+          return
+        }
+        setFase('pendiente')
+        return
+      }
 
       if (data.estado === 'RESERVADA') {
         setFase('sena-confirmada')
@@ -131,6 +174,15 @@ function ResultadoInner() {
           tone="ok"
           titulo="¡Seña confirmada!"
           detalle="El Taller Aliado ya puede verificar tu bici. Te avisamos apenas termine la inspección de 20 puntos, para que confirmes el pago del saldo."
+        />
+      )}
+
+      {fase === 'cit-express-pagado' && (
+        <Estado
+          icon={<CheckCircle2 className="size-8" />}
+          tone="ok"
+          titulo="¡Pago confirmado!"
+          detalle="Tu CIT Express ya se está activando. En breve vas a ver el resultado en tu Garaje Digital."
         />
       )}
 

@@ -6,6 +6,7 @@ import { Footer } from '@/components/rodaid/footer'
 import { Inspecciones } from '@/components/rodaid/inspecciones'
 import { PublicarServicioTaller } from '@/components/rodaid/PublicarServicioTaller'
 import { RemitosTaller } from '@/components/rodaid/RemitosTaller'
+import { SolicitudesReservaTaller } from '@/components/rodaid/SolicitudesReservaTaller'
 import { IniciarCertificacionTaller } from '@/components/rodaid/IniciarCertificacionTaller'
 import { ShieldCheck, DollarSign, Clock, Award, LogOut } from 'lucide-react'
 import { authedFetch } from '@/lib/session'
@@ -86,6 +87,8 @@ export default function TallerPage() {
         <PublicarServicioTaller />
 
         <RemitosTaller />
+
+        <SolicitudesReservaTaller />
 
         <IniciarCertificacionTaller />
 

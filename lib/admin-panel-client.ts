@@ -34,6 +34,8 @@ export type AdminPermiso =
   | 'roles:gestionar'
   | 'finanzas:ver'
   | 'finanzas:accion'
+  | 'aliados:ver'
+  | 'aliados:accion'
 
 function readStepUp(): StepUpStored | null {
   if (typeof window === 'undefined') return null
