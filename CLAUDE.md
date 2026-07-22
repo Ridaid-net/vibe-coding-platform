@@ -837,7 +837,9 @@ Segundo de los 3 gaps de UX auditados en la misma sesión. Confirmado antes de c
 
 Restringido a aliados `tipo='taller'` — mismo criterio de capacidad mecánica que ya restringe el sellado de inspecciones (ver la sección de `aliados.tipo` arriba). Formulario nuevo en `/taller` (oculto por completo si el aliado no es `taller`), botón "Compartir por WhatsApp" del link de pago agregado a pedido de Federico tras la primera prueba en vivo (mismo patrón `wa.me` sin número ya usado en `garaje-digital.tsx`, abre el selector de contacto en vez de asumir un formato de teléfono).
 
-**Verificación en vivo encontró un bug real y preexistente, no de esta feature** — ver la sección siguiente. PR #149, todavía sin mergear al cierre de esta sesión.
+**Verificación en vivo encontró un bug real y preexistente, no de esta feature** — ver la sección siguiente (FIXED 2026-07-21, PR #150, mergeado antes que este). Probado de punta a punta por Federico en el deploy preview: cuenta de cliente creada + email recibido, link de pago funcional, checkout simulado confirmando correctamente tras el fix de PR #150. PR #149.
+
+Nota de proceso: al mergear, GitHub reportó conflicto real (no solo "rama desactualizada") en `app/taller/page.tsx` — PR #148 y este PR agregan cada uno su propia sección al mismo panel, en la misma zona del archivo (imports + JSX). Se resolvió local (`git merge origin/main` sobre la rama del PR, manteniendo ambas secciones) antes de mergear vía API.
 
 ### FIXED 2026-07-21: la pantalla de resultado del checkout nunca supo confirmar un pago de CIT Express
 
