@@ -348,6 +348,16 @@ Confirmado con Federico: `inspector` es el rol para personal de **fuerzas de seg
 
 **`ReclamarCuentaForm.tsx` generalizado** (antes asumía siempre el caso taller-cliente): el copy pasó de "El taller ya inició la certificación de tu bici..." a un texto neutral, y el redirect post-activación ahora depende del rol de la cuenta reclamada (`inspector`/`aliado` → `/admin/inspecciones`; cualquier otro caso, incluido el flujo de taller existente → `/garaje`, sin cambio de comportamiento para ese flujo).
 
+**Verificado end-to-end en el deploy preview antes de mergear, con evidencia real:** invitación con superadmin real (MFA + step-up) → `201`, fila `usuarios` con `rol='inspector'` + `invitaciones_cuenta` (7 días) + auditoría con email enmascarado; email duplicado → `409`; sub-rol `soporte` sin `roles:gestionar` → `403 PERMISO_DENEGADO`; reclamo de cuenta con token real (generado a mano para simular el mail) → redirigió a `/admin/inspecciones`, panel cargó con badge "INSPECTOR". PR #165, confirmado en producción (deploy `6a61498452449c00087c652a`, `ready`).
+
+### Checklist Premium más visible — construido 2026-07-22
+
+Pedido por Federico: el toggle "Checklist Premium" (suspensión trasera/e-bike, componentes tokenizados) dentro del checklist de 20 puntos (`ChecklistCIT.tsx`) era fácil de saltear — solo un borde teal al 30% de opacidad sobre fondo blanco. Cambiado a borde sólido, fondo con tinte turquesa, ícono redondo (`Sparkles`) y badge más visibles, mismo color que ya usa el resto del módulo — turquesa elegido en vez de naranja para no romper la convención ya establecida (naranja reservado para CTAs de conversión). Verificado visualmente en el deploy preview con una bici/CIT de prueba real. PR #166, confirmado en producción.
+
+### Botón "Desconectar Strava" en el Garaje — construido 2026-07-22
+
+Pedido por Federico: una vez conectada la cuenta de Strava no había forma de desvincularla — solo existía "Conectar con Strava". Nuevo `DELETE /api/v1/auth/strava`: intenta revocar el token del lado de Strava (best-effort, `POST /oauth/deauthorize` — si falla, igual borra la conexión local, para que "Desconectar" nunca quede trabado por un problema ajeno) y borra la fila de `oauth_connections`. Botón "Desconectar" con confirmación de dos pasos en `StravaActividades.tsx`, junto a "Ver en Strava". Verificado end-to-end en el deploy preview (token falso cifrado a mano con la misma clave DEV que usa `cifrado.service.ts` fuera de LIVE): `DELETE` responde `200` pese al token inválido, la fila desaparece de la base, y en el navegador el flujo completo (Desconectar → Confirmar) vuelve la UI a "Conectar con Strava" al instante. PR #167, confirmado en producción.
+
 ### Auth / admin RBAC
 
 There is no root `middleware.ts`. Admin route protection is enforced at the edge by `netlify/edge-functions/auth-admin.ts`, bound in `netlify.toml` via `[[edge_functions]]` to `path = "/api/v1/admin/*"` — it runs before any redirect or the origin function (defense in depth), in addition to in-route `requireUser`/`requireRole` checks.
