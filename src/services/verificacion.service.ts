@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { getPool } from '@/lib/marketplace'
 import { verificarHashEnBFA } from '@/src/services/blockchain.service'
+import { contarAutorizados } from '@/src/services/autorizados.service'
 
 /**
  * RODAID — Hito 7: Verificador Publico.
@@ -62,6 +63,13 @@ export interface VerificacionVeredicto {
     numeroSerie: string
   }
   codigoCit?: string | null
+  /**
+   * "Uso autorizado" (Garaje Digital): SOLO el booleano/cantidad, NUNCA
+   * nombre/DNI/dirección/teléfono -- eso vive exclusivamente en
+   * gov/verificar para Ministerio de Seguridad. Ver autorizados.service.ts.
+   */
+  usoAutorizado?: boolean
+  cantidadAutorizados?: number
   /** Coincidencia de la huella SHA-256 con la BFA (blockchain). */
   bfa?: VerdictoBfa
   /** Aviso de robo + sugerencia de contacto (solo cuando ROBADA). */
@@ -261,6 +269,12 @@ export async function buscarYVerificar(
     numeroSerie: fila.numero_serie,
   }
 
+  // "Uso autorizado": SOLO booleano/cantidad en este canal publico -- nunca
+  // nombre/DNI/direccion/telefono (eso es exclusivo de gov/verificar para
+  // Ministerio de Seguridad).
+  const cantidadAutorizados = await contarAutorizados(fila.bici_id)
+  const usoAutorizado = cantidadAutorizados > 0
+
   // Sin CIT: la bici existe pero no tiene identidad verificada.
   if (!fila.cit_id || !fila.cit_estado) {
     return {
@@ -273,6 +287,8 @@ export async function buscarYVerificar(
         'Esta bicicleta esta registrada pero todavia no tiene una Cedula de Identidad (CIT) activa. No podemos confirmar su estado.',
       bicicleta,
       codigoCit: null,
+      usoAutorizado,
+      cantidadAutorizados,
     }
   }
 
@@ -294,6 +310,8 @@ export async function buscarYVerificar(
       bicicleta,
       codigoCit: fila.codigo_cit,
       bfa,
+      usoAutorizado,
+      cantidadAutorizados,
       alertaRobo: {
         mensaje: 'Reportada como robada',
         contacto: CONTACTO_AUTORIDADES,
@@ -316,6 +334,8 @@ export async function buscarYVerificar(
       bicicleta,
       codigoCit: fila.codigo_cit,
       bfa,
+      usoAutorizado,
+      cantidadAutorizados,
     }
   }
 
@@ -330,6 +350,8 @@ export async function buscarYVerificar(
     mensaje: vencida
       ? 'La Cedula de Identidad (CIT) de esta bicicleta vencio y debe renovarse. Por ahora no podemos confirmar su estado actual.'
       : 'La identidad de esta bicicleta esta en proceso de validacion (control de 72 hs). Todavia no hay un veredicto definitivo.',
+    usoAutorizado,
+    cantidadAutorizados,
     bicicleta,
     codigoCit: fila.codigo_cit,
     bfa,

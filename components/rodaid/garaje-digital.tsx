@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   Siren,
   Store,
+  UserCheck,
   Wrench,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -62,6 +63,13 @@ import { GemeloDigitalBici } from './GemeloDigitalBici'
 import { SolicitarVerificacionModal } from './solicitar-verificacion-modal'
 import { DenunciaMpfModal } from './denuncia-mpf-modal'
 import { TarjetaSemanal } from './TarjetaSemanal'
+import {
+  agregarAutorizado,
+  editarAutorizado,
+  eliminarAutorizado,
+  listarAutorizados,
+  type Autorizado,
+} from '@/lib/autorizados'
 
 /**
  * "Mi Garaje Digital" — Hito 14: el hub central del usuario.
@@ -86,6 +94,7 @@ export function GarajeDigital() {
   const [denunciar, setDenunciar] = useState<ActivoGaraje | null>(null)
   const [modoPanico, setModoPanico] = useState<ActivoGaraje | null>(null)
   const [reservar, setReservar] = useState<ActivoGaraje | null>(null)
+  const [autorizarUso, setAutorizarUso] = useState<ActivoGaraje | null>(null)
   const [agregando, setAgregando] = useState(false)
 
   const activos = data?.activos ?? null
@@ -266,6 +275,7 @@ export function GarajeDigital() {
                 onDenunciar={() => setDenunciar(a)}
                 onModoPanico={() => setModoPanico(a)}
                 onReservarCit={() => setReservar(a)}
+                onAutorizarUso={() => setAutorizarUso(a)}
               />
             ))}
           </ul>
@@ -301,6 +311,12 @@ export function GarajeDigital() {
         bici={reservar}
         open={reservar !== null}
         onOpenChange={(o) => !o && setReservar(null)}
+      />
+
+      <AutorizarUsoModal
+        bici={autorizarUso}
+        open={autorizarUso !== null}
+        onOpenChange={(o) => !o && setAutorizarUso(null)}
       />
 
       <p className="mt-10 flex items-center justify-center gap-2.5 text-center text-[11px] font-bold uppercase tracking-[0.16em] text-[#2BBCB8]">
@@ -611,6 +627,242 @@ function ReservarCitModal({
   )
 }
 
+const MAX_AUTORIZADOS = 2
+
+/**
+ * "Autorizar uso" — el dueño carga hasta 2 personas que pueden circular con
+ * la bici de forma legítima. DNI/dirección viajan cifrados en reposo
+ * (autorizados.service.ts) y NUNCA se exponen en el verificador público
+ * (solo un booleano/cantidad ahí) -- ver CLAUDE.md para el diseño completo
+ * de exposición por canal (público / gov según tenant).
+ */
+function AutorizarUsoModal({
+  bici,
+  open,
+  onOpenChange,
+}: {
+  bici: ActivoGaraje | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const [autorizados, setAutorizados] = useState<Autorizado[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [editando, setEditando] = useState<Autorizado | 'nuevo' | null>(null)
+
+  const cargar = async () => {
+    if (!bici) return
+    setError(null)
+    try {
+      setAutorizados(await listarAutorizados(bici.id))
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
+  useEffect(() => {
+    if (!open) {
+      setAutorizados(null)
+      setError(null)
+      setEditando(null)
+      return
+    }
+    cargar()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, bici?.id])
+
+  const quitar = async (autorizadoId: string) => {
+    if (!bici) return
+    try {
+      await eliminarAutorizado(bici.id, autorizadoId)
+      await cargar()
+      toast.success('Autorización quitada')
+    } catch (err) {
+      toast.error('No pudimos quitarla', { description: (err as Error).message })
+    }
+  }
+
+  if (!bici) return null
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="rounded-2xl border border-ink/10 bg-paper">
+        <DialogHeader>
+          <span className="flex size-12 items-center justify-center rounded-xl bg-lime/20 text-ink">
+            <UserCheck className="size-6" />
+          </span>
+          <DialogTitle className="font-display text-ink">Autorizar uso</DialogTitle>
+          <DialogDescription className="text-slate-warm">
+            Hasta {MAX_AUTORIZADOS} personas que pueden circular con {etiquetaActivo(bici)}. Si la Policía los verifica, esta lista es prueba de uso legítimo.
+          </DialogDescription>
+        </DialogHeader>
+
+        {error && <p className="text-xs text-clay">{error}</p>}
+
+        {autorizados === null ? (
+          <div className="flex items-center justify-center gap-2 py-6 text-sm text-slate-warm">
+            <Loader2 className="size-4 animate-spin" />
+            Cargando…
+          </div>
+        ) : editando ? (
+          <AutorizadoForm
+            bicicletaId={bici.id}
+            inicial={editando === 'nuevo' ? null : editando}
+            onGuardado={async () => {
+              setEditando(null)
+              await cargar()
+            }}
+            onCancelar={() => setEditando(null)}
+          />
+        ) : (
+          <>
+            {autorizados.length === 0 ? (
+              <p className="py-4 text-sm text-slate-warm">Todavía no autorizaste a nadie más.</p>
+            ) : (
+              <ul className="space-y-2">
+                {autorizados.map((a) => (
+                  <li
+                    key={a.id}
+                    className="rounded-xl border border-ink/12 bg-white p-3"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-ink">{a.nombreCompleto}</p>
+                        <p className="text-xs text-slate-warm">DNI {a.dni}</p>
+                        <p className="truncate text-xs text-slate-warm">{a.direccion}</p>
+                        {a.telefono && <p className="text-xs text-slate-warm">{a.telefono}</p>}
+                      </div>
+                      <div className="flex shrink-0 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setEditando(a)}
+                          className="rounded-full border border-ink/15 bg-white px-2.5 py-1 text-[11px] font-semibold text-ink hover:border-ink/40"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => quitar(a.id)}
+                          className="rounded-full border border-clay/30 bg-clay/5 px-2.5 py-1 text-[11px] font-semibold text-clay hover:bg-clay/10"
+                        >
+                          Quitar
+                        </button>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {autorizados.length < MAX_AUTORIZADOS && (
+              <button
+                type="button"
+                onClick={() => setEditando('nuevo')}
+                className="mt-1 inline-flex w-full items-center justify-center gap-2 rounded-full border border-ink/15 bg-white px-5 py-2.5 text-sm font-semibold text-ink transition-colors hover:border-ink/40"
+              >
+                <UserCheck className="size-4" />
+                Agregar persona autorizada
+              </button>
+            )}
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function AutorizadoForm({
+  bicicletaId,
+  inicial,
+  onGuardado,
+  onCancelar,
+}: {
+  bicicletaId: string
+  inicial: Autorizado | null
+  onGuardado: () => void
+  onCancelar: () => void
+}) {
+  const [nombreCompleto, setNombreCompleto] = useState(inicial?.nombreCompleto ?? '')
+  const [dni, setDni] = useState(inicial?.dni ?? '')
+  const [direccion, setDireccion] = useState(inicial?.direccion ?? '')
+  const [telefono, setTelefono] = useState(inicial?.telefono ?? '')
+  const [enviando, setEnviando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const guardar = async () => {
+    if (!nombreCompleto.trim() || !dni.trim() || !direccion.trim() || enviando) return
+    setEnviando(true)
+    setError(null)
+    try {
+      const input = {
+        nombreCompleto: nombreCompleto.trim(),
+        dni: dni.trim(),
+        direccion: direccion.trim(),
+        telefono: telefono.trim() || undefined,
+      }
+      if (inicial) {
+        await editarAutorizado(bicicletaId, inicial.id, input)
+      } else {
+        await agregarAutorizado(bicicletaId, input)
+      }
+      onGuardado()
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <input
+        value={nombreCompleto}
+        onChange={(e) => setNombreCompleto(e.target.value)}
+        placeholder="Nombre y Apellido"
+        className="w-full rounded-xl border border-ink/15 bg-white px-3.5 py-2.5 text-sm text-ink outline-none focus:border-ink/40"
+      />
+      <input
+        value={dni}
+        onChange={(e) => setDni(e.target.value.replace(/\D/g, ''))}
+        placeholder="DNI (sin puntos)"
+        inputMode="numeric"
+        className="w-full rounded-xl border border-ink/15 bg-white px-3.5 py-2.5 text-sm text-ink outline-none focus:border-ink/40"
+      />
+      <input
+        value={direccion}
+        onChange={(e) => setDireccion(e.target.value)}
+        placeholder="Dirección"
+        className="w-full rounded-xl border border-ink/15 bg-white px-3.5 py-2.5 text-sm text-ink outline-none focus:border-ink/40"
+      />
+      <input
+        value={telefono}
+        onChange={(e) => setTelefono(e.target.value)}
+        placeholder="Teléfono (opcional)"
+        className="w-full rounded-xl border border-ink/15 bg-white px-3.5 py-2.5 text-sm text-ink outline-none focus:border-ink/40"
+      />
+      {error && <p className="text-xs text-clay">{error}</p>}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={guardar}
+          disabled={!nombreCompleto.trim() || !dni.trim() || !direccion.trim() || enviando}
+          className="inline-flex items-center gap-1.5 rounded-full bg-ink px-3.5 py-2 text-xs font-semibold text-paper transition-colors hover:bg-ink-soft disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {enviando ? <Loader2 className="size-3.5 animate-spin" /> : <UserCheck className="size-3.5" />}
+          Guardar
+        </button>
+        <button
+          type="button"
+          onClick={onCancelar}
+          disabled={enviando}
+          className="inline-flex items-center gap-1.5 rounded-full border border-ink/15 bg-white px-3.5 py-2 text-xs font-semibold text-ink transition-colors hover:border-ink/40"
+        >
+          Cancelar
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Tarjeta de activo ──────────────────────────────────────────────────────
 
 function ActivoCard({
@@ -620,6 +872,7 @@ function ActivoCard({
   onDenunciar,
   onModoPanico,
   onReservarCit,
+  onAutorizarUso,
 }: {
   activo: ActivoGaraje
   onVerificar: () => void
@@ -627,6 +880,7 @@ function ActivoCard({
   onDenunciar: () => void
   onModoPanico: () => void
   onReservarCit: () => void
+  onAutorizarUso: () => void
 }) {
   const visual = ESTADO_VISUAL[activo.estado]
   const specs = [
@@ -745,6 +999,16 @@ function ActivoCard({
               await mutateCompartir()
             }}
           />
+        )}
+
+        {activo.estado === 'verificado' && (
+          <button
+            onClick={onAutorizarUso}
+            className="inline-flex items-center gap-1.5 rounded-full border border-ink/15 bg-white px-3.5 py-2 text-xs font-semibold text-ink transition-colors hover:border-ink/40"
+          >
+            <UserCheck className="size-3.5" />
+            Autorizar uso
+          </button>
         )}
 
         {(activo.estado === 'sin_verificar' ||
