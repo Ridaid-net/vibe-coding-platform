@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { CheckCircle, XCircle, AlertCircle, MinusCircle, Camera, X, ChevronDown, ChevronUp, Tag } from 'lucide-react'
+import { CheckCircle, XCircle, AlertCircle, MinusCircle, Camera, X, ChevronDown, ChevronUp, Tag, Sparkles } from 'lucide-react'
 import {
   PUNTOS_INSPECCION,
   ChecklistInspeccion,
@@ -313,14 +313,19 @@ export function ChecklistCIT({ bici, onSubmit, enviando = false }: Props) {
           menos un punto candidato para esta bici (tipo/suspensión). Módulo
           opcional, nunca gatea el submit principal. */}
       {puntosPremiumAplic.length > 0 && (
-        <div className="rounded-2xl border border-[#2BBCB8]/30 bg-white overflow-hidden">
+        <div className="rounded-2xl border-2 border-[#2BBCB8] bg-[#2BBCB8]/10 overflow-hidden shadow-sm">
           <button type="button" onClick={() => setModuloPremiumActivo(v => !v)}
-            className="w-full flex items-center justify-between px-5 py-4 hover:bg-[#2BBCB8]/5">
-            <div className="text-left">
-              <span className="font-display text-sm font-semibold text-[#0F1E35]">Checklist Premium</span>
-              <p className="text-[11px] text-slate-warm">Suspensión trasera, componentes electrónicos, e-bike (opcional)</p>
+            className="w-full flex items-center justify-between px-5 py-4 hover:bg-[#2BBCB8]/15">
+            <div className="flex items-center gap-3 text-left">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#2BBCB8] text-white">
+                <Sparkles className="size-4" />
+              </span>
+              <div>
+                <span className="font-display text-sm font-bold text-[#0F1E35]">Checklist Premium — no te lo saltees</span>
+                <p className="text-[11px] text-slate-warm">Suspensión trasera, componentes electrónicos, e-bike (opcional)</p>
+              </div>
             </div>
-            <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${moduloPremiumActivo ? 'bg-[#2BBCB8] text-white' : 'bg-slate-100 text-slate-500'}`}>
+            <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-bold ${moduloPremiumActivo ? 'bg-[#2BBCB8] text-white' : 'bg-white text-[#2BBCB8] border-2 border-[#2BBCB8]'}`}>
               {moduloPremiumActivo ? `Activado · ${completadosPremium}/${puntosPremiumAplic.length}` : 'Activar'}
             </span>
           </button>
