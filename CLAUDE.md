@@ -916,6 +916,8 @@ Fix con el mismo mecanismo de siempre (migración SQL, no un cambio de código):
 
 **Deliberadamente fuera de esta pasada, no pedido:** la UI del panel (`/taller`) para esta feature — hoy solo existen los endpoints/backend. PR #158.
 
+**UI construida y confirmada en producción el mismo día (PR #159):** `components/rodaid/PrestamosBiciTaller.tsx`, cableado en `app/taller/page.tsx` junto a `SolicitudesReservaTaller`/`IniciarCertificacionTaller`. Lista las bicis propias con CIT activo del taller (vía `lib/prestamos-bici.ts`), botón "Marcar disponible" / formulario de préstamo (nombre + contacto del prestatario + hora esperada de devolución, ambos texto libre) / "Marcar devuelta", y un badge de vencido cuando corresponde. Probado en vivo por Federico en el deploy preview antes de mergear.
+
 ### Mobile
 
 `android/` and `ios/` are Capacitor shells (`capacitor.config.ts`, appId `net.rodaid.app`). `server.url` points at `https://rodaid.net` — the native apps are thin WebView wrappers loading the live deployment, not bundlers of a local static `webDir` build.
