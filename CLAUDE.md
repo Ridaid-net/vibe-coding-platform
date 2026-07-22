@@ -891,6 +891,14 @@ Encontrado probando en producción con su cuenta real recién aprobada como alia
 
 **Sumado el mismo día, a pedido de Federico ("más dinámico para los que se loguean como talleres"):** botón "Ingresar como Taller Aliado" en `/ingresar`, que reusa el mismo mecanismo `returnTo`/`next` ya existente (`/ingresar?next=/taller`) — funciona igual sea cual sea el método de login elegido después (local o MxM, ambos ya leen `returnTo` de la URL). Si `next=/taller` ya está seteado (p. ej. porque se clickeó el botón), se reemplaza por un indicador de estado ("Ingresando como Taller Aliado") en vez de mostrarse de nuevo. PR #156.
 
+### FIXED 2026-07-22: solicitud de aliado enviada sin sesión quedaba "aprobada" pero sin ningún rol promovido
+
+Consecuencia directa (no un bug de código nuevo) del fix de `solicitarAliado()` de la sección anterior: Federico probó el formulario `/aliados` justo después de que se le borrara su cuenta (sin sesión), y esa solicitud ("Collarbike", `tipo=taller`) quedó con `usuario_id = NULL`. Al aprobarla desde el admin panel, `resolverAliado()` solo promueve el rol de la cuenta vinculada al aliado — como no había ninguna, `contactoarribaeleste@gmail.com` se quedó en `rol='ciclista'` para siempre, aunque la solicitud dijera "aprobado". Síntoma visible: el login redirigía a `/taller` (PR #156), pero el guard de esa página (`sesion.rol !== 'aliado'/'inspector'/'admin'`) rebotaba de vuelta a `/garaje`.
+
+Fix con el mismo mecanismo de siempre (migración SQL, no un cambio de código): vincula manualmente `aliados.usuario_id` a la cuenta real y promueve su rol — mismo criterio que el propio `resolverAliado()` (`WHERE rol = 'ciclista'`). PR #157.
+
+**Backlog pendiente, pedido explícito de Federico el mismo día:** el formulario `/aliados` no exige login antes de completarse — cualquiera puede enviar una solicitud sin cuenta, con el riesgo de quedar "aprobada" pero sin ningún camino de vuelta a un usuario real (exactamente lo que pasó acá). Resolver el procedimiento de inscripción de Talleres Aliados de punta a punta: incorporar un login/registro **antes** de completar el formulario (o la alternativa más intuitiva para este tipo de prestador de servicio) para que una solicitud aprobada siempre tenga una cuenta real detrás. No implementado todavía — queda para una sesión dedicada.
+
 ### Mobile
 
 `android/` and `ios/` are Capacitor shells (`capacitor.config.ts`, appId `net.rodaid.app`). `server.url` points at `https://rodaid.net` — the native apps are thin WebView wrappers loading the live deployment, not bundlers of a local static `webDir` build.
