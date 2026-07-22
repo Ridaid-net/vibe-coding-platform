@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Loader2, LogIn, ShieldCheck } from 'lucide-react'
+import { Loader2, LogIn, ShieldCheck, Wrench } from 'lucide-react'
 import { toast } from 'sonner'
 import { login, register, getSession } from '@/lib/session'
 
@@ -58,7 +59,12 @@ export function LoginForm() {
         await register(normalizarIdentificador(identificador), password, nombre.trim() || undefined, cuil.replace(/[-s]/g, "") || undefined)
       }
       const sesion = getSession()
-      const dest = sesion?.rol === 'admin' && returnTo === '/garaje' ? '/admin' : returnTo
+      const dest =
+        sesion?.rol === 'admin' && returnTo === '/garaje'
+          ? '/admin'
+          : sesion?.rol === 'aliado' && returnTo === '/garaje'
+            ? '/taller'
+            : returnTo
       window.location.href = dest
     } catch (err) {
       toast.error('No pudimos iniciar sesión', {
@@ -86,6 +92,23 @@ export function LoginForm() {
           Gestioná la identidad de tus bicicletas y operá con confianza.
         </p>
       </div>
+
+      {returnTo === '/taller' ? (
+        <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs font-semibold text-[#1E9E96]">
+          <Wrench className="size-3.5" />
+          Ingresando como Taller Aliado
+        </p>
+      ) : (
+        <div className="mt-4 text-center">
+          <Link
+            href="/ingresar?next=/taller"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[#1E9E96]/40 bg-[#1E9E96]/8 px-3.5 py-1.5 text-xs font-semibold text-[#1E9E96] transition-colors hover:bg-[#1E9E96]/15"
+          >
+            <Wrench className="size-3.5" />
+            Ingresar como Taller Aliado
+          </Link>
+        </div>
+      )}
 
       {mxmError && (
         <div className="mt-6 rounded-2xl border border-clay/30 bg-clay/5 px-4 py-3 text-sm text-ink">
