@@ -869,9 +869,11 @@ Bug reportado por Federico: un Taller Aliado logueado veía el mismo Nav complet
 
 **Confirmado también antes de tocar nada:** ocultar links del Nav es **100% cosmético**. Ninguna de las rutas ocultas (`/garaje`, `/asistente`, `/aliados`, `/desarrolladores`, `/verificar`, las anclas de la home) tiene gate por rol server-side — como mucho exigen que haya alguna sesión logueada. Un Taller Aliado que escriba la URL a mano sigue entrando igual; si se quiere bloqueo real es trabajo aparte, no incluido en este fix.
 
-**Scoping deliberadamente angosto:** `inspector` (que comparte el mismo link "Mi Taller" desde antes) queda sin tocar — sigue viendo el Nav completo de siempre. El pedido fue específicamente sobre Taller Aliado, no un cambio global. `nav.tsx` gana `isTallerAliado = user?.role === 'aliado'`; cuando es `true`, tanto el nav desktop como el menú mobile muestran únicamente "Mi Taller" (mismos arrays `LINKS_SECCION`/`LINKS_APP` filtrados en los dos lugares, para que el mobile no quede desincronizado del desktop).
+**Scoping deliberadamente angosto:** `inspector` (que comparte el mismo link "Mi Taller" desde antes) queda sin tocar — sigue viendo el Nav completo de siempre. El pedido fue específicamente sobre Taller Aliado, no un cambio global. `nav.tsx` gana `isTallerAliado = user?.role === 'aliado'`; cuando es `true`, tanto el nav desktop como el menú mobile filtran los mismos arrays `LINKS_SECCION`/`LINKS_APP` en los dos lugares (para que el mobile no quede desincronizado del desktop).
 
 **Color del botón activo:** teal sólido `#1E9E96` — de 4 propuestas visuales (naranja sólido, teal sólido, outline con acento, degradé), Federico eligió teal porque ya es el color que el resto del Nav usa para "activo/verificado", sin competir con el naranja reservado a conversión ("Publicar mi bici"). PR #152.
+
+**Ajustado el mismo día, probando en vivo con su propia cuenta real recién aprobada como aliado (PR #155, dos rondas):** el alcance final no es "solo Mi Taller" — un Taller Aliado también necesita **"Mi Garaje"** (para publicar las bicis de su propio comercio) y **"Verificar"** (el verificador público). Los tres quedan visibles para `rol='aliado'`; el resto (Comprar/Vender/RODAID PAY/Seguridad/Aliados/Asistente/Desarrolladores) sigue oculto. Solo "Mi Taller" lleva el botón teal — "Mi Garaje" y "Verificar" usan el estilo de link default, igual que se ven para cualquier otro rol.
 
 ### FIXED 2026-07-22: `solicitarAliado()` rompía para visitantes sin sesión en producción
 
