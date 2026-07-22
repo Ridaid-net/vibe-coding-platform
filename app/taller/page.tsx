@@ -8,6 +8,7 @@ import { PublicarServicioTaller } from '@/components/rodaid/PublicarServicioTall
 import { RemitosTaller } from '@/components/rodaid/RemitosTaller'
 import { SolicitudesReservaTaller } from '@/components/rodaid/SolicitudesReservaTaller'
 import { IniciarCertificacionTaller } from '@/components/rodaid/IniciarCertificacionTaller'
+import { PrestamosBiciTaller } from '@/components/rodaid/PrestamosBiciTaller'
 import { ShieldCheck, DollarSign, Clock, Award, LogOut } from 'lucide-react'
 import { authedFetch } from '@/lib/session'
 
@@ -91,6 +92,8 @@ export default function TallerPage() {
         <SolicitudesReservaTaller />
 
         <IniciarCertificacionTaller />
+
+        <PrestamosBiciTaller />
 
         {/* Panel de inspecciones */}
         <Inspecciones />
