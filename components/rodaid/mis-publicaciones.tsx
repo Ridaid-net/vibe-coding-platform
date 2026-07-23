@@ -222,6 +222,14 @@ function PublicacionItem({ pub }: { pub: MiPublicacion }) {
           >
             {estado.label}
           </span>
+          {pub.origen === 'acuerdo_privado' && (
+            <span
+              className="shrink-0 rounded-full bg-lime/30 px-2.5 py-0.5 text-[11px] font-semibold text-ink"
+              title="Venta acordada por fuera del Marketplace -- no aparece en el grid publico."
+            >
+              Acuerdo privado
+            </span>
+          )}
         </div>
         <p className="mt-0.5 text-sm font-semibold text-ink">
           {pesos(pub.precioARS)}

@@ -118,6 +118,7 @@ export interface MiPublicacion {
   titulo: string
   descripcion: string
   estado: string
+  origen: string
   precioARS: number
   precioUSD: number | null
   fotoUrl: string | null
