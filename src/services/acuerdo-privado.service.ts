@@ -152,16 +152,24 @@ export async function crearAcuerdoPrivado(
       throw new ApiError(404, 'ALIADO_NOT_FOUND', 'El taller elegido no existe o no esta aprobado.')
     }
 
-    // 3. Vincular el Taller a la bici (aliado_servicios) -- es lo que
-    //    resolverAliadoPorBicicleta() (escrow.service.ts) va a necesitar
-    //    para no bloquear /reservar con SIN_TALLER_VINCULADO. Mismo INSERT
-    //    que vincularServicio() (aliados.service.ts), inline para quedar
-    //    dentro de esta misma transaccion en vez de abrir una segunda.
+    // 3. Vincular el Taller a la bici (aliado_servicios) COMO PRINCIPAL --
+    //    el vendedor lo esta eligiendo explicitamente para esta venta, mismo
+    //    criterio que otorgarAccesoTaller(..., esPrincipal: true): le saca
+    //    el principal a quien lo tuviera (si habia uno) antes de vincular a
+    //    este, para que resolverAliadoPorBicicleta() (escrow.service.ts) no
+    //    bloquee /reservar con SIN_TALLER_VINCULADO. ON CONFLICT ...
+    //    DO UPDATE (no DO NOTHING) para poder re-otorgar un vinculo que
+    //    hubiera quedado revocado.
+    await client.query(
+      `UPDATE aliado_servicios SET es_principal = FALSE WHERE bicicleta_id = $1 AND es_principal = TRUE`,
+      [bici.id]
+    )
     await client.query(
       `
-        INSERT INTO aliado_servicios (aliado_id, bicicleta_id, tipo_servicio, detalle)
-        VALUES ($1, $2, 'venta', 'Acuerdo privado: elegido por el vendedor al iniciar el tramite.')
-        ON CONFLICT (aliado_id, bicicleta_id) DO NOTHING
+        INSERT INTO aliado_servicios (aliado_id, bicicleta_id, tipo_servicio, detalle, es_principal, revocado_en)
+        VALUES ($1, $2, 'venta', 'Acuerdo privado: elegido por el vendedor al iniciar el tramite.', TRUE, NULL)
+        ON CONFLICT (aliado_id, bicicleta_id)
+          DO UPDATE SET es_principal = TRUE, revocado_en = NULL
       `,
       [aliado.id, bici.id]
     )
