@@ -531,12 +531,20 @@ function ModeracionDisputasCit() {
   const { data, error, recargar } = useCarga<DisputaCitCompletoAdmin[]>(obtenerColaDisputasCit)
   const [busy, setBusy] = useState<string | null>(null)
   const [notas, setNotas] = useState<Record<string, string>>({})
+  const [sancionarTaller, setSancionarTaller] = useState<Record<string, boolean>>({})
+  const [tallerNotas, setTallerNotas] = useState<Record<string, string>>({})
   const accionar = puede('moderacion:accion')
 
   const resolver = async (id: string, decision: 'confirmar_naranja' | 'desestimar') => {
     setBusy(id + decision)
     try {
-      await resolverDisputaCit(id, decision, notas[id]?.trim() || undefined)
+      await resolverDisputaCit(
+        id,
+        decision,
+        notas[id]?.trim() || undefined,
+        sancionarTaller[id] || undefined,
+        sancionarTaller[id] ? tallerNotas[id]?.trim() || undefined : undefined
+      )
       toast.success(decision === 'confirmar_naranja' ? 'Disputa confirmada' : 'Disputa desestimada')
       recargar()
     } catch (err) {
@@ -587,6 +595,40 @@ function ModeracionDisputasCit() {
                     placeholder="Nota de resolución (opcional)"
                     className="w-full rounded-xl border border-ink/15 bg-white px-3 py-2 text-xs text-ink outline-none focus:border-ink/40"
                   />
+                  {d.aliadoId && (
+                    <div className="rounded-xl border border-ink/10 bg-paper-dim/40 p-3">
+                      <label className="flex items-start gap-2 text-xs font-semibold text-ink">
+                        <input
+                          type="checkbox"
+                          checked={sancionarTaller[d.id] ?? false}
+                          onChange={(e) =>
+                            setSancionarTaller((prev) => ({ ...prev, [d.id]: e.target.checked }))
+                          }
+                          className="mt-0.5"
+                        />
+                        <span className="flex items-center gap-1.5">
+                          <Store className="size-3.5" />
+                          Sancionar también al Taller Aliado (certificó una inspección que nunca hizo, o coludió)
+                        </span>
+                      </label>
+                      {d.tallerAntecedentes24m > 0 && (
+                        <p className="mt-1.5 text-[11px] font-semibold text-clay">
+                          Este taller ya tiene {d.tallerAntecedentes24m} antecedente
+                          {d.tallerAntecedentes24m === 1 ? '' : 's'} confirmado
+                          {d.tallerAntecedentes24m === 1 ? '' : 's'} en los últimos 24 meses.
+                        </p>
+                      )}
+                      {sancionarTaller[d.id] && (
+                        <textarea
+                          value={tallerNotas[d.id] ?? ''}
+                          onChange={(e) => setTallerNotas((prev) => ({ ...prev, [d.id]: e.target.value }))}
+                          rows={2}
+                          placeholder="Nota sobre la sanción al taller (opcional)"
+                          className="mt-2 w-full rounded-xl border border-ink/15 bg-white px-3 py-2 text-xs text-ink outline-none focus:border-ink/40"
+                        />
+                      )}
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     <BtnAccion
                       onClick={() => resolver(d.id, 'confirmar_naranja')}
