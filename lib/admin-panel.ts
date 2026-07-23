@@ -1755,23 +1755,39 @@ export type DecisionDisputaCit = 'confirmar_naranja' | 'desestimar'
 /**
  * Resuelve una disputa de CIT Completo EN_REVISION_HUMANA. Solo
  * `moderacion:accion` (superadmin/soporte, no auditor -- solo lectura).
+ *
+ * `sancionarTaller` (Esquema 2, parte (a)) es independiente de `decision`:
+ * el Taller Aliado de esa transacción puede haber actuado de mala fe sin
+ * importar si el vendedor termina sancionado o desestimado -- reusa la
+ * misma evidencia ya presentada en la disputa, sin canal de denuncia nuevo.
  */
 export async function resolverDisputaCitCompletoHumano(
   ctx: AdminContext,
   disputaId: string,
   decision: DecisionDisputaCit,
-  nota: string | null
-): Promise<{ vendedorId: string; deudaId: string | null }> {
+  nota: string | null,
+  sancionarTaller = false,
+  tallerNota: string | null = null
+): Promise<{ vendedorId: string; deudaId: string | null; deudaTallerId: string | null }> {
   const resultado =
     decision === 'confirmar_naranja'
-      ? await confirmarNaranja(disputaId, ctx.userId, nota)
-      : { ...(await desestimarDisputa(disputaId, ctx.userId, nota)), deudaId: null }
+      ? await confirmarNaranja(disputaId, ctx.userId, nota, sancionarTaller, tallerNota)
+      : await desestimarDisputa(disputaId, ctx.userId, nota, sancionarTaller, tallerNota).then((r) => ({
+          ...r,
+          deudaId: null,
+        }))
 
   await auditarAdmin(ctx, {
     accion: decision === 'confirmar_naranja' ? 'disputa_cit.confirmar_naranja' : 'disputa_cit.desestimar',
     recursoTipo: 'disputa_cit_completo',
     recursoId: disputaId,
-    detalle: { nota: nota ?? null, deudaId: resultado.deudaId },
+    detalle: {
+      nota: nota ?? null,
+      deudaId: resultado.deudaId,
+      sancionarTaller,
+      tallerNota: sancionarTaller ? tallerNota ?? null : null,
+      deudaTallerId: resultado.deudaTallerId,
+    },
   })
 
   return resultado

@@ -388,15 +388,19 @@ export interface DisputaCitCompletoAdmin {
   publicacionId: string
   compradorId: string
   vendedorId: string
+  aliadoId: string | null
   estado: 'ABIERTA' | 'RESUELTA_AMARILLO' | 'EN_REVISION_HUMANA' | 'CONFIRMADA_NARANJA' | 'DESESTIMADA'
   motivo: string
   numeroCancelacionDelVendedor: number
   montoReembolsadoArs: number | null
   revisorId: string | null
   resolucionNota: string | null
+  tallerSancionado: boolean
+  tallerSancionNota: string | null
   abiertaEn: string
   resueltaEn: string | null
   vendedorEnUmbralAntifraude: boolean
+  tallerAntecedentes24m: number
 }
 
 export const obtenerColaDisputasCit = () =>
@@ -407,12 +411,17 @@ export const obtenerColaDisputasCit = () =>
 export const resolverDisputaCit = (
   id: string,
   decision: 'confirmar_naranja' | 'desestimar',
-  nota?: string
+  nota?: string,
+  sancionarTaller?: boolean,
+  tallerNota?: string
 ) =>
-  postJson<{ vendedorId: string; deudaId: string | null }>(
+  postJson<{ vendedorId: string; deudaId: string | null; deudaTallerId: string | null }>(
     `/api/v1/admin/panel/disputas-cit-completo/${id}/resolver`,
-    { decision, nota }
+    { decision, nota, sancionarTaller, tallerNota }
   )
+
+export const confirmarPagoDeudaTaller = (deudaId: string) =>
+  postJson<{ ok: true }>(`/api/v1/admin/panel/disputas-cit-completo/deudas-taller/${deudaId}/confirmar`, {})
 
 export const obtenerApiKeys = () =>
   getJson<{ apps: ApiKeyAdmin[] }>('/api/v1/admin/panel/identidades/api-keys').then((d) => d.apps)

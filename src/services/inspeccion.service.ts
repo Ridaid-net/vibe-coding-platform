@@ -26,6 +26,7 @@ import {
   type ActaFirmada,
   type ActaPayload,
 } from '@/src/services/acta-firma.service'
+import { obtenerDeudaPendienteTaller } from '@/src/services/disputas-cit-completo.service'
 
 // Bucket CIFRADO de fotos de componentes tokenizados (Checklist 20 puntos).
 const STORE_INSPECCIONES = 'rodaid-inspecciones-componentes'
@@ -333,6 +334,20 @@ export async function autorizarCitParaInspeccion(
       'TIPO_ALIADO_NO_HABILITADO',
       'Tu perfil de aliado no tiene capacidad mecánica registrada (tipo taller) -- no podés certificar inspecciones físicas.'
     )
+  }
+  if (ctx.rol === 'aliado' && ctx.aliado) {
+    // Esquema 2 (a): un taller con una sanción confirmada por fraude en una
+    // disputa de CIT Completo no puede certificar MAS inspecciones (y así
+    // cobrar más fees) hasta saldar la deuda -- mismo criterio que el gate
+    // de /marketplace/publicar del lado del vendedor.
+    const deuda = await obtenerDeudaPendienteTaller(ctx.aliado.id)
+    if (deuda) {
+      throw new ApiError(
+        403,
+        'DEUDA_PENDIENTE_TALLER',
+        `Tu taller tiene una deuda pendiente de ${deuda.monto.toLocaleString('es-AR')} con RODAID por un fraude confirmado -- no podés certificar nuevas inspecciones hasta saldarla.`
+      )
+    }
   }
   const res = await getPool().query<{ bicicleta_id: string }>(
     `SELECT bicicleta_id FROM cits WHERE id = $1 LIMIT 1`,

@@ -8,6 +8,8 @@ export const runtime = 'nodejs'
 const bodySchema = z.object({
   decision: z.enum(['confirmar_naranja', 'desestimar']),
   nota: z.string().max(2000).optional(),
+  sancionarTaller: z.boolean().optional().default(false),
+  tallerNota: z.string().max(2000).optional(),
 })
 
 /**
@@ -31,7 +33,9 @@ export async function POST(
       ctx,
       id,
       parsed.data.decision,
-      optionalText(parsed.data.nota) ?? null
+      optionalText(parsed.data.nota) ?? null,
+      parsed.data.sancionarTaller,
+      optionalText(parsed.data.tallerNota) ?? null
     )
     return NextResponse.json(resultado)
   } catch (error) {

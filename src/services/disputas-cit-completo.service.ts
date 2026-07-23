@@ -34,11 +34,21 @@ import {
  *   confirmarNaranja() / desestimarDisputa() -> resolucion de un admin
  *     (llamadas desde lib/admin-panel.ts, que tiene el AdminContext/auditoria
  *     -- este archivo deliberadamente no depende de lib/admin-panel.ts para
- *     evitar un import circular).
+ *     evitar un import circular). Ambas aceptan un `sancionarTaller`
+ *     independiente de la decision sobre el vendedor -- Esquema 2, parte (a):
+ *     el admin puede confirmar que el Taller Aliado de esa transaccion
+ *     tambien actuo de mala fe (certifico una inspeccion que nunca hizo, o
+ *     coludio con el vendedor), reusando la misma evidencia ya presentada.
+ *     No hay canal de denuncia nuevo contra un taller -- eso es la parte (b)
+ *     del Esquema 2, documentada en CLAUDE.md y deliberadamente diferida.
  *   calcularRatioVerificacionesSinVenta() -> umbral anti-fraude a escala:
  *     ventana de las ultimas 10 verificaciones RESUELTAS (concretada o no) de
  *     un vendedor, piso de 5 antes de que el ratio aplique, prioriza la cola
  *     de revision si >=50% no se concretaron. Nunca sanciona por si solo.
+ *   contarAntecedentesTaller() -> mismo criterio que el umbral de arriba pero
+ *     para talleres: cuenta disputas donde ese taller ya fue sancionado en
+ *     los ultimos 24 meses. Nunca dispara nada automatico -- solo le da
+ *     contexto al admin que revisa un caso nuevo del mismo taller.
  */
 
 const STORE_DISPUTAS = 'rodaid-disputas-cit-completo'
@@ -59,12 +69,15 @@ export interface DisputaCitCompleto {
   publicacionId: string
   compradorId: string
   vendedorId: string
+  aliadoId: string | null
   estado: DisputaCitCompletoEstado
   motivo: string
   numeroCancelacionDelVendedor: number
   montoReembolsadoArs: number | null
   revisorId: string | null
   resolucionNota: string | null
+  tallerSancionado: boolean
+  tallerSancionNota: string | null
   abiertaEn: string
   resueltaEn: string | null
 }
@@ -75,12 +88,15 @@ interface DisputaRow {
   publicacion_id: string
   comprador_id: string
   vendedor_id: string
+  aliado_id: string | null
   estado: DisputaCitCompletoEstado
   motivo: string
   numero_cancelacion_del_vendedor: number
   monto_reembolsado_ars: string | null
   revisor_id: string | null
   resolucion_nota: string | null
+  taller_sancionado: boolean
+  taller_sancion_nota: string | null
   abierta_en: string
   resuelta_en: string | null
 }
@@ -92,12 +108,15 @@ function mapDisputa(row: DisputaRow): DisputaCitCompleto {
     publicacionId: row.publicacion_id,
     compradorId: row.comprador_id,
     vendedorId: row.vendedor_id,
+    aliadoId: row.aliado_id,
     estado: row.estado,
     motivo: row.motivo,
     numeroCancelacionDelVendedor: row.numero_cancelacion_del_vendedor,
     montoReembolsadoArs: row.monto_reembolsado_ars === null ? null : Number(row.monto_reembolsado_ars),
     revisorId: row.revisor_id,
     resolucionNota: row.resolucion_nota,
+    tallerSancionado: row.taller_sancionado,
+    tallerSancionNota: row.taller_sancion_nota,
     abiertaEn: row.abierta_en,
     resueltaEn: row.resuelta_en,
   }
@@ -195,10 +214,10 @@ export async function abrirDisputaCitCompleto(input: AbrirDisputaInput): Promise
     const disputaRes = await client.query<DisputaRow>(
       `
         INSERT INTO disputas_cit_completo
-          (escrow_transaccion_id, publicacion_id, comprador_id, vendedor_id, estado,
+          (escrow_transaccion_id, publicacion_id, comprador_id, vendedor_id, aliado_id, estado,
            motivo, numero_cancelacion_del_vendedor, monto_reembolsado_ars,
            resuelta_en)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING *
       `,
       [
@@ -206,6 +225,7 @@ export async function abrirDisputaCitCompleto(input: AbrirDisputaInput): Promise
         tx.publicacion_id,
         tx.comprador_id,
         tx.vendedor_id,
+        tx.aliado_id,
         estadoDisputa,
         input.motivo,
         numeroCancelacion,
@@ -355,6 +375,7 @@ export async function listarDisputasComoVendedor(vendedorId: string): Promise<Di
 
 export interface DisputaEnCola extends DisputaCitCompleto {
   vendedorEnUmbralAntifraude: boolean
+  tallerAntecedentes24m: number
 }
 
 export async function listarColaRevisionHumana(): Promise<DisputaEnCola[]> {
@@ -362,25 +383,81 @@ export async function listarColaRevisionHumana(): Promise<DisputaEnCola[]> {
   const res = await pool.query<DisputaRow>(
     `SELECT * FROM disputas_cit_completo WHERE estado = 'EN_REVISION_HUMANA' ORDER BY created_at ASC`
   )
-  const conUmbral: DisputaEnCola[] = await Promise.all(
+  const conContexto: DisputaEnCola[] = await Promise.all(
     res.rows.map(async (row: DisputaRow) => {
       const ratio = await calcularRatioVerificacionesSinVenta(row.vendedor_id)
-      return { ...mapDisputa(row), vendedorEnUmbralAntifraude: ratio.aplica && ratio.sobreUmbral }
+      const tallerAntecedentes24m = row.aliado_id ? await contarAntecedentesTaller(row.aliado_id) : 0
+      return {
+        ...mapDisputa(row),
+        vendedorEnUmbralAntifraude: ratio.aplica && ratio.sobreUmbral,
+        tallerAntecedentes24m,
+      }
     })
   )
   // Prioriza (no filtra) los casos de vendedores en el umbral anti-fraude.
-  return conUmbral.sort(
+  return conContexto.sort(
     (a: DisputaEnCola, b: DisputaEnCola) => Number(b.vendedorEnUmbralAntifraude) - Number(a.vendedorEnUmbralAntifraude)
   )
 }
 
 // ── 5. Resolución humana (helpers de bajo nivel, sin AdminContext) ──────────
 
+/**
+ * Esquema 2, parte (a): sanciona al Taller Aliado de esa transacción --
+ * independiente de la decisión sobre el vendedor (confirmar_naranja o
+ * desestimar), porque un taller puede haber actuado de mala fe aunque el
+ * vendedor no, o viceversa. Reusa la evidencia ya presentada en la disputa
+ * -- no sube nada nuevo. Crea una deuda por el monto que el taller cobró en
+ * esa transacción específica (Fee de Verificación + Fee de Logística, el
+ * "Total garantizado" ya documentado -- no el Fee de Éxito, que es variable
+ * y contingente a la venta).
+ */
+async function aplicarSancionTaller(
+  client: DbClient,
+  disputa: DisputaRow,
+  tallerNota: string | null
+): Promise<string | null> {
+  if (!disputa.aliado_id) {
+    throw new ApiError(409, 'SIN_TALLER_VINCULADO', 'Esta disputa no tiene un Taller Aliado vinculado.')
+  }
+
+  const feeRes = await client.query<{ fee_verificacion_ars: string; fee_logistica_pagado_taller_ars: string }>(
+    `SELECT fee_verificacion_ars, fee_logistica_pagado_taller_ars FROM escrow_transacciones WHERE id = $1`,
+    [disputa.escrow_transaccion_id]
+  )
+  const fila = feeRes.rows[0]
+  const monto = Number(fila?.fee_verificacion_ars ?? 0) + Number(fila?.fee_logistica_pagado_taller_ars ?? 0)
+
+  await client.query(
+    `UPDATE disputas_cit_completo SET taller_sancionado = true, taller_sancion_nota = $2, updated_at = NOW() WHERE id = $1`,
+    [disputa.id, tallerNota]
+  )
+
+  if (monto <= 0) return null
+
+  const deudaRes = await client.query<{ id: string }>(
+    `
+      INSERT INTO deudas_talleres (aliado_id, monto, motivo, disputa_id)
+      VALUES ($1, $2, $3, $4)
+      RETURNING id
+    `,
+    [
+      disputa.aliado_id,
+      monto,
+      'Fee de Verificación y Logística de un CIT de Transferencia con fraude confirmado del taller — disputa de CIT Completo.',
+      disputa.id,
+    ]
+  )
+  return deudaRes.rows[0]?.id ?? null
+}
+
 export async function confirmarNaranja(
   disputaId: string,
   revisorId: string,
-  nota: string | null
-): Promise<{ vendedorId: string; deudaId: string | null }> {
+  nota: string | null,
+  sancionarTaller = false,
+  tallerNota: string | null = null
+): Promise<{ vendedorId: string; deudaId: string | null; deudaTallerId: string | null }> {
   return withTx(async (client) => {
     const res = await client.query<DisputaRow>(
       `SELECT * FROM disputas_cit_completo WHERE id = $1 FOR UPDATE`,
@@ -442,7 +519,9 @@ export async function confirmarNaranja(
       deudaId = deudaRes.rows[0]?.id ?? null
     }
 
-    return { vendedorId: disputa.vendedor_id, deudaId }
+    const deudaTallerId = sancionarTaller ? await aplicarSancionTaller(client, disputa, tallerNota) : null
+
+    return { vendedorId: disputa.vendedor_id, deudaId, deudaTallerId }
   }).then(async (r) => {
     await notificarDisputaCitResuelta(r.vendedorId, { disputaId, confirmada: true, nota }).catch((err) =>
       console.error('[disputas-cit] error notificando resolucion', err)
@@ -454,9 +533,11 @@ export async function confirmarNaranja(
 export async function desestimarDisputa(
   disputaId: string,
   revisorId: string,
-  nota: string | null
-): Promise<{ vendedorId: string }> {
-  const vendedorId = await withTx(async (client) => {
+  nota: string | null,
+  sancionarTaller = false,
+  tallerNota: string | null = null
+): Promise<{ vendedorId: string; deudaTallerId: string | null }> {
+  const resultado = await withTx(async (client) => {
     const res = await client.query<DisputaRow>(
       `SELECT * FROM disputas_cit_completo WHERE id = $1 FOR UPDATE`,
       [disputaId]
@@ -475,14 +556,17 @@ export async function desestimarDisputa(
       `,
       [disputaId, revisorId, nota]
     )
-    // Reputación NO se toca: un caso desestimado no cuenta como strike.
-    return disputa.vendedor_id
+    // Reputación del vendedor NO se toca: un caso desestimado no cuenta como
+    // strike. La sanción al taller es independiente -- puede aplicarse aunque
+    // el vendedor haya sido desestimado.
+    const deudaTallerId = sancionarTaller ? await aplicarSancionTaller(client, disputa, tallerNota) : null
+    return { vendedorId: disputa.vendedor_id, deudaTallerId }
   })
 
-  await notificarDisputaCitResuelta(vendedorId, { disputaId, confirmada: false, nota }).catch((err) =>
+  await notificarDisputaCitResuelta(resultado.vendedorId, { disputaId, confirmada: false, nota }).catch((err) =>
     console.error('[disputas-cit] error notificando resolucion', err)
   )
-  return { vendedorId }
+  return resultado
 }
 
 // ── 6. Umbral anti-fraude a escala (ventana 10, piso 5, ratio >=50%) ────────
@@ -550,6 +634,54 @@ export async function obtenerDeudaPendiente(
 export async function confirmarPagoDeuda(deudaId: string): Promise<void> {
   const res = await getPool().query(
     `UPDATE deudas_vendedores SET estado = 'pagada', pagada_en = NOW() WHERE id = $1 AND estado = 'pendiente'`,
+    [deudaId]
+  )
+  if (res.rowCount === 0) {
+    throw new ApiError(409, 'DEUDA_NO_PENDIENTE', 'La deuda no existe o ya fue resuelta.')
+  }
+}
+
+// ── 8. Esquema 2 (a): sanción a Talleres Aliados cómplices ─────────────────
+
+const VENTANA_ANTECEDENTES_TALLER_MESES = 24
+
+/**
+ * Antecedentes confirmados de un taller en los últimos 24 meses -- nunca
+ * dispara nada automático, solo le da contexto al admin que revisa un caso
+ * nuevo de ese mismo taller (ver DisputaEnCola.tallerAntecedentes24m).
+ * Suspender/revocar la aprobación de un taller sigue siendo, siempre, una
+ * decisión humana aparte -- mismo criterio ya usado para la extinción de
+ * cuenta de un vendedor.
+ */
+export async function contarAntecedentesTaller(aliadoId: string): Promise<number> {
+  const res = await getPool().query<{ count: string }>(
+    `
+      SELECT COUNT(*) FROM disputas_cit_completo
+      WHERE aliado_id = $1
+        AND taller_sancionado = true
+        AND resuelta_en > NOW() - ($2 || ' months')::interval
+    `,
+    [aliadoId, VENTANA_ANTECEDENTES_TALLER_MESES]
+  )
+  return Number(res.rows[0]?.count ?? 0)
+}
+
+/** Deuda pendiente de un Taller Aliado (gate de nuevas inspecciones -- ver inspeccion.service.ts). */
+export async function obtenerDeudaPendienteTaller(
+  aliadoId: string
+): Promise<{ id: string; monto: number; motivo: string } | null> {
+  const res = await getPool().query<{ id: string; monto: string; motivo: string }>(
+    `SELECT id, monto, motivo FROM deudas_talleres WHERE aliado_id = $1 AND estado = 'pendiente' ORDER BY creado_en ASC LIMIT 1`,
+    [aliadoId]
+  )
+  const row = res.rows[0]
+  return row ? { id: row.id, monto: Number(row.monto), motivo: row.motivo } : null
+}
+
+/** Confirma el pago manual de una deuda de taller (mismo criterio que confirmarPagoDeuda()). */
+export async function confirmarPagoDeudaTaller(deudaId: string): Promise<void> {
+  const res = await getPool().query(
+    `UPDATE deudas_talleres SET estado = 'pagada', pagada_en = NOW() WHERE id = $1 AND estado = 'pendiente'`,
     [deudaId]
   )
   if (res.rowCount === 0) {
