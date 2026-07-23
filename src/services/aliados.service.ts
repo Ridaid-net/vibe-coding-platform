@@ -282,10 +282,22 @@ export async function vincularServicio(opts: {
     }
     const bicicletaId = bici.rows[0].id
 
+    // es_principal: TRUE solo si la bici todavia no tiene ningun principal
+    // vigente -- el primer vinculo real de una bici se vuelve principal
+    // automaticamente (preserva el comportamiento pre-multi-taller para el
+    // caso comun de un solo taller), pero esta funcion nunca le saca el
+    // principal a nadie que el dueño ya haya elegido explicitamente via
+    // otorgarAccesoTaller().
     const ins = await client.query<{ id: string }>(
       `
-        INSERT INTO aliado_servicios (aliado_id, bicicleta_id, tipo_servicio, detalle)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO aliado_servicios (aliado_id, bicicleta_id, tipo_servicio, detalle, es_principal)
+        VALUES (
+          $1, $2, $3, $4,
+          NOT EXISTS (
+            SELECT 1 FROM aliado_servicios
+            WHERE bicicleta_id = $2 AND es_principal = TRUE AND revocado_en IS NULL
+          )
+        )
         ON CONFLICT (aliado_id, bicicleta_id) DO NOTHING
         RETURNING id
       `,
