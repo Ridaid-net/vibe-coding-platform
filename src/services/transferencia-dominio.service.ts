@@ -39,7 +39,7 @@ export interface TransferenciaInput {
   bicicletaId: string
   propietarioAnteriorId: string
   propietarioNuevoId: string
-  motivo: 'venta_marketplace' | 'transferencia_manual'
+  motivo: 'venta_marketplace' | 'transferencia_manual' | 'reclamo_con_evidencia'
   escrowTransaccionId?: string | null
   actorId: string | null
   actorRol: string

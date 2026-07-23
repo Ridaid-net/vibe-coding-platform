@@ -26,6 +26,12 @@ import {
   listarColaRevisionHumana,
   type DisputaEnCola,
 } from '@/src/services/disputas-cit-completo.service'
+import {
+  aprobarReclamoHumano,
+  desestimarReclamoHumano,
+  listarColaRevisionReclamos,
+  type ReclamoEnCola,
+} from '@/src/services/reclamos-titularidad.service'
 
 /**
  * RODAID — Hito 19: Dashboard de Administracion (Operaciones / SysAdmin).
@@ -1788,6 +1794,51 @@ export async function resolverDisputaCitCompletoHumano(
       tallerNota: sancionarTaller ? tallerNota ?? null : null,
       deudaTallerId: resultado.deudaTallerId,
     },
+  })
+
+  return resultado
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// MODULO 6 — Reclamos de titularidad (Esquema 3).
+// ───────────────────────────────────────────────────────────────────────────────
+//
+// Misma separación que el MODULO 5: la lógica de dominio (evidencia,
+// notificación al dueño actual, cruce con el MPF) vive en
+// src/services/reclamos-titularidad.service.ts, que deliberadamente NO
+// importa de este archivo. El AdminContext/auditoria del panel se resuelve
+// acá. Reusa moderacion:ver/moderacion:accion -- mismo tipo de acción que
+// resolver una disputa, sin permisos nuevos.
+
+/** Cola de revisión humana (dueño actual no respondió en 48hs, o el reclamante inició sin respuesta esperable). */
+export async function obtenerColaRevisionReclamos(): Promise<ReclamoEnCola[]> {
+  return listarColaRevisionReclamos()
+}
+
+export type DecisionReclamoTitularidad = 'aprobar' | 'desestimar'
+
+/**
+ * Resuelve un reclamo de titularidad EN_REVISION_HUMANA. Solo
+ * `moderacion:accion` (superadmin/soporte, no auditor -- solo lectura).
+ * Aprobar ejecuta la transferencia real de inmediato (mismo mecanismo que
+ * los otros dos caminos de transferirTitularidadBicicleta()).
+ */
+export async function resolverReclamoTitularidadHumano(
+  ctx: AdminContext,
+  reclamoId: string,
+  decision: DecisionReclamoTitularidad,
+  nota: string | null
+): Promise<{ reclamanteId: string; transferenciaId: string | null }> {
+  const resultado =
+    decision === 'aprobar'
+      ? await aprobarReclamoHumano(reclamoId, ctx.userId, nota)
+      : { ...(await desestimarReclamoHumano(reclamoId, ctx.userId, nota)), transferenciaId: null }
+
+  await auditarAdmin(ctx, {
+    accion: decision === 'aprobar' ? 'reclamo_titularidad.aprobar' : 'reclamo_titularidad.desestimar',
+    recursoTipo: 'reclamo_titularidad',
+    recursoId: reclamoId,
+    detalle: { nota: nota ?? null, transferenciaId: resultado.transferenciaId },
   })
 
   return resultado
