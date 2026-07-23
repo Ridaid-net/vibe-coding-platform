@@ -10,6 +10,7 @@ import {
   type PublicacionRow,
 } from '@/lib/marketplace'
 import { StorageError, subirFotoBicicleta } from '@/src/services/storage.service'
+import { obtenerDeudaPendiente } from '@/src/services/disputas-cit-completo.service'
 
 export const runtime = 'nodejs'
 
@@ -240,6 +241,19 @@ export async function POST(req: Request) {
         409,
         'DATOS_BANCARIOS_FALTANTES',
         'Antes de publicar necesitas cargar un CBU o alias para poder cobrar tu venta.'
+      )
+    }
+
+    // 3b. Deuda pendiente hacia RODAID (Esquema 1 Caso B: disputa confirmada
+    //     por revision humana, 2da+ cancelacion con evidencia) -- bloquea
+    //     publicar un CIT Completo nuevo hasta saldarse. Mismo patron que el
+    //     gate de datos bancarios de arriba.
+    const deuda = await obtenerDeudaPendiente(user.id)
+    if (deuda) {
+      throw new ApiError(
+        409,
+        'DEUDA_PENDIENTE',
+        `Tenés una deuda pendiente de $${deuda.monto.toLocaleString('es-AR')} con RODAID antes de poder publicar de nuevo.`
       )
     }
 

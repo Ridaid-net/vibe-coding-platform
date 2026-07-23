@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { ApiError, getPool, type DbClient } from '@/lib/marketplace'
+import { sumarDiasHabiles } from '@/lib/dias-habiles'
 import {
   buscarPagosPorExternalReference,
   consultarPago,
@@ -184,6 +185,8 @@ export interface TransaccionRow {
   auto_release_en: string | null
   /** Fase 5 (CIT Completo): ventana de 48hs de la reserva. Distinto de auto_release_en. */
   reserva_vence_en: string | null
+  /** Esquema 1 Caso A: ventana de 3 dias habiles de prioridad de recompra. */
+  prioridad_recompra_vence_en: string | null
   expira_en: string | null
   created_at: string
   updated_at: string
@@ -208,6 +211,7 @@ export interface PagoRow {
   gateway: string
   refund_id: string | null
   raw_status: string | null
+  concepto: string
   created_at: string
   updated_at: string
 }
@@ -503,6 +507,112 @@ async function reembolsarPagoRetenido(
   )
 
   return resultado
+}
+
+/**
+ * Reembolsa TODOS los pagos con fondos retenidos de una transaccion (a
+ * diferencia de `reembolsarPagoRetenido`, que solo reembolsa el mas
+ * reciente). Necesario para el Esquema 1 Caso B (disputas de CIT Completo):
+ * una transaccion puede tener DOS mp_pagos en FONDOS_RETENIDOS a la vez
+ * (sena + saldo, si el comprador ya pago ambos antes de que el vendedor
+ * cancele) y las dos plata tienen que volver.
+ */
+async function reembolsarTodosPagosRetenidos(
+  client: DbClient,
+  transaccionId: string,
+  motivo: string | null
+) {
+  const pagos = await client.query<PagoRow>(
+    `
+      SELECT * FROM mp_pagos
+      WHERE transaccion_id = $1 AND estado = 'FONDOS_RETENIDOS' AND payment_id IS NOT NULL
+      ORDER BY created_at ASC
+    `,
+    [transaccionId]
+  )
+
+  const reembolsos: Array<{ concepto: string; monto: number; refundId: string | null }> = []
+  for (const pago of pagos.rows) {
+    const resultado = await emitirReembolso({
+      paymentId: pago.payment_id as string,
+      motivo,
+      monto: Number(pago.monto),
+    })
+    await client.query(
+      `
+        UPDATE mp_pagos
+        SET estado = 'REEMBOLSADO', refund_id = $2, updated_at = NOW()
+        WHERE id = $1
+      `,
+      [pago.id, resultado.refundId]
+    )
+    reembolsos.push({ concepto: pago.concepto ?? 'venta', monto: Number(pago.monto), refundId: resultado.refundId })
+  }
+  return reembolsos
+}
+
+/**
+ * Esquema 1 Caso B (disputas de CIT Completo, disputas-cit-completo.service.ts):
+ * cancela la VENTA puntual (nunca el CIT, que sigue siendo un hecho tecnico
+ * verificado) cuando el comprador abre una disputa con evidencia. Reembolsa
+ * TODA la plata retenida (sena + saldo si ambos estaban pagos) y devuelve la
+ * publicacion a PUBLICADO_CERTIFICADO -- disponible sin nueva verificacion,
+ * nunca a los estados 'ACTIVA'/'PAUSADA' del mecanismo generico (que no
+ * aplican a CIT Completo).
+ *
+ * Deliberadamente NO llama a `cancelarLiquidacionesDeTransaccion()`: por los
+ * dos unicos estados desde los que se puede abrir esta disputa (RESERVADA,
+ * FONDOS_RETENIDOS -- ambos ANTES de despacho/entrega), la unica liquidacion
+ * que puede existir a esta altura es la de Fee de Verificacion del Taller
+ * (registrada en aprobarInspeccionFisica al sellar el checklist) -- y esa
+ * NUNCA se cancela, sea cual sea el resultado de la venta (el taller ya hizo
+ * el trabajo). Las liquidaciones de Logistica/Exito recien se registran en
+ * etapas posteriores (despacho/entrega), que esta disputa nunca alcanza.
+ */
+export async function cancelarPorDisputaCitCompleto(
+  client: DbClient,
+  tx: TransaccionRow,
+  motivo: string
+) {
+  if (!['RESERVADA', 'FONDOS_RETENIDOS'].includes(tx.estado)) {
+    throw new ApiError(
+      409,
+      'ESTADO_INVALIDO',
+      'Solo se puede disputar una reserva confirmada o un saldo con fondos retenidos.'
+    )
+  }
+
+  const reembolsos = await reembolsarTodosPagosRetenidos(client, tx.id, motivo)
+
+  const updated = await client.query<TransaccionRow>(
+    `
+      UPDATE escrow_transacciones
+      SET estado = 'CANCELADA', cancelacion_motivo = $2, updated_at = NOW()
+      WHERE id = $1
+      RETURNING *
+    `,
+    [tx.id, motivo]
+  )
+
+  await client.query(
+    `UPDATE marketplace_publicaciones SET estado = 'PUBLICADO_CERTIFICADO' WHERE id = $1`,
+    [tx.publicacion_id]
+  )
+
+  await logEvento(client, {
+    transaccionId: tx.id,
+    tipo: 'DISPUTA_CIT_COMPLETO_ABIERTA',
+    estadoAnterior: tx.estado,
+    estadoNuevo: 'CANCELADA',
+    actorId: tx.comprador_id,
+    actorRol: 'comprador',
+    metadata: { motivo, reembolsos },
+  })
+
+  return {
+    transaccion: mapTransaccion(updated.rows[0]),
+    montoReembolsadoArs: round2(reembolsos.reduce((acc, r) => acc + r.monto, 0)),
+  }
 }
 
 // ── 1. iniciarCompra ────────────────────────────────────────────────────────
@@ -958,6 +1068,37 @@ export async function iniciarReservaCitCompleto(input: IniciarReservaCitCompleto
   }
   if (pub.vendedor_id === input.compradorId) {
     throw new ApiError(422, 'COMPRADOR_ES_VENDEDOR', 'No podes reservar tu propia publicacion.')
+  }
+
+  // Esquema 1 Caso A: si el comprador que se quedo sin pagar el saldo tiene
+  // prioridad de recompra vigente (3 dias habiles desde que vencio su
+  // reserva), nadie mas puede reservar esta publicacion en ese lapso -- el
+  // comprador prioritario si puede, por el mismo camino (paga el saldo
+  // completo, sin sena ni nueva verificacion, igual que cualquier comprador
+  // de una publicacion PUBLICADO_CERTIFICADO).
+  if (pub.estado === 'PUBLICADO_CERTIFICADO') {
+    const prioridad = await pool.query<{ comprador_id: string; prioridad_recompra_vence_en: string }>(
+      `
+        SELECT comprador_id, prioridad_recompra_vence_en
+        FROM escrow_transacciones
+        WHERE publicacion_id = $1 AND estado = 'RESERVA_VENCIDA' AND prioridad_recompra_vence_en IS NOT NULL
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+      [input.publicacionId]
+    )
+    const fila = prioridad.rows[0]
+    if (
+      fila &&
+      new Date(fila.prioridad_recompra_vence_en).getTime() > Date.now() &&
+      fila.comprador_id !== input.compradorId
+    ) {
+      throw new ApiError(
+        409,
+        'PRIORIDAD_RECOMPRA_ACTIVA',
+        'Esta publicacion tiene prioridad de recompra para otro comprador durante 3 dias habiles.'
+      )
+    }
   }
 
   // El Taller sigue siendo necesario en ambos casos: si hay que verificar,
@@ -2016,14 +2157,26 @@ export async function procesarReservasVencidas(limite = 100) {
         // corresponde, ya quedo registrado en aprobarInspeccionFisica al
         // sellar -- esta funcion no lo toca en ningun caso.
         const estadoEscrowNuevo = tx.estado === 'RESERVADA' ? 'RESERVA_VENCIDA' : 'CANCELADA'
+        // Esquema 1 Caso A: si la bici ya quedo certificada, el comprador que
+        // se quedo sin pagar tiene prioridad de recompra por 3 dias habiles
+        // (nadie mas puede reservarla en ese lapso -- ver
+        // iniciarReservaCitCompleto). Solo aplica si de verdad hay plata
+        // retenida sin devolver (RESERVA_VENCIDA) -- una simple CANCELADA sin
+        // sena confirmada no genera ninguna prioridad.
+        const prioridadRecompraVenceEn =
+          yaSellada && estadoEscrowNuevo === 'RESERVA_VENCIDA' ? sumarDiasHabiles(new Date(), 3) : null
 
         await client.query(
           `UPDATE marketplace_publicaciones SET estado = $2 WHERE id = $1`,
           [pub.id, estadoPublicacionNuevo]
         )
         await client.query(
-          `UPDATE escrow_transacciones SET estado = $2, reserva_vence_en = NULL, updated_at = NOW() WHERE id = $1`,
-          [tx.id, estadoEscrowNuevo]
+          `
+            UPDATE escrow_transacciones
+            SET estado = $2, reserva_vence_en = NULL, prioridad_recompra_vence_en = $3, updated_at = NOW()
+            WHERE id = $1
+          `,
+          [tx.id, estadoEscrowNuevo, prioridadRecompraVenceEn]
         )
         await logEvento(client, {
           transaccionId: tx.id,

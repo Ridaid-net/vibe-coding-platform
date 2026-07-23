@@ -20,6 +20,12 @@ import {
 } from '@/src/services/mfa.service'
 import { revocarTokensDeApp } from '@/src/services/oauth.service'
 import { urlDocumentoSeguro } from '@/src/services/denuncia-mpf.service'
+import {
+  confirmarNaranja,
+  desestimarDisputa,
+  listarColaRevisionHumana,
+  type DisputaEnCola,
+} from '@/src/services/disputas-cit-completo.service'
 
 /**
  * RODAID — Hito 19: Dashboard de Administracion (Operaciones / SysAdmin).
@@ -1728,4 +1734,45 @@ export async function listarBitacora(opts: { accion?: string; limite?: number } 
     detalle: r.detalle ?? {},
     createdAt: r.created_at,
   }))
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// MODULO 5 — Disputas de CIT Completo (Esquema 1 Caso B).
+// ───────────────────────────────────────────────────────────────────────────────
+//
+// La logica de dominio (reputacion, evidencia, umbral anti-fraude) vive en
+// src/services/disputas-cit-completo.service.ts, que deliberadamente NO
+// importa de este archivo (para no crear un ciclo: este archivo ya importa
+// DE ese servicio). El AdminContext/auditoria del panel se resuelve aca.
+
+/** Cola de revision humana (2da+ cancelacion con evidencia de un vendedor). */
+export async function obtenerColaRevisionDisputasCit(): Promise<DisputaEnCola[]> {
+  return listarColaRevisionHumana()
+}
+
+export type DecisionDisputaCit = 'confirmar_naranja' | 'desestimar'
+
+/**
+ * Resuelve una disputa de CIT Completo EN_REVISION_HUMANA. Solo
+ * `moderacion:accion` (superadmin/soporte, no auditor -- solo lectura).
+ */
+export async function resolverDisputaCitCompletoHumano(
+  ctx: AdminContext,
+  disputaId: string,
+  decision: DecisionDisputaCit,
+  nota: string | null
+): Promise<{ vendedorId: string; deudaId: string | null }> {
+  const resultado =
+    decision === 'confirmar_naranja'
+      ? await confirmarNaranja(disputaId, ctx.userId, nota)
+      : { ...(await desestimarDisputa(disputaId, ctx.userId, nota)), deudaId: null }
+
+  await auditarAdmin(ctx, {
+    accion: decision === 'confirmar_naranja' ? 'disputa_cit.confirmar_naranja' : 'disputa_cit.desestimar',
+    recursoTipo: 'disputa_cit_completo',
+    recursoId: disputaId,
+    detalle: { nota: nota ?? null, deudaId: resultado.deudaId },
+  })
+
+  return resultado
 }

@@ -14,6 +14,7 @@ import { PronosticoTiempo } from '@/components/rodaid/PronosticoTiempo'
 import { NoticiasPrensaWidget } from '@/components/rodaid/NoticiasPrensaWidget'
 import { PerfilCard } from '@/components/rodaid/perfil-card'
 import { NotificacionesCard } from '@/components/rodaid/notificaciones-card'
+import { MisDisputasVendedor } from '@/components/rodaid/MisDisputasVendedor'
 
 export const metadata = {
   title: 'Mi Garaje Digital — RODAID',
@@ -30,6 +31,7 @@ export default function GarajePage() {
         <VenderSwipe />
         <MisPublicaciones />
         <MisCompras />
+        <MisDisputasVendedor />
         <GarajeAnalitica />
         <IotTiempoReal />
 

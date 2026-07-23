@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { AlertTriangle, CheckCircle2, Loader2, Mail, Package, ShoppingBag, Truck } from 'lucide-react'
 import { useMisCompras, confirmarEntregaCitCompleto, type MiCompra } from '@/lib/garaje-digital'
 import { CuentaRegresiva } from './cuenta-regresiva'
+import { AbrirDisputaModal } from './AbrirDisputaModal'
 
 const EMAIL_SOPORTE = 'federicodegeaceo@rodaid.net'
 
@@ -133,6 +134,10 @@ function CompraItem({ compra }: { compra: MiCompra }) {
     label: compra.estado,
     clase: 'bg-paper-dim text-slate-warm',
   }
+  const [disputaAbierta, setDisputaAbierta] = useState(false)
+  const [yaDisputada, setYaDisputada] = useState(false)
+  const puedeDisputar =
+    !yaDisputada && (compra.estado === 'RESERVADA' || compra.estado === 'FONDOS_RETENIDOS')
 
   return (
     <li className="flex flex-wrap items-center gap-4 rounded-2xl border border-ink/12 bg-white p-4">
@@ -180,6 +185,15 @@ function CompraItem({ compra }: { compra: MiCompra }) {
             recibiste — hasta entonces, tu pago sigue protegido.
           </p>
         )}
+        {puedeDisputar && (
+          <button
+            type="button"
+            onClick={() => setDisputaAbierta(true)}
+            className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-clay underline decoration-dotted underline-offset-2 hover:text-clay/80"
+          >
+            <AlertTriangle className="size-3" /> El vendedor no completa la venta — reclamar
+          </button>
+        )}
       </div>
 
       <Link
@@ -188,6 +202,17 @@ function CompraItem({ compra }: { compra: MiCompra }) {
       >
         Ver publicación
       </Link>
+
+      <AbrirDisputaModal
+        transaccionId={compra.transaccionId}
+        tituloBici={compra.publicacion.titulo}
+        open={disputaAbierta}
+        onOpenChange={setDisputaAbierta}
+        onDisputaAbierta={() => {
+          setYaDisputada(true)
+          mutate('/api/marketplace/mis-compras')
+        }}
+      />
     </li>
   )
 }
@@ -286,7 +311,8 @@ function RemitoEstadoCompra({ compra }: { compra: MiCompra }) {
           El vendedor todavía no generó el remito de embalaje
         </p>
         <p className="mt-1 text-[11px] leading-relaxed text-amber-700">
-          Pasaron varios días desde que confirmaste el pago. Tu plata sigue protegida en RODAID PAY. Si querés, escribinos y lo revisamos con vos.
+          Pasaron varios días desde que confirmaste el pago. Usá el botón &quot;El vendedor no completa la venta&quot; de
+          abajo para recuperar tu dinero de inmediato, o escribinos si preferís que lo revisemos con vos.
         </p>
         <a
           href={`mailto:${EMAIL_SOPORTE}`}
