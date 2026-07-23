@@ -320,26 +320,25 @@ async function withTx<T>(fn: (client: DbClient) => Promise<T>): Promise<T> {
 
 /**
  * Resuelve el Taller Aliado vinculado a una bici via aliado_servicios: el
- * vinculo mas reciente gana, sin priorizar tipo_servicio (venta vs
- * mantenimiento) -- lo que importa para verificar el estado ACTUAL de la
- * bici es quien tuvo contacto mas reciente con ella, no quien la vendio
- * originalmente. Distinto a proposito del criterio de
- * resolverAliadoParaRetribucion (compensaciones.service.ts), que resuelve un
- * caso de uso diferente (retribucion por la validacion inicial del CIT).
+ * que el dueño eligio como PRINCIPAL (es_principal = TRUE, no revocado) --
+ * ver "Acceso multi-taller por bici" (20260723000009). Antes de esa
+ * migracion, era simplemente "el vinculo mas reciente gana"; el backfill de
+ * esa migracion ya convirtio el vinculo mas reciente de cada bici en
+ * principal, asi que el comportamiento no cambia para ninguna bici ya
+ * vinculada -- lo unico nuevo es que ahora el dueño puede elegir
+ * explicitamente cual es, en vez de que lo decida el orden de creacion.
  *
- * Si hubo un conflicto entre el usuario y un taller, la forma de evitar que
- * se le vuelva a asignar es desvincularlo via aliado_servicios -- no hace
- * falta logica nueva para eso, ya funciona asi (esta funcion simplemente no
- * encuentra mas ese vinculo).
+ * Si el dueño revoca el acceso del taller principal sin elegir reemplazo,
+ * esta funcion devuelve null (nadie mas se promueve automaticamente) hasta
+ * que el dueño elija uno nuevo -- ver otorgarAccesoTaller()/revocarAccesoTaller().
  *
- * TODO(seleccion manual de taller): en el futuro, el vendedor deberia poder
- * elegir explicitamente entre sus talleres vinculados al publicar o pedir la
- * certificacion (no en /reservar, que es una accion del comprador). Hasta
- * que esa pantalla exista, /reservar sigue usando este default automatico.
+ * Distinto a proposito del criterio de resolverAliadoParaRetribucion
+ * (compensaciones.service.ts), que resuelve un caso de uso diferente
+ * (retribucion por la validacion inicial del CIT, sin concepto de "principal").
  *
  * No hay ningun mecanismo de asignacion dinamica (por geocerca/disponibilidad)
- * todavia -- si no hay vinculo, devuelve null y el caller decide que hacer
- * (hoy: /reservar bloquea con SIN_TALLER_VINCULADO).
+ * todavia -- si no hay principal vigente, devuelve null y el caller decide
+ * que hacer (hoy: /reservar bloquea con SIN_TALLER_VINCULADO).
  *
  * TODO: cuando la cantidad de Talleres Aliados activos llegue a 20, migrar a
  * asignacion automatica (por geocerca u otro criterio) -- antes de eso, el
@@ -354,7 +353,7 @@ export async function resolverAliadoPorBicicleta(
       SELECT s.aliado_id FROM aliado_servicios s
       JOIN aliados a ON a.id = s.aliado_id
       WHERE s.bicicleta_id = $1 AND a.estado = 'aprobado'
-      ORDER BY s.created_at DESC
+        AND s.es_principal = TRUE AND s.revocado_en IS NULL
       LIMIT 1
     `,
     [bicicletaId]
@@ -369,6 +368,199 @@ export async function contarTalleresAliadosActivos(): Promise<number> {
     `SELECT count(*) FROM aliados WHERE estado = 'aprobado'`
   )
   return Number(res.rows[0]?.count ?? 0)
+}
+
+// ── Acceso multi-taller por bici (Garaje Digital) ────────────────────────────
+
+/**
+ * Estados de marketplace_publicaciones en los que se considera que la bici
+ * esta "en venta" via CIT Completo -- mientras esta en cualquiera de estos,
+ * el dueño no puede tocar los talleres vinculados (otorgar/revocar), para no
+ * romper una venta en curso reasignando a mitad de camino quien la certifico
+ * o quien cobra logistica/exito. Deliberadamente NO incluye ACTIVA/PAUSADA
+ * (el flujo generico de pago unico, sin ningun taller involucrado -- esta
+ * restriccion no tiene sentido ahi) ni PUBLICADO_PENDIENTE_CERTIFICACION (la
+ * bici recien publicada, sin comprador todavia -- es exactamente el caso que
+ * esta funcionalidad existe para cubrir: el dueño puede seguir eligiendo
+ * quien la va a certificar hasta que alguien la reserve).
+ */
+const ESTADOS_BICI_EN_VENTA = ['PUBLICADO_CERTIFICADO', 'RESERVADO', 'EJECUTANDO_LOGISTICA']
+
+async function verificarBiciNoEnVenta(client: DbClient, bicicletaId: string): Promise<void> {
+  const res = await client.query(
+    `
+      SELECT 1 FROM marketplace_publicaciones
+      WHERE bicicleta_id = $1 AND estado = ANY($2::marketplace_publicacion_estado[])
+      LIMIT 1
+    `,
+    [bicicletaId, ESTADOS_BICI_EN_VENTA]
+  )
+  if (res.rowCount) {
+    throw new ApiError(
+      409,
+      'BICI_EN_VENTA',
+      'Esta bicicleta esta en proceso de venta -- no se puede cambiar el taller vinculado hasta que se resuelva.'
+    )
+  }
+}
+
+/** Mismo patron que validarOwnershipAutorizados() (autorizados.service.ts). */
+export async function validarOwnershipBicicleta(usuarioId: string, bicicletaId: string): Promise<void> {
+  const bici = await getPool().query<{ propietario_id: string }>(
+    `SELECT propietario_id FROM bicicletas WHERE id = $1 LIMIT 1`,
+    [bicicletaId]
+  )
+  if (!bici.rows[0]) {
+    throw new ApiError(404, 'BICICLETA_NOT_FOUND', 'La bicicleta indicada no existe.')
+  }
+  if (bici.rows[0].propietario_id !== usuarioId) {
+    throw new ApiError(403, 'NOT_OWNER', 'No sos el propietario de esta bicicleta.')
+  }
+}
+
+export interface TallerVinculado {
+  aliadoId: string
+  nombre: string
+  tipo: string
+  esPrincipal: boolean
+  vinculadoEn: string
+}
+
+interface TallerVinculadoRow {
+  aliado_id: string
+  nombre: string
+  tipo: string
+  es_principal: boolean
+  created_at: string
+}
+
+/** Lista los talleres con acceso vigente (no revocado) a una bici, para el Garaje del dueño. */
+export async function listarTalleresDeBicicleta(bicicletaId: string): Promise<TallerVinculado[]> {
+  const res = await getPool().query<TallerVinculadoRow>(
+    `
+      SELECT s.aliado_id, a.nombre, a.tipo, s.es_principal, s.created_at
+      FROM aliado_servicios s
+      JOIN aliados a ON a.id = s.aliado_id
+      WHERE s.bicicleta_id = $1 AND s.revocado_en IS NULL
+      ORDER BY s.es_principal DESC, s.created_at DESC
+    `,
+    [bicicletaId]
+  )
+  return res.rows.map((r: TallerVinculadoRow) => ({
+    aliadoId: r.aliado_id,
+    nombre: r.nombre,
+    tipo: r.tipo,
+    esPrincipal: r.es_principal,
+    vinculadoEn: r.created_at,
+  }))
+}
+
+/**
+ * El dueño de la bici le da acceso a un Taller Aliado nuevo (o re-otorga uno
+ * previamente revocado). `esPrincipal` lo decide el dueño en el momento: si
+ * es true, reemplaza a quien sea el principal actual (resolverAliadoPorBicicleta
+ * pasa a devolver este); si es false, se suma como acceso secundario sin
+ * tocar quien resuelve automaticamente para CIT Completo -- esto es lo que
+ * permite "mantener o revocar el acceso del taller anterior" en el mismo
+ * paso en el que se otorga el nuevo.
+ */
+export async function otorgarAccesoTaller(opts: {
+  propietarioId: string
+  bicicletaId: string
+  aliadoId: string
+  esPrincipal: boolean
+}): Promise<TallerVinculado> {
+  return withTx(async (client) => {
+    const bici = await client.query<{ id: string; propietario_id: string }>(
+      `SELECT id, propietario_id FROM bicicletas WHERE id = $1 FOR UPDATE`,
+      [opts.bicicletaId]
+    )
+    if (!bici.rows[0]) {
+      throw new ApiError(404, 'BICICLETA_NOT_FOUND', 'La bicicleta indicada no existe.')
+    }
+    if (bici.rows[0].propietario_id !== opts.propietarioId) {
+      throw new ApiError(403, 'NOT_OWNER', 'No sos el propietario de esta bicicleta.')
+    }
+
+    await verificarBiciNoEnVenta(client, opts.bicicletaId)
+
+    const aliado = await client.query<{ id: string; nombre: string; tipo: string }>(
+      `SELECT id, nombre, tipo FROM aliados WHERE id = $1 AND estado = 'aprobado' LIMIT 1`,
+      [opts.aliadoId]
+    )
+    if (!aliado.rows[0]) {
+      throw new ApiError(404, 'ALIADO_NOT_FOUND', 'El taller elegido no existe o no esta aprobado.')
+    }
+
+    if (opts.esPrincipal) {
+      // Le saca es_principal a quien lo tuviera -- el indice unico parcial
+      // (idx_aliado_servicios_principal_unico) exige que a lo sumo uno este
+      // vigente por bici, asi que esto tiene que pasar en la misma
+      // transaccion antes del INSERT/UPDATE de abajo.
+      await client.query(
+        `UPDATE aliado_servicios SET es_principal = FALSE WHERE bicicleta_id = $1 AND es_principal = TRUE`,
+        [opts.bicicletaId]
+      )
+    }
+
+    const ins = await client.query<{ created_at: string }>(
+      `
+        INSERT INTO aliado_servicios (aliado_id, bicicleta_id, tipo_servicio, es_principal, revocado_en)
+        VALUES ($1, $2, 'mantenimiento', $3, NULL)
+        ON CONFLICT (aliado_id, bicicleta_id)
+          DO UPDATE SET es_principal = $3, revocado_en = NULL
+        RETURNING created_at
+      `,
+      [opts.aliadoId, opts.bicicletaId, opts.esPrincipal]
+    )
+
+    return {
+      aliadoId: aliado.rows[0].id,
+      nombre: aliado.rows[0].nombre,
+      tipo: aliado.rows[0].tipo,
+      esPrincipal: opts.esPrincipal,
+      vinculadoEn: ins.rows[0].created_at,
+    }
+  })
+}
+
+/**
+ * El dueño le revoca el acceso a un taller. Si era el principal, la bici
+ * queda SIN principal -- resolverAliadoPorBicicleta() devuelve null hasta
+ * que el dueño elija uno nuevo (nunca se promueve otro automaticamente,
+ * confirmado con Federico: es una decision del dueño, no del sistema).
+ */
+export async function revocarAccesoTaller(opts: {
+  propietarioId: string
+  bicicletaId: string
+  aliadoId: string
+}): Promise<void> {
+  return withTx(async (client) => {
+    const bici = await client.query<{ id: string; propietario_id: string }>(
+      `SELECT id, propietario_id FROM bicicletas WHERE id = $1 FOR UPDATE`,
+      [opts.bicicletaId]
+    )
+    if (!bici.rows[0]) {
+      throw new ApiError(404, 'BICICLETA_NOT_FOUND', 'La bicicleta indicada no existe.')
+    }
+    if (bici.rows[0].propietario_id !== opts.propietarioId) {
+      throw new ApiError(403, 'NOT_OWNER', 'No sos el propietario de esta bicicleta.')
+    }
+
+    await verificarBiciNoEnVenta(client, opts.bicicletaId)
+
+    const upd = await client.query(
+      `
+        UPDATE aliado_servicios
+        SET revocado_en = NOW()
+        WHERE bicicleta_id = $1 AND aliado_id = $2 AND revocado_en IS NULL
+      `,
+      [opts.bicicletaId, opts.aliadoId]
+    )
+    if (!upd.rowCount) {
+      throw new ApiError(404, 'VINCULO_NOT_FOUND', 'Ese taller no tiene acceso vigente a esta bici.')
+    }
+  })
 }
 
 // ── Boton de Panico "Modo Robo": alerta a talleres cercanos (PREPARADA, APAGADA) ──

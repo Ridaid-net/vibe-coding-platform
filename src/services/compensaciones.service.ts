@@ -440,7 +440,7 @@ async function resolverAliadoParaRetribucion(
       SELECT s.aliado_id
       FROM aliado_servicios s
       JOIN aliados a ON a.id = s.aliado_id
-      WHERE s.bicicleta_id = $1 AND a.estado = 'aprobado'
+      WHERE s.bicicleta_id = $1 AND a.estado = 'aprobado' AND s.revocado_en IS NULL
       ORDER BY (s.tipo_servicio = 'venta') DESC, s.created_at DESC
       LIMIT 1
     `,

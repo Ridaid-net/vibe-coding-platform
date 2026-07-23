@@ -282,7 +282,11 @@ async function aliadoTieneServicio(
   bicicletaId: string
 ): Promise<boolean> {
   const res = await getPool().query<{ uno: number }>(
-    `SELECT 1 AS uno FROM aliado_servicios WHERE aliado_id = $1 AND bicicleta_id = $2 LIMIT 1`,
+    `
+      SELECT 1 AS uno FROM aliado_servicios
+      WHERE aliado_id = $1 AND bicicleta_id = $2 AND revocado_en IS NULL
+      LIMIT 1
+    `,
     [aliadoId, bicicletaId]
   )
   return res.rows.length > 0

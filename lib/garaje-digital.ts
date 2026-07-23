@@ -396,6 +396,62 @@ export async function reservarCit(
   }
 }
 
+// ── Acceso multi-taller por bici ─────────────────────────────────────────────
+
+export interface TallerVinculado {
+  aliadoId: string
+  nombre: string
+  tipo: string
+  esPrincipal: boolean
+  vinculadoEn: string
+}
+
+/** Talleres con acceso vigente al panel de servicios de esta bici (dueño). */
+export async function listarTalleresDeBicicleta(bicicletaId: string): Promise<TallerVinculado[]> {
+  const res = await authedFetch(`/api/v1/bicicletas/${bicicletaId}/talleres`)
+  if (!res.ok) {
+    const detalle = (await res.json().catch(() => null)) as { message?: string } | null
+    throw new Error(detalle?.message ?? `HTTP ${res.status}`)
+  }
+  const data = (await res.json()) as { talleres: TallerVinculado[] }
+  return data.talleres
+}
+
+/**
+ * Otorga acceso a un taller nuevo (o re-otorga uno revocado). `esPrincipal`
+ * se decide en el momento: true reemplaza a quien sea el principal actual
+ * (el que resuelve CIT Completo), false lo suma sin tocar al principal.
+ */
+export async function otorgarAccesoTaller(
+  bicicletaId: string,
+  aliadoId: string,
+  esPrincipal: boolean
+): Promise<TallerVinculado> {
+  const res = await authedFetch(`/api/v1/bicicletas/${bicicletaId}/talleres`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ aliadoId, esPrincipal }),
+  })
+  if (!res.ok) {
+    const detalle = (await res.json().catch(() => null)) as { message?: string } | null
+    throw new Error(detalle?.message ?? `HTTP ${res.status}`)
+  }
+  const data = (await res.json()) as { taller: TallerVinculado }
+  return data.taller
+}
+
+/** Revoca el acceso de un taller. Si era el principal, la bici queda sin
+ *  principal hasta que el dueño elija uno nuevo. */
+export async function revocarAccesoTaller(bicicletaId: string, aliadoId: string): Promise<void> {
+  const res = await authedFetch(`/api/v1/bicicletas/${bicicletaId}/talleres/${aliadoId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    const detalle = (await res.json().catch(() => null)) as { message?: string } | null
+    throw new Error(detalle?.message ?? `HTTP ${res.status}`)
+  }
+}
+
 // ── Presentacion del estado del activo ───────────────────────────────────────
 
 export interface EstadoVisual {

@@ -23,6 +23,7 @@ import {
   Siren,
   Store,
   UserCheck,
+  Users,
   Wrench,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -40,7 +41,10 @@ import {
   ESTADO_VISUAL,
   etiquetaActivo,
   listarTalleresAprobados,
+  listarTalleresDeBicicleta,
+  otorgarAccesoTaller,
   reservarCit,
+  revocarAccesoTaller,
   revocarCompartirBici,
   useActivosGaraje,
   useEstadoCompartir,
@@ -48,6 +52,7 @@ import {
   useMiPerfil,
   type ActivoGaraje,
   type TallerAprobado,
+  type TallerVinculado,
 } from '@/lib/garaje-digital'
 import { AgregarBicicletaForm } from './garaje'
 import { BiciSaludBot } from './BiciSaludBot'
@@ -95,6 +100,7 @@ export function GarajeDigital() {
   const [modoPanico, setModoPanico] = useState<ActivoGaraje | null>(null)
   const [reservar, setReservar] = useState<ActivoGaraje | null>(null)
   const [autorizarUso, setAutorizarUso] = useState<ActivoGaraje | null>(null)
+  const [gestionarTalleres, setGestionarTalleres] = useState<ActivoGaraje | null>(null)
   const [agregando, setAgregando] = useState(false)
 
   const activos = data?.activos ?? null
@@ -276,6 +282,7 @@ export function GarajeDigital() {
                 onModoPanico={() => setModoPanico(a)}
                 onReservarCit={() => setReservar(a)}
                 onAutorizarUso={() => setAutorizarUso(a)}
+                onGestionarTalleres={() => setGestionarTalleres(a)}
               />
             ))}
           </ul>
@@ -317,6 +324,12 @@ export function GarajeDigital() {
         bici={autorizarUso}
         open={autorizarUso !== null}
         onOpenChange={(o) => !o && setAutorizarUso(null)}
+      />
+
+      <TalleresAccesoModal
+        bici={gestionarTalleres}
+        open={gestionarTalleres !== null}
+        onOpenChange={(o) => !o && setGestionarTalleres(null)}
       />
 
       <p className="mt-10 flex items-center justify-center gap-2.5 text-center text-[11px] font-bold uppercase tracking-[0.16em] text-[#2BBCB8]">
@@ -627,6 +640,231 @@ function ReservarCitModal({
   )
 }
 
+/**
+ * "Talleres con acceso" — el dueño administra que Talleres Aliados tienen
+ * acceso al panel de servicios de su bici, y decide en el momento de dar
+ * acceso a uno nuevo si reemplaza al principal actual o se suma como
+ * acceso secundario. El principal es el que resuelve automaticamente CIT
+ * Completo (aliados.service.ts::resolverAliadoPorBicicleta). Bloqueado por
+ * el backend (409 BICI_EN_VENTA) mientras la bici esta en proceso de venta.
+ */
+function TalleresAccesoModal({
+  bici,
+  open,
+  onOpenChange,
+}: {
+  bici: ActivoGaraje | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const [vinculados, setVinculados] = useState<TallerVinculado[] | null>(null)
+  const [disponibles, setDisponibles] = useState<TallerAprobado[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [agregando, setAgregando] = useState(false)
+  const [aliadoElegido, setAliadoElegido] = useState<string | null>(null)
+  const [hacerPrincipal, setHacerPrincipal] = useState(false)
+  const [enviando, setEnviando] = useState(false)
+
+  const cargar = async () => {
+    if (!bici) return
+    setError(null)
+    try {
+      const [v, d] = await Promise.all([
+        listarTalleresDeBicicleta(bici.id),
+        listarTalleresAprobados(),
+      ])
+      setVinculados(v)
+      setDisponibles(d)
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
+  useEffect(() => {
+    if (!open) {
+      setVinculados(null)
+      setDisponibles(null)
+      setError(null)
+      setAgregando(false)
+      setAliadoElegido(null)
+      setHacerPrincipal(false)
+      setEnviando(false)
+      return
+    }
+    cargar()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, bici?.id])
+
+  const revocar = async (aliadoId: string) => {
+    if (!bici) return
+    try {
+      await revocarAccesoTaller(bici.id, aliadoId)
+      await cargar()
+      toast.success('Acceso revocado')
+    } catch (err) {
+      toast.error('No pudimos revocarlo', { description: (err as Error).message })
+    }
+  }
+
+  const otorgar = async () => {
+    if (!bici || !aliadoElegido || enviando) return
+    setEnviando(true)
+    try {
+      await otorgarAccesoTaller(bici.id, aliadoElegido, hacerPrincipal)
+      setAgregando(false)
+      setAliadoElegido(null)
+      setHacerPrincipal(false)
+      await cargar()
+      toast.success('Acceso otorgado')
+    } catch (err) {
+      toast.error('No pudimos otorgarlo', { description: (err as Error).message })
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  if (!bici) return null
+
+  const vinculadosIds = new Set((vinculados ?? []).map((v) => v.aliadoId))
+  const paraElegir = (disponibles ?? []).filter((t) => !vinculadosIds.has(t.id))
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="rounded-2xl border border-ink/10 bg-paper">
+        <DialogHeader>
+          <span className="flex size-12 items-center justify-center rounded-xl bg-lime/20 text-ink">
+            <Users className="size-6" />
+          </span>
+          <DialogTitle className="font-display text-ink">Talleres con acceso</DialogTitle>
+          <DialogDescription className="text-slate-warm">
+            Quién puede ver y trabajar en el panel de servicios de {etiquetaActivo(bici)}. El
+            principal es el que certifica automáticamente si publicás con CIT Completo.
+          </DialogDescription>
+        </DialogHeader>
+
+        {error && <p className="text-xs text-clay">{error}</p>}
+
+        {vinculados === null ? (
+          <div className="flex items-center justify-center gap-2 py-6 text-sm text-slate-warm">
+            <Loader2 className="size-4 animate-spin" />
+            Cargando…
+          </div>
+        ) : agregando ? (
+          <div className="space-y-3">
+            {paraElegir.length === 0 ? (
+              <p className="py-2 text-sm text-slate-warm">
+                Ya tenés acceso otorgado a todos los talleres aliados disponibles.
+              </p>
+            ) : (
+              <div className="max-h-56 space-y-2 overflow-y-auto">
+                {paraElegir.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setAliadoElegido(t.id)}
+                    className={`flex w-full items-center gap-3 rounded-2xl border px-3.5 py-3 text-left transition-colors ${
+                      aliadoElegido === t.id
+                        ? 'border-ink bg-ink/5'
+                        : 'border-ink/12 bg-white hover:border-ink/30'
+                    }`}
+                  >
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-lime/20 text-ink">
+                      <Store className="size-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-ink">{t.nombre}</p>
+                      <p className="truncate text-xs text-slate-warm">
+                        {[t.tipo, t.ciudad].filter(Boolean).join(' · ')}
+                      </p>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <label className="flex items-center gap-2 text-xs text-slate-warm">
+              <input
+                type="checkbox"
+                checked={hacerPrincipal}
+                onChange={(e) => setHacerPrincipal(e.target.checked)}
+                className="size-4 rounded border-ink/30"
+              />
+              Hacerlo el taller principal (reemplaza al actual)
+            </label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setAgregando(false)
+                  setAliadoElegido(null)
+                  setHacerPrincipal(false)
+                }}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-full border border-ink/15 bg-white px-4 py-2.5 text-sm font-semibold text-ink transition-colors hover:border-ink/40"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={otorgar}
+                disabled={!aliadoElegido || enviando}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-ink px-4 py-2.5 text-sm font-semibold text-paper transition-colors hover:bg-ink-soft disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {enviando ? <Loader2 className="size-4 animate-spin" /> : 'Dar acceso'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {vinculados.length === 0 ? (
+              <p className="py-4 text-sm text-slate-warm">
+                Todavía no le diste acceso a ningún taller.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {vinculados.map((v) => (
+                  <li
+                    key={v.aliadoId}
+                    className="flex items-center gap-3 rounded-xl border border-ink/12 bg-white p-3"
+                  >
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-lime/20 text-ink">
+                      <Store className="size-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-ink">
+                        {v.nombre}
+                        {v.esPrincipal && (
+                          <span className="shrink-0 rounded-full bg-lime/30 px-2 py-0.5 text-[10px] font-semibold text-ink">
+                            Principal
+                          </span>
+                        )}
+                      </p>
+                      <p className="truncate text-xs text-slate-warm">{v.tipo}</p>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => revocar(v.aliadoId)}
+                      className="shrink-0 rounded-full border border-clay/30 px-3 py-1.5 text-xs font-semibold text-clay transition-colors hover:bg-clay/10"
+                    >
+                      Revocar
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <button
+              type="button"
+              onClick={() => setAgregando(true)}
+              className="mt-1 inline-flex w-full items-center justify-center gap-2 rounded-full border border-ink/15 bg-white px-4 py-2.5 text-sm font-semibold text-ink transition-colors hover:border-ink/40"
+            >
+              <Plus className="size-4" />
+              Dar acceso a un taller nuevo
+            </button>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 const MAX_AUTORIZADOS = 2
 
 /**
@@ -873,6 +1111,7 @@ function ActivoCard({
   onModoPanico,
   onReservarCit,
   onAutorizarUso,
+  onGestionarTalleres,
 }: {
   activo: ActivoGaraje
   onVerificar: () => void
@@ -881,6 +1120,7 @@ function ActivoCard({
   onModoPanico: () => void
   onReservarCit: () => void
   onAutorizarUso: () => void
+  onGestionarTalleres: () => void
 }) {
   const visual = ESTADO_VISUAL[activo.estado]
   const specs = [
@@ -1008,6 +1248,16 @@ function ActivoCard({
           >
             <UserCheck className="size-3.5" />
             Autorizar uso
+          </button>
+        )}
+
+        {activo.estado === 'verificado' && (
+          <button
+            onClick={onGestionarTalleres}
+            className="inline-flex items-center gap-1.5 rounded-full border border-ink/15 bg-white px-3.5 py-2 text-xs font-semibold text-ink transition-colors hover:border-ink/40"
+          >
+            <Users className="size-3.5" />
+            Talleres con acceso
           </button>
         )}
 
