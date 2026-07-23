@@ -49,11 +49,14 @@ import {
   obtenerBitacora,
   invitarInspector,
   obtenerColaDisputasCit,
+  obtenerColaReclamosTitularidad,
   obtenerDenuncias,
   obtenerInspectores,
   obtenerIntegridad,
   resolverDisputaCit,
+  resolverReclamoTitularidad,
   type DisputaCitCompletoAdmin,
+  type ReclamoTitularidadAdmin,
   obtenerMapaInstitucional,
   obtenerPublicaciones,
   obtenerRemitosAdmin,
@@ -496,14 +499,15 @@ function TabIntegridad() {
 // ── TAB 2: Moderación ──────────────────────────────────────────────────────────
 
 function TabModeracion() {
-  const [sub, setSub] = useState<'denuncias' | 'publicaciones' | 'disputas-cit'>('denuncias')
+  const [sub, setSub] = useState<'denuncias' | 'publicaciones' | 'disputas-cit' | 'reclamos-titularidad'>('denuncias')
   return (
     <>
-      <div className="mb-5 flex gap-2">
+      <div className="mb-5 flex flex-wrap gap-2">
         {[
           { id: 'denuncias' as const, label: 'Denuncias en revisión' },
           { id: 'publicaciones' as const, label: 'Publicaciones en disputa' },
           { id: 'disputas-cit' as const, label: 'Disputas CIT Completo' },
+          { id: 'reclamos-titularidad' as const, label: 'Reclamos de titularidad' },
         ].map((s) => (
           <button
             key={s.id}
@@ -520,8 +524,10 @@ function TabModeracion() {
         <ModeracionDenuncias />
       ) : sub === 'publicaciones' ? (
         <ModeracionPublicaciones />
-      ) : (
+      ) : sub === 'disputas-cit' ? (
         <ModeracionDisputasCit />
+      ) : (
+        <ModeracionReclamosTitularidad />
       )}
     </>
   )
@@ -641,6 +647,102 @@ function ModeracionDisputasCit() {
                       onClick={() => resolver(d.id, 'desestimar')}
                       busy={busy === d.id + 'desestimar'}
                       icon={CheckCircle2}
+                      label="Desestimar"
+                      variant="ghost"
+                    />
+                  </div>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  )
+}
+
+function ModeracionReclamosTitularidad() {
+  const { data, error, recargar } = useCarga<ReclamoTitularidadAdmin[]>(obtenerColaReclamosTitularidad)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [notas, setNotas] = useState<Record<string, string>>({})
+  const accionar = puede('moderacion:accion')
+
+  const resolver = async (id: string, decision: 'aprobar' | 'desestimar') => {
+    setBusy(id + decision)
+    try {
+      await resolverReclamoTitularidad(id, decision, notas[id]?.trim() || undefined)
+      toast.success(decision === 'aprobar' ? 'Reclamo aprobado -- titularidad transferida' : 'Reclamo desestimado')
+      recargar()
+    } catch (err) {
+      toast.error('No se pudo resolver', { description: (err as Error).message })
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <>
+      <CabeceraSeccion
+        titulo="Reclamos de titularidad — revisión humana"
+        desc="Esquema 3: el dueño actual no respondió en 48hs. El cruce con el Ministerio es contexto -- ROJO nunca decide solo."
+        onRefresh={recargar}
+      />
+      {error ? (
+        <ErrorBox msg={error} />
+      ) : !data ? (
+        <Cargando />
+      ) : data.length === 0 ? (
+        <Vacio icon={UserCog} texto="No hay reclamos de titularidad esperando revisión." />
+      ) : (
+        <ul className="space-y-3">
+          {data.map((r) => (
+            <li key={r.id} className="rounded-2xl border border-ink/12 bg-white p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-display font-semibold text-ink">Reclamo de titularidad</p>
+                {r.crossReferenceNivel === 'ROJO' && (
+                  <span className="rounded-full bg-clay/15 px-2 py-0.5 text-[11px] font-semibold text-clay">
+                    Cruce MPF: ROJO -- prioritario
+                  </span>
+                )}
+                {r.crossReferenceNivel === 'AMARILLO' && (
+                  <span className="rounded-full bg-ink/10 px-2 py-0.5 text-[11px] font-semibold text-ink/70">
+                    Cruce MPF: AMARILLO
+                  </span>
+                )}
+                <span className="text-[11px] text-slate-warm">{fmtFecha(r.abiertoEn)}</span>
+              </div>
+              <p className="mt-2 text-sm text-ink">{r.motivo}</p>
+              {r.crossReferenceMotivo && (
+                <p className="mt-1 text-xs text-slate-warm">Cruce MPF: {r.crossReferenceMotivo}</p>
+              )}
+              {r.reclamanteAntecedentesNegados > 0 && (
+                <p className="mt-1 text-xs font-semibold text-clay">
+                  Este reclamante ya tuvo {r.reclamanteAntecedentesNegados} reclamo
+                  {r.reclamanteAntecedentesNegados === 1 ? '' : 's'} negado
+                  {r.reclamanteAntecedentesNegados === 1 ? '' : 's'} por el dueño antes.
+                </p>
+              )}
+              {accionar && (
+                <div className="mt-3 space-y-2">
+                  <textarea
+                    value={notas[r.id] ?? ''}
+                    onChange={(e) => setNotas((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                    rows={2}
+                    placeholder="Nota de resolución (opcional)"
+                    className="w-full rounded-xl border border-ink/15 bg-white px-3 py-2 text-xs text-ink outline-none focus:border-ink/40"
+                  />
+                  <div className="flex gap-2">
+                    <BtnAccion
+                      onClick={() => resolver(r.id, 'aprobar')}
+                      busy={busy === r.id + 'aprobar'}
+                      icon={CheckCircle2}
+                      label="Aprobar -- transferir titularidad"
+                      variant="dark"
+                    />
+                    <BtnAccion
+                      onClick={() => resolver(r.id, 'desestimar')}
+                      busy={busy === r.id + 'desestimar'}
+                      icon={Ban}
                       label="Desestimar"
                       variant="ghost"
                     />

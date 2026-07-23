@@ -423,6 +423,44 @@ export const resolverDisputaCit = (
 export const confirmarPagoDeudaTaller = (deudaId: string) =>
   postJson<{ ok: true }>(`/api/v1/admin/panel/disputas-cit-completo/deudas-taller/${deudaId}/confirmar`, {})
 
+export interface ReclamoTitularidadAdmin {
+  id: string
+  bicicletaId: string
+  citId: string
+  reclamanteId: string
+  propietarioActualId: string
+  estado:
+    | 'ESPERANDO_DUENO'
+    | 'RECHAZADO_DUENO_NIEGA'
+    | 'EN_REVISION_HUMANA'
+    | 'APROBADO_DUENO_CONFIRMA'
+    | 'APROBADO_HUMANO'
+    | 'DESESTIMADO_HUMANO'
+  motivo: string
+  respondeAntesDe: string
+  duenoRespuesta: 'niega' | 'confirma' | null
+  duenoRespondioEn: string | null
+  crossReferenceNivel: 'AMARILLO' | 'ROJO' | null
+  crossReferenceMotivo: string | null
+  revisorId: string | null
+  resolucionNota: string | null
+  transferenciaId: string | null
+  abiertoEn: string
+  resueltoEn: string | null
+  reclamanteAntecedentesNegados: number
+}
+
+export const obtenerColaReclamosTitularidad = () =>
+  getJson<{ reclamos: ReclamoTitularidadAdmin[] }>('/api/v1/admin/panel/reclamos-titularidad').then(
+    (d) => d.reclamos
+  )
+
+export const resolverReclamoTitularidad = (id: string, decision: 'aprobar' | 'desestimar', nota?: string) =>
+  postJson<{ reclamanteId: string; transferenciaId: string | null }>(
+    `/api/v1/admin/panel/reclamos-titularidad/${id}/resolver`,
+    { decision, nota }
+  )
+
 export const obtenerApiKeys = () =>
   getJson<{ apps: ApiKeyAdmin[] }>('/api/v1/admin/panel/identidades/api-keys').then((d) => d.apps)
 

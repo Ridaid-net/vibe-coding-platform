@@ -42,6 +42,10 @@ export type NotifTipo =
   | 'DISPUTA_CIT_AMARILLA'
   | 'DISPUTA_CIT_EN_REVISION'
   | 'DISPUTA_CIT_RESUELTA'
+  | 'RECLAMO_TITULARIDAD_ABIERTO'
+  | 'RECLAMO_TITULARIDAD_RECHAZADO'
+  | 'RECLAMO_TITULARIDAD_APROBADO'
+  | 'RECLAMO_TITULARIDAD_DESESTIMADO'
 
 interface NotificacionRow {
   id: string
@@ -716,6 +720,58 @@ export function notificarDisputaCitResuelta(
       ? 'Un admin de RODAID confirmó la cancelación con evidencia. Tu cuenta queda marcada de alto riesgo y con una deuda pendiente por el costo de verificación.'
       : 'Un admin de RODAID revisó el caso y determinó que no correspondía sanción.',
     data: { disputaId: datos.disputaId, confirmada: datos.confirmada, nota: datos.nota ?? null },
+    forzarEmail: true,
+  })
+}
+
+/** RECLAMO_TITULARIDAD_ABIERTO — al dueño actual registrado: alguien reclama la titularidad de su bici. */
+export function notificarReclamoTitularidadAbierto(
+  propietarioActualId: string,
+  datos: { reclamoId: string; respondeAntesDe: string }
+) {
+  return emitirNotificacion({
+    usuarioId: propietarioActualId,
+    tipo: 'RECLAMO_TITULARIDAD_ABIERTO',
+    titulo: 'Alguien reclama la titularidad de tu bici',
+    cuerpo: 'Un usuario de RODAID dice haber comprado esta bicicleta y presentó evidencia. Confirmá o negá la venta antes de que venza el plazo, o el caso pasa a revisión.',
+    detalles: [{ etiqueta: 'Respondé antes de', valor: new Date(datos.respondeAntesDe).toLocaleString('es-AR') }],
+    data: { reclamoId: datos.reclamoId },
+    forzarEmail: true,
+  })
+}
+
+/** RECLAMO_TITULARIDAD_RECHAZADO — al reclamante: el dueño actual negó la venta. */
+export function notificarReclamoTitularidadRechazado(reclamanteId: string, datos: { reclamoId: string }) {
+  return emitirNotificacion({
+    usuarioId: reclamanteId,
+    tipo: 'RECLAMO_TITULARIDAD_RECHAZADO',
+    titulo: 'Tu reclamo de titularidad fue rechazado',
+    cuerpo: 'El dueño registrado de la bicicleta negó haberla vendido. Tu reclamo queda rechazado y registrado como antecedente.',
+    data: { reclamoId: datos.reclamoId },
+    forzarEmail: true,
+  })
+}
+
+/** RECLAMO_TITULARIDAD_APROBADO — al reclamante: la titularidad ya se transfirió. */
+export function notificarReclamoTitularidadAprobado(reclamanteId: string, datos: { reclamoId: string }) {
+  return emitirNotificacion({
+    usuarioId: reclamanteId,
+    tipo: 'RECLAMO_TITULARIDAD_APROBADO',
+    titulo: 'Ahora sos el dueño registrado de esta bici',
+    cuerpo: 'Tu reclamo de titularidad fue aprobado y la bicicleta ya figura a tu nombre en RODAID. El CIT mantiene su identidad de siempre.',
+    data: { reclamoId: datos.reclamoId },
+    forzarEmail: true,
+  })
+}
+
+/** RECLAMO_TITULARIDAD_DESESTIMADO — al reclamante: un admin revisó el caso y no lo aprobó. */
+export function notificarReclamoTitularidadDesestimado(reclamanteId: string, datos: { reclamoId: string; nota?: string | null }) {
+  return emitirNotificacion({
+    usuarioId: reclamanteId,
+    tipo: 'RECLAMO_TITULARIDAD_DESESTIMADO',
+    titulo: 'Tu reclamo de titularidad no fue aprobado',
+    cuerpo: 'Un admin de RODAID revisó tu reclamo con toda la evidencia disponible y determinó que no correspondía transferir la titularidad.',
+    data: { reclamoId: datos.reclamoId, nota: datos.nota ?? null },
     forzarEmail: true,
   })
 }
