@@ -49,13 +49,16 @@ import {
   obtenerBitacora,
   invitarInspector,
   obtenerColaDisputasCit,
+  obtenerColaImpugnacionesDenuncia,
   obtenerColaReclamosTitularidad,
   obtenerDenuncias,
   obtenerInspectores,
   obtenerIntegridad,
   resolverDisputaCit,
+  resolverImpugnacionDenuncia,
   resolverReclamoTitularidad,
   type DisputaCitCompletoAdmin,
+  type ImpugnacionDenunciaAdmin,
   type ReclamoTitularidadAdmin,
   obtenerMapaInstitucional,
   obtenerPublicaciones,
@@ -499,7 +502,9 @@ function TabIntegridad() {
 // ── TAB 2: Moderación ──────────────────────────────────────────────────────────
 
 function TabModeracion() {
-  const [sub, setSub] = useState<'denuncias' | 'publicaciones' | 'disputas-cit' | 'reclamos-titularidad'>('denuncias')
+  const [sub, setSub] = useState<
+    'denuncias' | 'publicaciones' | 'disputas-cit' | 'reclamos-titularidad' | 'impugnaciones-denuncia'
+  >('denuncias')
   return (
     <>
       <div className="mb-5 flex flex-wrap gap-2">
@@ -508,6 +513,7 @@ function TabModeracion() {
           { id: 'publicaciones' as const, label: 'Publicaciones en disputa' },
           { id: 'disputas-cit' as const, label: 'Disputas CIT Completo' },
           { id: 'reclamos-titularidad' as const, label: 'Reclamos de titularidad' },
+          { id: 'impugnaciones-denuncia' as const, label: 'Impugnaciones de denuncia' },
         ].map((s) => (
           <button
             key={s.id}
@@ -526,8 +532,10 @@ function TabModeracion() {
         <ModeracionPublicaciones />
       ) : sub === 'disputas-cit' ? (
         <ModeracionDisputasCit />
-      ) : (
+      ) : sub === 'reclamos-titularidad' ? (
         <ModeracionReclamosTitularidad />
+      ) : (
+        <ModeracionImpugnacionesDenuncia />
       )}
     </>
   )
@@ -743,6 +751,103 @@ function ModeracionReclamosTitularidad() {
                       onClick={() => resolver(r.id, 'desestimar')}
                       busy={busy === r.id + 'desestimar'}
                       icon={Ban}
+                      label="Desestimar"
+                      variant="ghost"
+                    />
+                  </div>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  )
+}
+
+const MEDIO_PRUEBA_LABEL: Record<ImpugnacionDenunciaAdmin['medioPruebaPrincipal'], string> = {
+  factura_compra: 'Factura de compra',
+  recibo_escribano: 'Recibo de escribano',
+  fotos_posesion: 'Fotos de posesión real',
+  otro_fehaciente: 'Otro medio fehaciente',
+  testimonio_testigo: 'Testimonio de testigo (no determinante solo)',
+}
+
+function ModeracionImpugnacionesDenuncia() {
+  const { data, error, recargar } = useCarga<ImpugnacionDenunciaAdmin[]>(obtenerColaImpugnacionesDenuncia)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [notas, setNotas] = useState<Record<string, string>>({})
+  const accionar = puede('moderacion:accion')
+
+  const resolver = async (id: string, decision: 'confirmar_falsa' | 'desestimar') => {
+    setBusy(id + decision)
+    try {
+      await resolverImpugnacionDenuncia(id, decision, notas[id]?.trim() || undefined)
+      toast.success(
+        decision === 'confirmar_falsa' ? 'Confirmada -- pendiente de levantamiento manual' : 'Impugnación desestimada'
+      )
+      recargar()
+    } catch (err) {
+      toast.error('No se pudo resolver', { description: (err as Error).message })
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <>
+      <CabeceraSeccion
+        titulo="Impugnaciones de denuncia — revisión humana"
+        desc="Esquema 4: toda impugnación exige revisión, sin camino automático. Confirmar NO levanta el bloqueo real -- no hay integración con el MPF para confirmar el estado judicial; queda pendiente de un levantamiento manual aparte."
+        onRefresh={recargar}
+      />
+      {error ? (
+        <ErrorBox msg={error} />
+      ) : !data ? (
+        <Cargando />
+      ) : data.length === 0 ? (
+        <Vacio icon={ShieldCheck} texto="No hay impugnaciones esperando revisión." />
+      ) : (
+        <ul className="space-y-3">
+          {data.map((imp) => (
+            <li key={imp.id} className="rounded-2xl border border-ink/12 bg-white p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-display font-semibold text-ink">Impugnación de denuncia</p>
+                <span className="rounded-full bg-ink/10 px-2 py-0.5 text-[11px] font-semibold text-ink/70">
+                  {MEDIO_PRUEBA_LABEL[imp.medioPruebaPrincipal]}
+                </span>
+                <span className="text-[11px] text-slate-warm">{fmtFecha(imp.abiertaEn)}</span>
+              </div>
+              <p className="mt-2 text-sm text-ink">{imp.motivo}</p>
+              {imp.denuncianteAntecedentes > 0 && (
+                <p className="mt-1 text-xs font-semibold text-clay">
+                  Este denunciante ya tuvo {imp.denuncianteAntecedentes} denuncia
+                  {imp.denuncianteAntecedentes === 1 ? '' : 's'} confirmada
+                  {imp.denuncianteAntecedentes === 1 ? '' : 's'} como falsa
+                  {imp.denuncianteAntecedentes === 1 ? '' : 's'} antes.
+                </p>
+              )}
+              {accionar && (
+                <div className="mt-3 space-y-2">
+                  <textarea
+                    value={notas[imp.id] ?? ''}
+                    onChange={(e) => setNotas((prev) => ({ ...prev, [imp.id]: e.target.value }))}
+                    rows={2}
+                    placeholder="Nota de resolución (opcional)"
+                    className="w-full rounded-xl border border-ink/15 bg-white px-3 py-2 text-xs text-ink outline-none focus:border-ink/40"
+                  />
+                  <div className="flex gap-2">
+                    <BtnAccion
+                      onClick={() => resolver(imp.id, 'confirmar_falsa')}
+                      busy={busy === imp.id + 'confirmar_falsa'}
+                      icon={Ban}
+                      label="Confirmar denuncia falsa"
+                      variant="dark"
+                    />
+                    <BtnAccion
+                      onClick={() => resolver(imp.id, 'desestimar')}
+                      busy={busy === imp.id + 'desestimar'}
+                      icon={CheckCircle2}
                       label="Desestimar"
                       variant="ghost"
                     />

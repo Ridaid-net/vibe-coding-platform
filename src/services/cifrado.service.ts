@@ -45,6 +45,7 @@ let cachedSpotifyKey: Buffer | null = null
 let cachedAutorizadosKey: Buffer | null = null
 let cachedDisputaKey: Buffer | null = null
 let cachedReclamoKey: Buffer | null = null
+let cachedImpugnacionKey: Buffer | null = null
 
 /** Indica si hay una clave AES real configurada (vs. derivada en preview). */
 export function cifradoConfigurado(): boolean {
@@ -97,6 +98,12 @@ export function disputaCifradoConfigurado(): boolean {
 /** Indica si hay una clave AES real para la evidencia de reclamos de titularidad (Esquema 3, vs. derivada). */
 export function reclamoCifradoConfigurado(): boolean {
   const raw = process.env.RODAID_RECLAMO_AES_KEY
+  return typeof raw === 'string' && raw.trim().length > 0
+}
+
+/** Indica si hay una clave AES real para la evidencia de impugnaciones de denuncia (Esquema 4, vs. derivada). */
+export function impugnacionCifradoConfigurado(): boolean {
+  const raw = process.env.RODAID_IMPUGNACION_AES_KEY
   return typeof raw === 'string' && raw.trim().length > 0
 }
 
@@ -537,6 +544,52 @@ export function descifrarBytesReclamo(blob: Buffer | Uint8Array): Buffer {
   const tag = buf.subarray(1 + IV_BYTES, 1 + IV_BYTES + TAG_BYTES)
   const ct = buf.subarray(1 + IV_BYTES + TAG_BYTES)
   const decipher = createDecipheriv(ALGO, getReclamoKey(), iv)
+  decipher.setAuthTag(tag)
+  return Buffer.concat([decipher.update(ct), decipher.final()])
+}
+
+// ── Bucket cifrado de evidencia de impugnaciones de denuncia (Esquema 4) ──────
+
+/**
+ * Resuelve (y cachea) la clave AES-256 de la evidencia de impugnaciones de
+ * denuncia (comprobante de pago, chat con el vendedor, transferencia
+ * bancaria -- que sube quien impugna una denuncia que bloqueó su bici). Clave
+ * INDEPENDIENTE, mismo criterio que el resto del archivo. En LIVE se toma de
+ * `RODAID_IMPUGNACION_AES_KEY`; en preview se deriva de forma estable del
+ * secreto de la app.
+ */
+function getImpugnacionKey(): Buffer {
+  if (cachedImpugnacionKey) return cachedImpugnacionKey
+  const raw = process.env.RODAID_IMPUGNACION_AES_KEY
+  if (raw && raw.trim().length > 0) {
+    cachedImpugnacionKey = parseClaveConfigurada(raw)
+    return cachedImpugnacionKey
+  }
+  const secret = getAuthSecret() ?? 'rodaid-impugnacion-fallback'
+  cachedImpugnacionKey = scryptSync(secret, 'rodaid-impugnacion-aes-v1', KEY_BYTES)
+  return cachedImpugnacionKey
+}
+
+/** Cifra un buffer de evidencia de impugnación de denuncia. Mismo contenedor binario que el resto del archivo. */
+export function cifrarBytesImpugnacion(plain: Buffer | Uint8Array): Buffer {
+  const key = getImpugnacionKey()
+  const iv = randomBytes(IV_BYTES)
+  const cipher = createCipheriv(ALGO, key, iv)
+  const ct = Buffer.concat([cipher.update(Buffer.from(plain)), cipher.final()])
+  const tag = cipher.getAuthTag()
+  return Buffer.concat([Buffer.from([BIN_VERSION]), iv, tag, ct])
+}
+
+/** Descifra un contenedor binario producido por `cifrarBytesImpugnacion`. Lanza si el formato es invalido o el contenido fue manipulado. */
+export function descifrarBytesImpugnacion(blob: Buffer | Uint8Array): Buffer {
+  const buf = Buffer.from(blob)
+  if (buf.length < 1 + IV_BYTES + TAG_BYTES || buf[0] !== BIN_VERSION) {
+    throw new Error('Contenedor cifrado de impugnación con formato invalido.')
+  }
+  const iv = buf.subarray(1, 1 + IV_BYTES)
+  const tag = buf.subarray(1 + IV_BYTES, 1 + IV_BYTES + TAG_BYTES)
+  const ct = buf.subarray(1 + IV_BYTES + TAG_BYTES)
+  const decipher = createDecipheriv(ALGO, getImpugnacionKey(), iv)
   decipher.setAuthTag(tag)
   return Buffer.concat([decipher.update(ct), decipher.final()])
 }
