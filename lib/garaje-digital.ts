@@ -396,6 +396,46 @@ export async function reservarCit(
   }
 }
 
+// ── Acuerdo privado (segundo punto de entrada a CIT Completo) ───────────────
+
+export interface AcuerdoPrivadoResultado {
+  publicacionId: string
+  slug: string
+  compradorId: string
+  compradorCuentaNueva: boolean
+  aliadoNombre: string
+}
+
+/**
+ * "Vender fuera del Marketplace, con verificación de taller" -- el vendedor
+ * ya tiene comprador y precio acordados por fuera de RODAID, solo necesita
+ * que un Taller Aliado corra la verificación de 20 puntos antes de
+ * transferir. Misma inspección, mismo precio, mismo flujo de reserva/pago
+ * que el Marketplace público -- la publicación creada no aparece en el
+ * grid, solo es alcanzable por el link directo que recibe el comprador.
+ */
+export async function crearAcuerdoPrivado(input: {
+  bicicletaId: string
+  aliadoId: string
+  titulo: string
+  descripcion: string
+  precioARS: number
+  precioUSD?: number | null
+  compradorNombre: string
+  compradorEmail: string
+}): Promise<AcuerdoPrivadoResultado> {
+  const res = await authedFetch('/api/v1/marketplace/acuerdo-privado', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) {
+    const detalle = (await res.json().catch(() => null)) as { message?: string } | null
+    throw new Error(detalle?.message ?? `HTTP ${res.status}`)
+  }
+  return (await res.json()) as AcuerdoPrivadoResultado
+}
+
 // ── Acceso multi-taller por bici ─────────────────────────────────────────────
 
 export interface TallerVinculado {
