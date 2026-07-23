@@ -461,6 +461,33 @@ export const resolverReclamoTitularidad = (id: string, decision: 'aprobar' | 'de
     { decision, nota }
   )
 
+export interface ImpugnacionDenunciaAdmin {
+  id: string
+  denunciaId: string
+  bicicletaId: string
+  denuncianteId: string
+  impugnanteId: string
+  estado: 'EN_REVISION_HUMANA' | 'CONFIRMADA_FALSA_PENDIENTE_LEVANTAMIENTO_MANUAL' | 'DESESTIMADA'
+  motivo: string
+  medioPruebaPrincipal: 'factura_compra' | 'recibo_escribano' | 'fotos_posesion' | 'otro_fehaciente' | 'testimonio_testigo'
+  revisorId: string | null
+  resolucionNota: string | null
+  abiertaEn: string
+  resueltaEn: string | null
+  denuncianteAntecedentes: number
+}
+
+export const obtenerColaImpugnacionesDenuncia = () =>
+  getJson<{ impugnaciones: ImpugnacionDenunciaAdmin[] }>('/api/v1/admin/panel/impugnaciones-denuncia').then(
+    (d) => d.impugnaciones
+  )
+
+export const resolverImpugnacionDenuncia = (id: string, decision: 'confirmar_falsa' | 'desestimar', nota?: string) =>
+  postJson<{ impugnanteId: string; denuncianteId: string | null }>(
+    `/api/v1/admin/panel/impugnaciones-denuncia/${id}/resolver`,
+    { decision, nota }
+  )
+
 export const obtenerApiKeys = () =>
   getJson<{ apps: ApiKeyAdmin[] }>('/api/v1/admin/panel/identidades/api-keys').then((d) => d.apps)
 

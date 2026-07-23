@@ -32,6 +32,12 @@ import {
   listarColaRevisionReclamos,
   type ReclamoEnCola,
 } from '@/src/services/reclamos-titularidad.service'
+import {
+  confirmarDenunciaFalsa,
+  desestimarImpugnacion,
+  listarColaRevisionImpugnaciones,
+  type ImpugnacionEnCola,
+} from '@/src/services/impugnaciones-denuncia.service'
 
 /**
  * RODAID — Hito 19: Dashboard de Administracion (Operaciones / SysAdmin).
@@ -1839,6 +1845,50 @@ export async function resolverReclamoTitularidadHumano(
     recursoTipo: 'reclamo_titularidad',
     recursoId: reclamoId,
     detalle: { nota: nota ?? null, transferenciaId: resultado.transferenciaId },
+  })
+
+  return resultado
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// MODULO 7 — Impugnaciones de denuncia (Esquema 4).
+// ───────────────────────────────────────────────────────────────────────────────
+//
+// Misma separación que los MODULOs 5/6: la lógica de dominio vive en
+// src/services/impugnaciones-denuncia.service.ts, que deliberadamente NO
+// importa de este archivo. El AdminContext/auditoria del panel se resuelve
+// acá. Reusa moderacion:ver/moderacion:accion, sin permisos nuevos.
+//
+// IMPORTANTE: 'confirmar_falsa' NO levanta ningún bloqueo real -- deja el
+// caso en CONFIRMADA_FALSA_PENDIENTE_LEVANTAMIENTO_MANUAL. No existe en este
+// repo ningún mecanismo real de consulta de estado judicial contra el MPF
+// (ver la nota completa en impugnaciones-denuncia.service.ts) -- levantar el
+// bloqueo de verdad queda para cuando esa integración exista, en una pasada
+// aparte.
+
+/** Cola de revisión humana de impugnaciones de denuncia (siempre revisión obligatoria, nunca automática). */
+export async function obtenerColaRevisionImpugnaciones(): Promise<ImpugnacionEnCola[]> {
+  return listarColaRevisionImpugnaciones()
+}
+
+export type DecisionImpugnacionDenuncia = 'confirmar_falsa' | 'desestimar'
+
+export async function resolverImpugnacionDenunciaHumano(
+  ctx: AdminContext,
+  impugnacionId: string,
+  decision: DecisionImpugnacionDenuncia,
+  nota: string | null
+): Promise<{ impugnanteId: string; denuncianteId: string | null }> {
+  const resultado =
+    decision === 'confirmar_falsa'
+      ? await confirmarDenunciaFalsa(impugnacionId, ctx.userId, nota)
+      : { ...(await desestimarImpugnacion(impugnacionId, ctx.userId, nota)), denuncianteId: null }
+
+  await auditarAdmin(ctx, {
+    accion: decision === 'confirmar_falsa' ? 'impugnacion_denuncia.confirmar_falsa' : 'impugnacion_denuncia.desestimar',
+    recursoTipo: 'impugnacion_denuncia',
+    recursoId: impugnacionId,
+    detalle: { nota: nota ?? null, denuncianteId: resultado.denuncianteId },
   })
 
   return resultado

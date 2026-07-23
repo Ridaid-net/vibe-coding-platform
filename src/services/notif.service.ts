@@ -46,6 +46,8 @@ export type NotifTipo =
   | 'RECLAMO_TITULARIDAD_RECHAZADO'
   | 'RECLAMO_TITULARIDAD_APROBADO'
   | 'RECLAMO_TITULARIDAD_DESESTIMADO'
+  | 'IMPUGNACION_DENUNCIA_RESUELTA'
+  | 'IMPUGNACION_DENUNCIA_CONFIRMADA_CONTRA_DENUNCIANTE'
 
 interface NotificacionRow {
   id: string
@@ -772,6 +774,38 @@ export function notificarReclamoTitularidadDesestimado(reclamanteId: string, dat
     titulo: 'Tu reclamo de titularidad no fue aprobado',
     cuerpo: 'Un admin de RODAID revisó tu reclamo con toda la evidencia disponible y determinó que no correspondía transferir la titularidad.',
     data: { reclamoId: datos.reclamoId, nota: datos.nota ?? null },
+    forzarEmail: true,
+  })
+}
+
+/** IMPUGNACION_DENUNCIA_RESUELTA — a quien impugnó: confirmada (denuncia falsa) o desestimada. */
+export function notificarImpugnacionDenunciaResuelta(
+  impugnanteId: string,
+  datos: { impugnacionId: string; confirmada: boolean; nota?: string | null }
+) {
+  return emitirNotificacion({
+    usuarioId: impugnanteId,
+    tipo: 'IMPUGNACION_DENUNCIA_RESUELTA',
+    titulo: datos.confirmada ? 'Confirmamos que la denuncia era falsa' : 'Tu impugnación no fue aprobada',
+    cuerpo: datos.confirmada
+      ? 'Un admin de RODAID revisó tu evidencia y determinó que la denuncia sobre esta bici fue de mala fe. El levantamiento del bloqueo está pendiente de confirmación judicial -- te avisamos apenas se resuelva.'
+      : 'Un admin de RODAID revisó tu evidencia y determinó que no correspondía invalidar la denuncia.',
+    data: { impugnacionId: datos.impugnacionId, confirmada: datos.confirmada, nota: datos.nota ?? null },
+    forzarEmail: true,
+  })
+}
+
+/** IMPUGNACION_DENUNCIA_CONFIRMADA_CONTRA_DENUNCIANTE — al denunciante: se confirmó que su denuncia fue falsa. */
+export function notificarImpugnacionConfirmadaContraDenunciante(
+  denuncianteId: string,
+  datos: { impugnacionId: string; nota?: string | null }
+) {
+  return emitirNotificacion({
+    usuarioId: denuncianteId,
+    tipo: 'IMPUGNACION_DENUNCIA_CONFIRMADA_CONTRA_DENUNCIANTE',
+    titulo: 'Se confirmó que tu denuncia fue de mala fe',
+    cuerpo: 'Un admin de RODAID revisó una impugnación contra tu denuncia y, con la evidencia presentada, determinó que fue falsa. Esto queda registrado como antecedente en tu cuenta.',
+    data: { impugnacionId: datos.impugnacionId, nota: datos.nota ?? null },
     forzarEmail: true,
   })
 }
