@@ -43,6 +43,7 @@ let cachedInspeccionKey: Buffer | null = null
 let cachedStravaKey: Buffer | null = null
 let cachedSpotifyKey: Buffer | null = null
 let cachedAutorizadosKey: Buffer | null = null
+let cachedDisputaKey: Buffer | null = null
 
 /** Indica si hay una clave AES real configurada (vs. derivada en preview). */
 export function cifradoConfigurado(): boolean {
@@ -83,6 +84,12 @@ export function spotifyCifradoConfigurado(): boolean {
 /** Indica si hay una clave AES real para el DNI/direccion de "Uso autorizado" (vs. derivada). */
 export function autorizadosCifradoConfigurado(): boolean {
   const raw = process.env.RODAID_AUTORIZADOS_AES_KEY
+  return typeof raw === 'string' && raw.trim().length > 0
+}
+
+/** Indica si hay una clave AES real para la evidencia de disputas de CIT Completo (vs. derivada). */
+export function disputaCifradoConfigurado(): boolean {
+  const raw = process.env.RODAID_DISPUTA_AES_KEY
   return typeof raw === 'string' && raw.trim().length > 0
 }
 
@@ -424,6 +431,59 @@ export function descifrarBytesInspeccion(blob: Buffer | Uint8Array): Buffer {
   const tag = buf.subarray(1 + IV_BYTES, 1 + IV_BYTES + TAG_BYTES)
   const ct = buf.subarray(1 + IV_BYTES + TAG_BYTES)
   const decipher = createDecipheriv(ALGO, getInspeccionKey(), iv)
+  decipher.setAuthTag(tag)
+  return Buffer.concat([decipher.update(ct), decipher.final()])
+}
+
+// ── Bucket cifrado de evidencia de disputas de CIT Completo (Esquema 1 Caso B) ─
+
+/**
+ * Resuelve (y cachea) la clave AES-256 de la evidencia de disputas
+ * (capturas, chats, comprobantes de pago que suben comprador/vendedor). Clave
+ * INDEPENDIENTE, mismo criterio que el resto del archivo -- esta evidencia
+ * puede contener datos personales de terceros ademas de las propias partes.
+ * En LIVE se toma de `RODAID_DISPUTA_AES_KEY`; en preview se deriva de forma
+ * estable del secreto de la app.
+ */
+function getDisputaKey(): Buffer {
+  if (cachedDisputaKey) return cachedDisputaKey
+  const raw = process.env.RODAID_DISPUTA_AES_KEY
+  if (raw && raw.trim().length > 0) {
+    cachedDisputaKey = parseClaveConfigurada(raw)
+    return cachedDisputaKey
+  }
+  const secret = getAuthSecret() ?? 'rodaid-disputa-fallback'
+  cachedDisputaKey = scryptSync(secret, 'rodaid-disputa-aes-v1', KEY_BYTES)
+  return cachedDisputaKey
+}
+
+/**
+ * Cifra un buffer (una foto/captura/PDF de evidencia) para guardarlo en su
+ * bucket CIFRADO. Mismo formato de contenedor binario que las demas
+ * funciones `cifrarBytes*` de este archivo.
+ */
+export function cifrarBytesDisputa(plain: Buffer | Uint8Array): Buffer {
+  const key = getDisputaKey()
+  const iv = randomBytes(IV_BYTES)
+  const cipher = createCipheriv(ALGO, key, iv)
+  const ct = Buffer.concat([cipher.update(Buffer.from(plain)), cipher.final()])
+  const tag = cipher.getAuthTag()
+  return Buffer.concat([Buffer.from([BIN_VERSION]), iv, tag, ct])
+}
+
+/**
+ * Descifra un contenedor binario producido por `cifrarBytesDisputa`. Lanza si
+ * el formato es invalido o el contenido fue manipulado.
+ */
+export function descifrarBytesDisputa(blob: Buffer | Uint8Array): Buffer {
+  const buf = Buffer.from(blob)
+  if (buf.length < 1 + IV_BYTES + TAG_BYTES || buf[0] !== BIN_VERSION) {
+    throw new Error('Contenedor cifrado de disputa con formato invalido.')
+  }
+  const iv = buf.subarray(1, 1 + IV_BYTES)
+  const tag = buf.subarray(1 + IV_BYTES, 1 + IV_BYTES + TAG_BYTES)
+  const ct = buf.subarray(1 + IV_BYTES + TAG_BYTES)
+  const decipher = createDecipheriv(ALGO, getDisputaKey(), iv)
   decipher.setAuthTag(tag)
   return Buffer.concat([decipher.update(ct), decipher.final()])
 }

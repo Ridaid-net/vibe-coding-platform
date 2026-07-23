@@ -38,6 +38,10 @@ export type NotifTipo =
   | 'REMITO_GENERADO'
   | 'REMITO_DESPACHADO'
   | 'REMITO_RECORDATORIO'
+  | 'DISPUTA_CIT_ABIERTA'
+  | 'DISPUTA_CIT_AMARILLA'
+  | 'DISPUTA_CIT_EN_REVISION'
+  | 'DISPUTA_CIT_RESUELTA'
 
 interface NotificacionRow {
   id: string
@@ -653,5 +657,65 @@ export function notificarRemitoRecordatorio(
     detalles: [{ etiqueta: 'Bici', valor: datos.bicicletaSerial }],
     data: { transaccionId: datos.transaccionId },
     forzarEmail,
+  })
+}
+
+// ── Esquema 1 Caso B: disputas comprador/vendedor de CIT Completo ───────────
+
+/** DISPUTA_CIT_ABIERTA — al comprador: se confirma el reembolso. */
+export function notificarDisputaCitAbierta(
+  compradorId: string,
+  datos: { disputaId: string; montoReembolsadoArs: number }
+) {
+  return emitirNotificacion({
+    usuarioId: compradorId,
+    tipo: 'DISPUTA_CIT_ABIERTA',
+    titulo: 'Te reembolsamos tu compra',
+    cuerpo: `Registramos tu reclamo y te devolvimos $${datos.montoReembolsadoArs.toLocaleString('es-AR')}.`,
+    detalles: [{ etiqueta: 'Monto reembolsado', valor: `$${datos.montoReembolsadoArs.toLocaleString('es-AR')}` }],
+    data: { disputaId: datos.disputaId },
+    forzarEmail: true,
+  })
+}
+
+/** DISPUTA_CIT_AMARILLA — al vendedor: 1ra cancelación, aviso automático. */
+export function notificarDisputaCitAmarilla(vendedorId: string, datos: { disputaId: string }) {
+  return emitirNotificacion({
+    usuarioId: vendedorId,
+    tipo: 'DISPUTA_CIT_AMARILLA',
+    titulo: 'Una venta tuya fue cancelada por reclamo del comprador',
+    cuerpo: 'Es tu primer caso — queda registrado como advertencia. Si vuelve a pasar, un humano de RODAID va a revisar el caso antes de cualquier sanción.',
+    data: { disputaId: datos.disputaId },
+    forzarEmail: true,
+  })
+}
+
+/** DISPUTA_CIT_EN_REVISION — al vendedor: 2da+ cancelación, puede subir evidencia. */
+export function notificarDisputaCitEnRevision(vendedorId: string, datos: { disputaId: string }) {
+  return emitirNotificacion({
+    usuarioId: vendedorId,
+    tipo: 'DISPUTA_CIT_EN_REVISION',
+    titulo: 'Una venta tuya fue disputada — pasa a revisión humana',
+    cuerpo: 'El comprador reclamó y presentó evidencia. Podés subir tu propia evidencia antes de que un admin de RODAID revise el caso.',
+    cta: { label: 'Ver el caso', url: appUrl(`/garaje`) },
+    data: { disputaId: datos.disputaId },
+    forzarEmail: true,
+  })
+}
+
+/** DISPUTA_CIT_RESUELTA — al vendedor: resultado de la revisión humana. */
+export function notificarDisputaCitResuelta(
+  vendedorId: string,
+  datos: { disputaId: string; confirmada: boolean; nota?: string | null }
+) {
+  return emitirNotificacion({
+    usuarioId: vendedorId,
+    tipo: 'DISPUTA_CIT_RESUELTA',
+    titulo: datos.confirmada ? 'Se confirmó la disputa en tu contra' : 'Tu caso fue desestimado',
+    cuerpo: datos.confirmada
+      ? 'Un admin de RODAID confirmó la cancelación con evidencia. Tu cuenta queda marcada de alto riesgo y con una deuda pendiente por el costo de verificación.'
+      : 'Un admin de RODAID revisó el caso y determinó que no correspondía sanción.',
+    data: { disputaId: datos.disputaId, confirmada: datos.confirmada, nota: datos.nota ?? null },
+    forzarEmail: true,
   })
 }

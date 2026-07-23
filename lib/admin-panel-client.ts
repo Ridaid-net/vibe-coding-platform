@@ -380,6 +380,40 @@ export const obtenerInspectores = () =>
 export const invitarInspector = (nombre: string, email: string) =>
   postJson<{ inspectorId: string }>('/api/v1/admin/panel/identidades/inspectores', { nombre, email })
 
+// ── Disputas de CIT Completo (Esquema 1 Caso B) ─────────────────────────────
+
+export interface DisputaCitCompletoAdmin {
+  id: string
+  escrowTransaccionId: string
+  publicacionId: string
+  compradorId: string
+  vendedorId: string
+  estado: 'ABIERTA' | 'RESUELTA_AMARILLO' | 'EN_REVISION_HUMANA' | 'CONFIRMADA_NARANJA' | 'DESESTIMADA'
+  motivo: string
+  numeroCancelacionDelVendedor: number
+  montoReembolsadoArs: number | null
+  revisorId: string | null
+  resolucionNota: string | null
+  abiertaEn: string
+  resueltaEn: string | null
+  vendedorEnUmbralAntifraude: boolean
+}
+
+export const obtenerColaDisputasCit = () =>
+  getJson<{ disputas: DisputaCitCompletoAdmin[] }>('/api/v1/admin/panel/disputas-cit-completo').then(
+    (d) => d.disputas
+  )
+
+export const resolverDisputaCit = (
+  id: string,
+  decision: 'confirmar_naranja' | 'desestimar',
+  nota?: string
+) =>
+  postJson<{ vendedorId: string; deudaId: string | null }>(
+    `/api/v1/admin/panel/disputas-cit-completo/${id}/resolver`,
+    { decision, nota }
+  )
+
 export const obtenerApiKeys = () =>
   getJson<{ apps: ApiKeyAdmin[] }>('/api/v1/admin/panel/identidades/api-keys').then((d) => d.apps)
 

@@ -48,9 +48,12 @@ import {
   obtenerApiKeys,
   obtenerBitacora,
   invitarInspector,
+  obtenerColaDisputasCit,
   obtenerDenuncias,
   obtenerInspectores,
   obtenerIntegridad,
+  resolverDisputaCit,
+  type DisputaCitCompletoAdmin,
   obtenerMapaInstitucional,
   obtenerPublicaciones,
   obtenerRemitosAdmin,
@@ -493,13 +496,14 @@ function TabIntegridad() {
 // ── TAB 2: Moderación ──────────────────────────────────────────────────────────
 
 function TabModeracion() {
-  const [sub, setSub] = useState<'denuncias' | 'publicaciones'>('denuncias')
+  const [sub, setSub] = useState<'denuncias' | 'publicaciones' | 'disputas-cit'>('denuncias')
   return (
     <>
       <div className="mb-5 flex gap-2">
         {[
           { id: 'denuncias' as const, label: 'Denuncias en revisión' },
           { id: 'publicaciones' as const, label: 'Publicaciones en disputa' },
+          { id: 'disputas-cit' as const, label: 'Disputas CIT Completo' },
         ].map((s) => (
           <button
             key={s.id}
@@ -512,7 +516,99 @@ function TabModeracion() {
           </button>
         ))}
       </div>
-      {sub === 'denuncias' ? <ModeracionDenuncias /> : <ModeracionPublicaciones />}
+      {sub === 'denuncias' ? (
+        <ModeracionDenuncias />
+      ) : sub === 'publicaciones' ? (
+        <ModeracionPublicaciones />
+      ) : (
+        <ModeracionDisputasCit />
+      )}
+    </>
+  )
+}
+
+function ModeracionDisputasCit() {
+  const { data, error, recargar } = useCarga<DisputaCitCompletoAdmin[]>(obtenerColaDisputasCit)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [notas, setNotas] = useState<Record<string, string>>({})
+  const accionar = puede('moderacion:accion')
+
+  const resolver = async (id: string, decision: 'confirmar_naranja' | 'desestimar') => {
+    setBusy(id + decision)
+    try {
+      await resolverDisputaCit(id, decision, notas[id]?.trim() || undefined)
+      toast.success(decision === 'confirmar_naranja' ? 'Disputa confirmada' : 'Disputa desestimada')
+      recargar()
+    } catch (err) {
+      toast.error('No se pudo resolver', { description: (err as Error).message })
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <>
+      <CabeceraSeccion
+        titulo="Disputas CIT Completo — revisión humana"
+        desc="Esquema 1 Caso B: 2da+ cancelación con evidencia de un vendedor. Nunca automático a partir de acá."
+        onRefresh={recargar}
+      />
+      {error ? (
+        <ErrorBox msg={error} />
+      ) : !data ? (
+        <Cargando />
+      ) : data.length === 0 ? (
+        <Vacio icon={AlertTriangle} texto="No hay disputas esperando revisión." />
+      ) : (
+        <ul className="space-y-3">
+          {data.map((d) => (
+            <li key={d.id} className="rounded-2xl border border-ink/12 bg-white p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-display font-semibold text-ink">
+                  {d.numeroCancelacionDelVendedor}ª cancelación de este vendedor
+                </p>
+                {d.vendedorEnUmbralAntifraude && (
+                  <span className="rounded-full bg-clay/15 px-2 py-0.5 text-[11px] font-semibold text-clay">
+                    Vendedor en umbral anti-fraude
+                  </span>
+                )}
+                <span className="text-[11px] text-slate-warm">{fmtFecha(d.abiertaEn)}</span>
+              </div>
+              <p className="mt-2 text-sm text-ink">{d.motivo}</p>
+              {d.montoReembolsadoArs !== null && (
+                <p className="mt-1 text-xs text-slate-warm">Reembolsado: {fmtARS(d.montoReembolsadoArs)}</p>
+              )}
+              {accionar && (
+                <div className="mt-3 space-y-2">
+                  <textarea
+                    value={notas[d.id] ?? ''}
+                    onChange={(e) => setNotas((prev) => ({ ...prev, [d.id]: e.target.value }))}
+                    rows={2}
+                    placeholder="Nota de resolución (opcional)"
+                    className="w-full rounded-xl border border-ink/15 bg-white px-3 py-2 text-xs text-ink outline-none focus:border-ink/40"
+                  />
+                  <div className="flex gap-2">
+                    <BtnAccion
+                      onClick={() => resolver(d.id, 'confirmar_naranja')}
+                      busy={busy === d.id + 'confirmar_naranja'}
+                      icon={Ban}
+                      label="Confirmar (sanción)"
+                      variant="dark"
+                    />
+                    <BtnAccion
+                      onClick={() => resolver(d.id, 'desestimar')}
+                      busy={busy === d.id + 'desestimar'}
+                      icon={CheckCircle2}
+                      label="Desestimar"
+                      variant="ghost"
+                    />
+                  </div>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </>
   )
 }
