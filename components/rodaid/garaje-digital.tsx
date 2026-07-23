@@ -28,6 +28,7 @@ import {
   Wrench,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { mutate as mutateGlobal } from 'swr'
 import {
   Dialog,
   DialogContent,
@@ -954,6 +955,12 @@ function AcuerdoPrivadoModal({
       })
       setResultado(r)
       onCreado()
+      // "Mis publicaciones" tiene su propio SWR cache, separado del de
+      // activos (useActivosGaraje) que ya refresca onCreado() -- sin esto
+      // la publicacion nueva no aparece ahi hasta el proximo refetch
+      // automatico (focus/intervalo), aunque la bici ya muestre "Ver
+      // publicación".
+      mutateGlobal('/api/marketplace/mis-publicaciones')
     } catch (err) {
       setError((err as Error).message || 'No pudimos crear el acuerdo. Probá de nuevo.')
     } finally {
