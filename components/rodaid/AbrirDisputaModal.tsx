@@ -29,6 +29,7 @@ export function AbrirDisputaModal({ transaccionId, tituloBici, open, onOpenChang
   const [motivo, setMotivo] = useState('')
   const [archivos, setArchivos] = useState<File[]>([])
   const [enviando, setEnviando] = useState(false)
+  const [entiende, setEntiende] = useState(false)
   const fileRef = useRef<HTMLInputElement | null>(null)
 
   const cerrar = (o: boolean) => {
@@ -37,6 +38,7 @@ export function AbrirDisputaModal({ transaccionId, tituloBici, open, onOpenChang
       if (!o) {
         setMotivo('')
         setArchivos([])
+        setEntiende(false)
       }
     }
   }
@@ -51,6 +53,12 @@ export function AbrirDisputaModal({ transaccionId, tituloBici, open, onOpenChang
   }
 
   const enviar = async () => {
+    if (!entiende) {
+      toast.error('Confirmá que leíste cómo funciona el reclamo', {
+        description: 'Marcá el check antes de continuar.',
+      })
+      return
+    }
     if (!motivo.trim()) {
       toast.error('Contanos qué pasó', { description: 'El motivo es obligatorio.' })
       return
@@ -91,6 +99,71 @@ export function AbrirDisputaModal({ transaccionId, tituloBici, open, onOpenChang
         </DialogHeader>
 
         <div className="mt-2 space-y-3">
+          <div className="space-y-2.5 rounded-xl border border-ink/12 bg-paper-dim/60 p-3.5 text-xs text-ink">
+            <p className="font-display text-sm font-semibold text-ink">
+              Antes de reclamar, esto es lo que va a pasar
+            </p>
+            <div>
+              <p className="font-semibold">Tu dinero</p>
+              <p className="mt-0.5 text-slate-warm">
+                Si ya pagaste la seña, el saldo, o ambos, te los devolvemos apenas registres el reclamo — no hace
+                falta esperar ninguna revisión. La única excepción es el canon (ver abajo): una parte de esa plata
+                puede quedar retenida según cómo siga el caso.
+              </p>
+            </div>
+            <div>
+              <p className="font-semibold">El canon (una garantía del 20%)</p>
+              <p className="mt-0.5 text-slate-warm">
+                Para desalentar reclamos hechos a la ligera, retenemos un canon equivalente al 20% del valor de la
+                bici cuando abrís un reclamo.
+              </p>
+              <ul className="mt-1.5 list-disc space-y-1 pl-4 text-slate-warm">
+                <li>
+                  Si es la primera vez que le pasa esto a este vendedor, nadie evalúa tu buena fe — se te devuelve
+                  el canon completo de forma automática.
+                </li>
+                <li>
+                  Si tu reclamo termina en una revisión (a partir de la 2ª vez que le pasa a este vendedor), el
+                  canon puede quedar retenido según lo que decida quien revise el caso: se devuelve si tu reclamo
+                  resulta legítimo, se pierde si se confirma que fue de mala fe. La devolución en ese caso la
+                  confirma una persona de RODAID, así que puede no ser inmediata.
+                </li>
+                <li>
+                  El canon no siempre es el 20% exacto: si todavía no se pagó el saldo (por ejemplo, si la
+                  verificación del taller no se había completado), solo se retiene lo que efectivamente se haya
+                  recibido hasta ese momento, aunque sea menos que el 20% del valor de la bici.
+                </li>
+              </ul>
+            </div>
+            <div>
+              <p className="font-semibold">Qué le pasa al vendedor</p>
+              <p className="mt-0.5 text-slate-warm">
+                Si es la primera vez que a este vendedor le registran un reclamo con evidencia en contra, queda
+                anotado en su historial dentro de RODAID, pero no recibe ninguna sanción todavía. Si le vuelve a
+                pasar, el caso pasa a revisión de una persona de RODAID.
+              </p>
+            </div>
+            <div>
+              <p className="font-semibold">Si tu caso pasa a revisión</p>
+              <p className="mt-0.5 text-slate-warm">
+                No podemos garantizar un plazo. Quien lo revise va a mirar tanto la conducta del vendedor como si
+                vos actuaste de buena fe al reclamar — la evidencia que subas pesa para las dos cosas.
+              </p>
+            </div>
+            <label className="mt-1 flex items-start gap-2 border-t border-ink/10 pt-2.5 text-xs font-semibold text-ink">
+              <input
+                type="checkbox"
+                checked={entiende}
+                onChange={(e) => setEntiende(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                Entiendo cómo funciona este reclamo, incluyendo que si el caso pasa a revisión, una parte de mi
+                dinero (el canon) puede quedar retenida y se pierde si se confirma que actué de mala fe.
+              </span>
+            </label>
+          </div>
+
           <textarea
             value={motivo}
             onChange={(e) => setMotivo(e.target.value)}
@@ -135,7 +208,7 @@ export function AbrirDisputaModal({ transaccionId, tituloBici, open, onOpenChang
           <button
             type="button"
             onClick={enviar}
-            disabled={enviando}
+            disabled={enviando || !entiende}
             className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-clay px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-clay/90 disabled:opacity-50"
           >
             {enviando ? <Loader2 className="size-4 animate-spin" /> : <AlertTriangle className="size-4" />}
