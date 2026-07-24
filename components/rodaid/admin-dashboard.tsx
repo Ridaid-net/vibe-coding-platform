@@ -716,12 +716,13 @@ function ModeracionDisputasCit() {
 }
 
 /**
- * Cola de canon retenido pendiente de devolución -- deliberadamente
- * separada de la cola de revisión humana de arriba, porque una disputa
- * RESUELTA_AMARILLO (1ra cancelación, automática) también retiene canon
- * pero nunca pasa por revisión humana, así que nunca aparecería ahí.
- * Devolución siempre manual (confirmado 2026-07-24) -- ninguna resolución
- * la dispara sola.
+ * Cola de canon retenido pendiente de devolución -- solo para casos que
+ * pasaron por revisión humana (2da+ cancelación). Una disputa
+ * RESUELTA_AMARILLO (1ra cancelación, automática) NO aparece acá: su canon
+ * se devuelve solo, en el mismo momento en que se abre la disputa, porque
+ * nadie evalúa la buena fe del comprador en ese caso (confirmado
+ * 2026-07-24) -- si igual aparece una acá, algo falló en esa devolución
+ * automática y esta pantalla sirve de respaldo manual.
  */
 function CanonPendienteDevolucion() {
   const { data, error, recargar } = useCarga<DisputaCitCompletoAdmin[]>(obtenerColaCanonPendiente)
@@ -745,7 +746,7 @@ function CanonPendienteDevolucion() {
     <>
       <CabeceraSeccion
         titulo="Canon pendiente de devolución"
-        desc="Disputas con canon retenido sin devolver todavía -- incluye las resueltas automáticamente (1ra cancelación)."
+        desc="Disputas en revisión humana (2da+ cancelación) con canon retenido sin devolver. La 1ra cancelación se devuelve sola -- si aparece acá, revisar por qué no se devolvió."
         onRefresh={recargar}
       />
       {error ? (
