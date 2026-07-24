@@ -970,7 +970,11 @@ function AcuerdoPrivadoModal({
 
   if (!bici) return null
 
-  const linkPublicacion = resultado ? `https://rodaid.net/marketplace/${resultado.slug}` : ''
+  // La ruta real es /marketplace/[id] por UUID (WHERE mp.id = $1, ver
+  // app/api/v1/marketplace/[id]/route.ts) -- el slug nunca se usa para
+  // routing, mismo bug ya encontrado y corregido en mis-publicaciones.tsx
+  // el 2026-07-18. No repetirlo aca tambien.
+  const linkPublicacion = resultado ? `https://rodaid.net/marketplace/${resultado.publicacionId}` : ''
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
