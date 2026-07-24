@@ -28,8 +28,12 @@ import {
  *     reembolsa TODA la plata retenida de inmediato (proteccion del dinero
  *     primero, sin esperar a que se resuelva la reputacion) y la venta se
  *     cancela -- el CIT nunca se toca, sigue siendo un hecho tecnico
- *     verificado. Si es la 1ra cancelacion con evidencia del vendedor:
- *     RESUELTA_AMARILLO automatico (sin humano). 2da+: EN_REVISION_HUMANA.
+ *     verificado, MENOS el canon del 20% (ver mas abajo), que se retiene.
+ *     Si es la 1ra cancelacion con evidencia del vendedor: RESUELTA_AMARILLO
+ *     automatico (sin humano) -- y el canon retenido se devuelve tambien
+ *     automatico, en el mismo momento, porque nadie evalua la buena fe del
+ *     comprador en este caso (confirmado 2026-07-24). 2da+: EN_REVISION_
+ *     HUMANA, canon retenido hasta que un admin lo devuelva a mano.
  *   agregarEvidenciaDisputa()  -> comprador o vendedor suben mas evidencia
  *     mientras el caso sigue abierto.
  *   confirmarNaranja() / desestimarDisputa() -> resolucion de un admin
@@ -42,6 +46,11 @@ import {
  *     coludio con el vendedor), reusando la misma evidencia ya presentada.
  *     No hay canal de denuncia nuevo contra un taller -- eso es la parte (b)
  *     del Esquema 2, documentada en CLAUDE.md y deliberadamente diferida.
+ *     Tambien aceptan `compradorBuenaFe`, independiente de la decision
+ *     sobre el vendedor -- no dispara ninguna devolucion de canon sola.
+ *   devolverCanon() -> devolucion MANUAL del canon para casos que llegaron
+ *     a EN_REVISION_HUMANA (2da+ cancelacion). Nunca se usa para la 1ra
+ *     cancelacion, que ya se devolvio sola dentro de abrirDisputaCitCompleto().
  *   calcularRatioVerificacionesSinVenta() -> umbral anti-fraude a escala:
  *     ventana de las ultimas 10 verificaciones RESUELTAS (concretada o no) de
  *     un vendedor, piso de 5 antes de que el ratio aplique, prioriza la cola
@@ -239,14 +248,37 @@ export async function abrirDisputaCitCompleto(input: AbrirDisputaInput): Promise
     const esPrimera = numeroCancelacion === 1
     const estadoDisputa: DisputaCitCompletoEstado = esPrimera ? 'RESUELTA_AMARILLO' : 'EN_REVISION_HUMANA'
 
+    // 1ra cancelacion (RESUELTA_AMARILLO): nadie evalua la buena fe del
+    // comprador en este caso -- no hay revision humana, asi que no hay
+    // motivo para retener el canon. Se devuelve automaticamente en el mismo
+    // momento (confirmado 2026-07-24), sin pasar por la cola de canon
+    // pendiente -- esa cola queda reservada para los casos que si llegan a
+    // EN_REVISION_HUMANA (2da+ cancelacion), donde la devolucion sigue
+    // siendo siempre manual.
+    let canonDevuelto = false
+    let canonDevueltoEn: string | null = null
+    if (esPrimera && canonRetenidoArs > 0) {
+      for (const item of canonDetalle) {
+        await emitirReembolso({
+          paymentId: item.paymentId,
+          monto: item.montoArs,
+          motivo: 'Devolución automática de canon — 1ra cancelación, sin revisión humana',
+          idempotencyKey: `refund-canon-auto-${tx.id}-${item.paymentId}`,
+        })
+      }
+      canonDevuelto = true
+      canonDevueltoEn = new Date().toISOString()
+    }
+
     const disputaRes = await client.query<DisputaRow>(
       `
         INSERT INTO disputas_cit_completo
           (escrow_transaccion_id, publicacion_id, comprador_id, vendedor_id, aliado_id, estado,
            motivo, numero_cancelacion_del_vendedor, monto_reembolsado_ars,
            canon_teorico_ars, canon_retenido_ars, canon_detalle,
+           canon_devuelto, canon_devuelto_en,
            resuelta_en)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         RETURNING *
       `,
       [
@@ -262,6 +294,8 @@ export async function abrirDisputaCitCompleto(input: AbrirDisputaInput): Promise
         canonTeoricoArs,
         canonRetenidoArs,
         JSON.stringify(canonDetalle),
+        canonDevuelto,
+        canonDevueltoEn,
         esPrimera ? new Date().toISOString() : null,
       ]
     )
@@ -629,14 +663,24 @@ export async function desestimarDisputa(
   return resultado
 }
 
-// ── Devolucion manual del canon ──────────────────────────────────────────────
+// ── Devolucion manual del canon (2da+ cancelacion) ──────────────────────────
 
 /**
- * Devuelve el canon retenido al comprador -- SIEMPRE una accion manual del
- * admin (confirmado 2026-07-24), nunca disparada automaticamente por
- * ninguna resolucion (ni RESUELTA_AMARILLO, ni DESESTIMADA, ni
- * `compradorBuenaFe = true`). Emite un reembolso parcial nuevo contra
- * cada paymentId de `canon_detalle` -- con una idempotency key propia
+ * Devuelve el canon retenido al comprador -- accion manual del admin, para
+ * los casos que pasaron por EN_REVISION_HUMANA (2da+ cancelacion, ver
+ * `confirmarNaranja()`/`desestimarDisputa()`). Ninguna resolucion humana la
+ * dispara sola, ni siquiera `compradorBuenaFe = true` -- el admin la
+ * confirma aparte.
+ *
+ * La 1ra cancelacion (RESUELTA_AMARILLO) NO pasa por aca: se devuelve
+ * automaticamente dentro de `abrirDisputaCitCompleto()` en el mismo
+ * momento en que se abre, porque en ese caso nadie evalua la buena fe del
+ * comprador (confirmado 2026-07-24) -- esta funcion sirve como respaldo
+ * manual si por algun motivo esa devolucion automatica no se pudo
+ * completar (ver el `canon_devuelto = FALSE` que dejaria en ese caso).
+ *
+ * Emite un reembolso parcial nuevo contra cada paymentId de
+ * `canon_detalle` -- con una idempotency key propia
  * (`refund-canon-{disputaId}-{paymentId}`), distinta de la que ya se uso
  * para el reembolso original al abrir la disputa, para que MercadoPago no
  * lo trate como un duplicado de aquel (mismo paymentId, dos reembolsos
