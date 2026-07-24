@@ -7,6 +7,7 @@ import {
   lockTransaccion,
   cancelarPorDisputaCitCompleto,
 } from '@/src/services/escrow.service'
+import { emitirReembolso } from '@/src/services/mercadopago.service'
 import {
   notificarDisputaCitAbierta,
   notificarDisputaCitAmarilla,
@@ -63,6 +64,11 @@ export type DisputaCitCompletoEstado =
   | 'CONFIRMADA_NARANJA'
   | 'DESESTIMADA'
 
+export interface CanonDetalleItem {
+  paymentId: string
+  montoArs: number
+}
+
 export interface DisputaCitCompleto {
   id: string
   escrowTransaccionId: string
@@ -78,6 +84,17 @@ export interface DisputaCitCompleto {
   resolucionNota: string | null
   tallerSancionado: boolean
   tallerSancionNota: string | null
+  /** Mecanismo de canon (CLAUDE.md) -- 20% teorico del valor de venta. */
+  canonTeoricoArs: number
+  /** Lo efectivamente retenido -- capado a lo que hubiera en custodia (Opcion 2). */
+  canonRetenidoArs: number
+  /** De que pago(s) de MercadoPago salio el canon retenido -- fuente de verdad para devolverCanon(). */
+  canonDetalle: CanonDetalleItem[]
+  /** Juicio de buena fe del COMPRADOR al abrir la disputa -- separado de la sancion al vendedor. Null hasta que un humano lo marque. */
+  compradorBuenaFe: boolean | null
+  canonDevuelto: boolean
+  canonDevueltoEn: string | null
+  canonDevueltoPor: string | null
   abiertaEn: string
   resueltaEn: string | null
 }
@@ -97,6 +114,13 @@ interface DisputaRow {
   resolucion_nota: string | null
   taller_sancionado: boolean
   taller_sancion_nota: string | null
+  canon_teorico_ars: string
+  canon_retenido_ars: string
+  canon_detalle: CanonDetalleItem[] | null
+  comprador_buena_fe: boolean | null
+  canon_devuelto: boolean
+  canon_devuelto_en: string | null
+  canon_devuelto_por: string | null
   abierta_en: string
   resuelta_en: string | null
 }
@@ -117,6 +141,13 @@ function mapDisputa(row: DisputaRow): DisputaCitCompleto {
     resolucionNota: row.resolucion_nota,
     tallerSancionado: row.taller_sancionado,
     tallerSancionNota: row.taller_sancion_nota,
+    canonTeoricoArs: Number(row.canon_teorico_ars),
+    canonRetenidoArs: Number(row.canon_retenido_ars),
+    canonDetalle: row.canon_detalle ?? [],
+    compradorBuenaFe: row.comprador_buena_fe,
+    canonDevuelto: row.canon_devuelto,
+    canonDevueltoEn: row.canon_devuelto_en,
+    canonDevueltoPor: row.canon_devuelto_por,
     abiertaEn: row.abierta_en,
     resueltaEn: row.resuelta_en,
   }
@@ -201,11 +232,8 @@ export async function abrirDisputaCitCompleto(input: AbrirDisputaInput): Promise
       throw new ApiError(403, 'NOT_PARTICIPANT', 'No sos el comprador de esta transacción.')
     }
 
-    const { transaccion, montoReembolsadoArs } = await cancelarPorDisputaCitCompleto(
-      client,
-      tx,
-      input.motivo
-    )
+    const { transaccion, montoReembolsadoArs, canonTeoricoArs, canonRetenidoArs, canonDetalle } =
+      await cancelarPorDisputaCitCompleto(client, tx, input.motivo)
 
     const numeroCancelacion = await obtenerONumeroCancelacion(client, tx.vendedor_id)
     const esPrimera = numeroCancelacion === 1
@@ -216,8 +244,9 @@ export async function abrirDisputaCitCompleto(input: AbrirDisputaInput): Promise
         INSERT INTO disputas_cit_completo
           (escrow_transaccion_id, publicacion_id, comprador_id, vendedor_id, aliado_id, estado,
            motivo, numero_cancelacion_del_vendedor, monto_reembolsado_ars,
+           canon_teorico_ars, canon_retenido_ars, canon_detalle,
            resuelta_en)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         RETURNING *
       `,
       [
@@ -230,6 +259,9 @@ export async function abrirDisputaCitCompleto(input: AbrirDisputaInput): Promise
         input.motivo,
         numeroCancelacion,
         montoReembolsadoArs,
+        canonTeoricoArs,
+        canonRetenidoArs,
+        JSON.stringify(canonDetalle),
         esPrimera ? new Date().toISOString() : null,
       ]
     )
@@ -400,6 +432,26 @@ export async function listarColaRevisionHumana(): Promise<DisputaEnCola[]> {
   )
 }
 
+/**
+ * Cola de canon retenido pendiente de devolución -- a proposito NO filtra
+ * por `estado`. `listarColaRevisionHumana()` solo muestra `EN_REVISION_
+ * HUMANA`, pero una disputa `RESUELTA_AMARILLO` (1ra cancelación,
+ * automática, sin revisión humana) también retiene canon al abrirse y de
+ * otro modo no aparecería en ningún listado admin -- sin esta cola, su
+ * canon quedaría retenido para siempre sin ninguna forma de encontrarlo y
+ * devolverlo.
+ */
+export async function listarColaCanonPendiente(): Promise<DisputaCitCompleto[]> {
+  const res = await getPool().query<DisputaRow>(
+    `
+      SELECT * FROM disputas_cit_completo
+      WHERE canon_retenido_ars > 0 AND canon_devuelto = FALSE
+      ORDER BY resuelta_en ASC NULLS LAST, created_at ASC
+    `
+  )
+  return res.rows.map(mapDisputa)
+}
+
 // ── 5. Resolución humana (helpers de bajo nivel, sin AdminContext) ──────────
 
 /**
@@ -456,7 +508,8 @@ export async function confirmarNaranja(
   revisorId: string,
   nota: string | null,
   sancionarTaller = false,
-  tallerNota: string | null = null
+  tallerNota: string | null = null,
+  compradorBuenaFe: boolean | null = null
 ): Promise<{ vendedorId: string; deudaId: string | null; deudaTallerId: string | null }> {
   return withTx(async (client) => {
     const res = await client.query<DisputaRow>(
@@ -469,13 +522,18 @@ export async function confirmarNaranja(
       throw new ApiError(409, 'ESTADO_INVALIDO', 'Esta disputa no está en revisión humana.')
     }
 
+    // compradorBuenaFe es un juicio SEPARADO de la sancion al vendedor
+    // (confirmado 2026-07-24) -- el admin puede confirmar naranja al
+    // vendedor y aun asi considerar que el comprador actuo de buena fe, o
+    // viceversa. No se deriva de `estado`.
     await client.query(
       `
         UPDATE disputas_cit_completo
-        SET estado = 'CONFIRMADA_NARANJA', revisor_id = $2, resolucion_nota = $3, resuelta_en = NOW(), updated_at = NOW()
+        SET estado = 'CONFIRMADA_NARANJA', revisor_id = $2, resolucion_nota = $3,
+            comprador_buena_fe = $4, resuelta_en = NOW(), updated_at = NOW()
         WHERE id = $1
       `,
-      [disputaId, revisorId, nota]
+      [disputaId, revisorId, nota, compradorBuenaFe]
     )
 
     await client.query(
@@ -535,7 +593,8 @@ export async function desestimarDisputa(
   revisorId: string,
   nota: string | null,
   sancionarTaller = false,
-  tallerNota: string | null = null
+  tallerNota: string | null = null,
+  compradorBuenaFe: boolean | null = null
 ): Promise<{ vendedorId: string; deudaTallerId: string | null }> {
   const resultado = await withTx(async (client) => {
     const res = await client.query<DisputaRow>(
@@ -551,10 +610,11 @@ export async function desestimarDisputa(
     await client.query(
       `
         UPDATE disputas_cit_completo
-        SET estado = 'DESESTIMADA', revisor_id = $2, resolucion_nota = $3, resuelta_en = NOW(), updated_at = NOW()
+        SET estado = 'DESESTIMADA', revisor_id = $2, resolucion_nota = $3,
+            comprador_buena_fe = $4, resuelta_en = NOW(), updated_at = NOW()
         WHERE id = $1
       `,
-      [disputaId, revisorId, nota]
+      [disputaId, revisorId, nota, compradorBuenaFe]
     )
     // Reputación del vendedor NO se toca: un caso desestimado no cuenta como
     // strike. La sanción al taller es independiente -- puede aplicarse aunque
@@ -567,6 +627,61 @@ export async function desestimarDisputa(
     console.error('[disputas-cit] error notificando resolucion', err)
   )
   return resultado
+}
+
+// ── Devolucion manual del canon ──────────────────────────────────────────────
+
+/**
+ * Devuelve el canon retenido al comprador -- SIEMPRE una accion manual del
+ * admin (confirmado 2026-07-24), nunca disparada automaticamente por
+ * ninguna resolucion (ni RESUELTA_AMARILLO, ni DESESTIMADA, ni
+ * `compradorBuenaFe = true`). Emite un reembolso parcial nuevo contra
+ * cada paymentId de `canon_detalle` -- con una idempotency key propia
+ * (`refund-canon-{disputaId}-{paymentId}`), distinta de la que ya se uso
+ * para el reembolso original al abrir la disputa, para que MercadoPago no
+ * lo trate como un duplicado de aquel (mismo paymentId, dos reembolsos
+ * parciales reales y distintos a lo largo del tiempo).
+ */
+export async function devolverCanon(
+  disputaId: string,
+  adminId: string
+): Promise<{ montoDevueltoArs: number }> {
+  return withTx(async (client) => {
+    const res = await client.query<DisputaRow>(
+      `SELECT * FROM disputas_cit_completo WHERE id = $1 FOR UPDATE`,
+      [disputaId]
+    )
+    const disputa = res.rows[0]
+    if (!disputa) throw new ApiError(404, 'DISPUTA_NOT_FOUND', 'La disputa no existe.')
+    if (disputa.canon_devuelto) {
+      throw new ApiError(409, 'CANON_YA_DEVUELTO', 'El canon de esta disputa ya fue devuelto.')
+    }
+    const canonRetenidoArs = Number(disputa.canon_retenido_ars)
+    if (canonRetenidoArs <= 0) {
+      throw new ApiError(409, 'SIN_CANON_RETENIDO', 'Esta disputa no tiene canon retenido para devolver.')
+    }
+
+    const detalle = disputa.canon_detalle ?? []
+    for (const item of detalle) {
+      await emitirReembolso({
+        paymentId: item.paymentId,
+        monto: item.montoArs,
+        motivo: 'Devolución de canon — RODAID, disputa de CIT Completo',
+        idempotencyKey: `refund-canon-${disputaId}-${item.paymentId}`,
+      })
+    }
+
+    await client.query(
+      `
+        UPDATE disputas_cit_completo
+        SET canon_devuelto = TRUE, canon_devuelto_en = NOW(), canon_devuelto_por = $2, updated_at = NOW()
+        WHERE id = $1
+      `,
+      [disputaId, adminId]
+    )
+
+    return { montoDevueltoArs: canonRetenidoArs }
+  })
 }
 
 // ── 6. Umbral anti-fraude a escala (ventana 10, piso 5, ratio >=50%) ────────

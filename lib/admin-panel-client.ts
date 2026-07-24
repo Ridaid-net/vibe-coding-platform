@@ -382,6 +382,11 @@ export const invitarInspector = (nombre: string, email: string) =>
 
 // ── Disputas de CIT Completo (Esquema 1 Caso B) ─────────────────────────────
 
+export interface CanonDetalleItemAdmin {
+  paymentId: string
+  montoArs: number
+}
+
 export interface DisputaCitCompletoAdmin {
   id: string
   escrowTransaccionId: string
@@ -397,6 +402,13 @@ export interface DisputaCitCompletoAdmin {
   resolucionNota: string | null
   tallerSancionado: boolean
   tallerSancionNota: string | null
+  canonTeoricoArs: number
+  canonRetenidoArs: number
+  canonDetalle: CanonDetalleItemAdmin[]
+  compradorBuenaFe: boolean | null
+  canonDevuelto: boolean
+  canonDevueltoEn: string | null
+  canonDevueltoPor: string | null
   abiertaEn: string
   resueltaEn: string | null
   vendedorEnUmbralAntifraude: boolean
@@ -413,12 +425,21 @@ export const resolverDisputaCit = (
   decision: 'confirmar_naranja' | 'desestimar',
   nota?: string,
   sancionarTaller?: boolean,
-  tallerNota?: string
+  tallerNota?: string,
+  compradorBuenaFe?: boolean | null
 ) =>
   postJson<{ vendedorId: string; deudaId: string | null; deudaTallerId: string | null }>(
     `/api/v1/admin/panel/disputas-cit-completo/${id}/resolver`,
-    { decision, nota, sancionarTaller, tallerNota }
+    { decision, nota, sancionarTaller, tallerNota, compradorBuenaFe }
   )
+
+export const devolverCanonDisputaCit = (id: string) =>
+  postJson<{ montoDevueltoArs: number }>(`/api/v1/admin/panel/disputas-cit-completo/${id}/devolver-canon`, {})
+
+export const obtenerColaCanonPendiente = () =>
+  getJson<{ disputas: DisputaCitCompletoAdmin[] }>(
+    '/api/v1/admin/panel/disputas-cit-completo/canon-pendiente'
+  ).then((d) => d.disputas)
 
 export const confirmarPagoDeudaTaller = (deudaId: string) =>
   postJson<{ ok: true }>(`/api/v1/admin/panel/disputas-cit-completo/deudas-taller/${deudaId}/confirmar`, {})

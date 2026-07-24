@@ -10,6 +10,7 @@ const bodySchema = z.object({
   nota: z.string().max(2000).optional(),
   sancionarTaller: z.boolean().optional().default(false),
   tallerNota: z.string().max(2000).optional(),
+  compradorBuenaFe: z.boolean().nullable().optional(),
 })
 
 /**
@@ -35,7 +36,8 @@ export async function POST(
       parsed.data.decision,
       optionalText(parsed.data.nota) ?? null,
       parsed.data.sancionarTaller,
-      optionalText(parsed.data.tallerNota) ?? null
+      optionalText(parsed.data.tallerNota) ?? null,
+      parsed.data.compradorBuenaFe ?? null
     )
     return NextResponse.json(resultado)
   } catch (error) {

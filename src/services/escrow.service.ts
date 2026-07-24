@@ -516,39 +516,74 @@ async function reembolsarPagoRetenido(
  * una transaccion puede tener DOS mp_pagos en FONDOS_RETENIDOS a la vez
  * (sena + saldo, si el comprador ya pago ambos antes de que el vendedor
  * cancele) y las dos plata tienen que volver.
+ *
+ * `canonARS` (mecanismo de canon, CLAUDE.md, confirmado 2026-07-24): en vez
+ * de reembolsar el 100% de cada pago, retiene hasta `canonARS` como canon --
+ * capado a lo que efectivamente haya retenido (nunca se persigue el 20%
+ * teorico via deuda si no alcanza). Orden confirmado (Opcion 2): primero se
+ * descuenta del pago `saldo` (representa el valor real de venta del
+ * rodado), y solo si no alcanza se completa con la `sena` (fee fijo de CIT
+ * Completo, sin relacion con el precio de la bici) -- de ahi el ORDER BY.
+ * Un pago cuyo monto queda integramente retenido como canon (aReembolsar =
+ * 0) tambien pasa a `REEMBOLSADO` en `mp_pagos` (con `refund_id = NULL`,
+ * sin llamar a MercadoPago): esa columna solo trackea "termino el hold de
+ * escrow de RODAID sobre este pago", no "se le devolvio al comprador" --
+ * el destino real del canon retenido queda documentado aparte, en
+ * `disputas_cit_completo.canon_detalle` (fuente de verdad para
+ * `devolverCanon()`, que necesita saber contra que paymentId(s) emitir el
+ * reembolso posterior).
  */
 async function reembolsarTodosPagosRetenidos(
   client: DbClient,
   transaccionId: string,
-  motivo: string | null
+  motivo: string | null,
+  canonARS = 0
 ) {
   const pagos = await client.query<PagoRow>(
     `
       SELECT * FROM mp_pagos
       WHERE transaccion_id = $1 AND estado = 'FONDOS_RETENIDOS' AND payment_id IS NOT NULL
-      ORDER BY created_at ASC
+      ORDER BY (concepto = 'saldo') DESC, created_at ASC
     `,
     [transaccionId]
   )
 
+  let canonRestante = round2(Math.max(0, canonARS))
   const reembolsos: Array<{ concepto: string; monto: number; refundId: string | null }> = []
+  const canonDetalle: Array<{ paymentId: string; montoArs: number }> = []
+
   for (const pago of pagos.rows) {
-    const resultado = await emitirReembolso({
-      paymentId: pago.payment_id as string,
-      motivo,
-      monto: Number(pago.monto),
-    })
+    const montoPago = Number(pago.monto)
+    const retenerDeEste = round2(Math.min(canonRestante, montoPago))
+    const aReembolsar = round2(montoPago - retenerDeEste)
+    canonRestante = round2(canonRestante - retenerDeEste)
+
+    if (retenerDeEste > 0) {
+      canonDetalle.push({ paymentId: pago.payment_id as string, montoArs: retenerDeEste })
+    }
+
+    let refundId: string | null = null
+    if (aReembolsar > 0) {
+      const resultado = await emitirReembolso({
+        paymentId: pago.payment_id as string,
+        motivo,
+        monto: aReembolsar,
+      })
+      refundId = resultado.refundId
+    }
     await client.query(
       `
         UPDATE mp_pagos
         SET estado = 'REEMBOLSADO', refund_id = $2, updated_at = NOW()
         WHERE id = $1
       `,
-      [pago.id, resultado.refundId]
+      [pago.id, refundId]
     )
-    reembolsos.push({ concepto: pago.concepto ?? 'venta', monto: Number(pago.monto), refundId: resultado.refundId })
+    reembolsos.push({ concepto: pago.concepto ?? 'venta', monto: aReembolsar, refundId })
   }
-  return reembolsos
+
+  const canonRetenidoArs = round2(Math.max(0, canonARS) - canonRestante)
+  return { reembolsos, canonDetalle, canonRetenidoArs }
 }
 
 /**
@@ -568,6 +603,12 @@ async function reembolsarTodosPagosRetenidos(
  * NUNCA se cancela, sea cual sea el resultado de la venta (el taller ya hizo
  * el trabajo). Las liquidaciones de Logistica/Exito recien se registran en
  * etapas posteriores (despacho/entrega), que esta disputa nunca alcanza.
+ *
+ * Mecanismo de canon (CLAUDE.md, confirmado 2026-07-24): el 20% del valor de
+ * venta del rodado (`tx.precio_ars`) se retiene en vez de reembolsarse --
+ * quien INICIA la disputa (el comprador) lo cauciona, para desincentivar
+ * reclamos frivolos. Ver `reembolsarTodosPagosRetenidos()` para el criterio
+ * de reparto entre sena/saldo y el tope a lo efectivamente retenido.
  */
 export async function cancelarPorDisputaCitCompleto(
   client: DbClient,
@@ -582,7 +623,13 @@ export async function cancelarPorDisputaCitCompleto(
     )
   }
 
-  const reembolsos = await reembolsarTodosPagosRetenidos(client, tx.id, motivo)
+  const canonTeoricoArs = round2(Number(tx.precio_ars) * 0.2)
+  const { reembolsos, canonDetalle, canonRetenidoArs } = await reembolsarTodosPagosRetenidos(
+    client,
+    tx.id,
+    motivo,
+    canonTeoricoArs
+  )
 
   const updated = await client.query<TransaccionRow>(
     `
@@ -606,12 +653,15 @@ export async function cancelarPorDisputaCitCompleto(
     estadoNuevo: 'CANCELADA',
     actorId: tx.comprador_id,
     actorRol: 'comprador',
-    metadata: { motivo, reembolsos },
+    metadata: { motivo, reembolsos, canonTeoricoArs, canonRetenidoArs },
   })
 
   return {
     transaccion: mapTransaccion(updated.rows[0]),
     montoReembolsadoArs: round2(reembolsos.reduce((acc, r) => acc + r.monto, 0)),
+    canonTeoricoArs,
+    canonRetenidoArs,
+    canonDetalle,
   }
 }
 

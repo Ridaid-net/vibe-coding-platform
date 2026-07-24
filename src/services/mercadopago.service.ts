@@ -200,6 +200,17 @@ export interface ReembolsoInput {
   paymentId: string
   motivo?: string | null
   monto?: number | null
+  /**
+   * Default `refund-${paymentId}` -- correcto mientras cada pago se
+   * reembolsa una sola vez en su vida (el caso de siempre). El canon de
+   * disputas CIT Completo rompe ese supuesto: el mismo paymentId puede
+   * recibir un reembolso parcial al abrir la disputa (retiene el canon) y
+   * uno posterior al devolverlo -- con la key por defecto, MercadoPago
+   * trataria el segundo como duplicado del primero (misma idempotency key)
+   * y no emitiria un reembolso nuevo. Pasar una key distinta por operacion
+   * en cualquier caso donde el mismo pago pueda reembolsarse mas de una vez.
+   */
+  idempotencyKey?: string
 }
 
 export interface ReembolsoResultado {
@@ -234,7 +245,7 @@ export async function emitirReembolso(
       method: 'POST',
       body,
       // Clave de idempotencia para que MP no duplique el reembolso.
-      headers: { 'X-Idempotency-Key': `refund-${input.paymentId}` },
+      headers: { 'X-Idempotency-Key': input.idempotencyKey ?? `refund-${input.paymentId}` },
     }
   )
 
