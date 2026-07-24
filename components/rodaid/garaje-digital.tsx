@@ -13,6 +13,7 @@ import {
   Download,
   FileSignature,
   Fingerprint,
+  Handshake,
   Link2,
   Loader2,
   Lock,
@@ -27,6 +28,7 @@ import {
   Wrench,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { mutate as mutateGlobal } from 'swr'
 import {
   Dialog,
   DialogContent,
@@ -37,6 +39,7 @@ import {
 import { parseApiError } from '@/lib/api-errors'
 import {
   activarCompartirBici,
+  crearAcuerdoPrivado,
   descargarCertificadoActivo,
   ESTADO_VISUAL,
   etiquetaActivo,
@@ -50,6 +53,7 @@ import {
   useEstadoCompartir,
   useGemeloDigital,
   useMiPerfil,
+  type AcuerdoPrivadoResultado,
   type ActivoGaraje,
   type TallerAprobado,
   type TallerVinculado,
@@ -101,6 +105,7 @@ export function GarajeDigital() {
   const [reservar, setReservar] = useState<ActivoGaraje | null>(null)
   const [autorizarUso, setAutorizarUso] = useState<ActivoGaraje | null>(null)
   const [gestionarTalleres, setGestionarTalleres] = useState<ActivoGaraje | null>(null)
+  const [acuerdoPrivado, setAcuerdoPrivado] = useState<ActivoGaraje | null>(null)
   const [agregando, setAgregando] = useState(false)
 
   const activos = data?.activos ?? null
@@ -283,6 +288,7 @@ export function GarajeDigital() {
                 onReservarCit={() => setReservar(a)}
                 onAutorizarUso={() => setAutorizarUso(a)}
                 onGestionarTalleres={() => setGestionarTalleres(a)}
+                onAcuerdoPrivado={() => setAcuerdoPrivado(a)}
               />
             ))}
           </ul>
@@ -330,6 +336,13 @@ export function GarajeDigital() {
         bici={gestionarTalleres}
         open={gestionarTalleres !== null}
         onOpenChange={(o) => !o && setGestionarTalleres(null)}
+      />
+
+      <AcuerdoPrivadoModal
+        bici={acuerdoPrivado}
+        open={acuerdoPrivado !== null}
+        onOpenChange={(o) => !o && setAcuerdoPrivado(null)}
+        onCreado={() => mutate()}
       />
 
       <p className="mt-10 flex items-center justify-center gap-2.5 text-center text-[11px] font-bold uppercase tracking-[0.16em] text-[#2BBCB8]">
@@ -865,6 +878,263 @@ function TalleresAccesoModal({
   )
 }
 
+/**
+ * "Vender por acuerdo privado" -- segundo punto de entrada a CIT Completo
+ * (ver acuerdo-privado.service.ts): comprador y vendedor ya se pusieron de
+ * acuerdo por fuera de RODAID, solo falta que un Taller Aliado corra la
+ * verificación de 20 puntos antes de transferir. Misma inspección, mismo
+ * precio, mismo flujo de reserva/pago que el Marketplace público -- la
+ * publicación creada NO aparece en el grid, solo es alcanzable por el link
+ * que se le manda al comprador.
+ */
+function AcuerdoPrivadoModal({
+  bici,
+  open,
+  onOpenChange,
+  onCreado,
+}: {
+  bici: ActivoGaraje | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onCreado: () => void
+}) {
+  const [talleres, setTalleres] = useState<TallerAprobado[] | null>(null)
+  const [aliadoId, setAliadoId] = useState<string | null>(null)
+  const [titulo, setTitulo] = useState('')
+  const [descripcion, setDescripcion] = useState('')
+  const [precioARS, setPrecioARS] = useState('')
+  const [precioUSD, setPrecioUSD] = useState('')
+  const [compradorNombre, setCompradorNombre] = useState('')
+  const [compradorEmail, setCompradorEmail] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [resultado, setResultado] = useState<AcuerdoPrivadoResultado | null>(null)
+
+  useEffect(() => {
+    if (!open) {
+      setTalleres(null)
+      setAliadoId(null)
+      setTitulo('')
+      setDescripcion('')
+      setPrecioARS('')
+      setPrecioUSD('')
+      setCompradorNombre('')
+      setCompradorEmail('')
+      setEnviando(false)
+      setError(null)
+      setResultado(null)
+      return
+    }
+    listarTalleresAprobados()
+      .then(setTalleres)
+      .catch(() => setError('No pudimos cargar la lista de talleres. Probá de nuevo.'))
+  }, [open])
+
+  const listo =
+    aliadoId &&
+    titulo.trim().length >= 5 &&
+    descripcion.trim().length >= 20 &&
+    Number(precioARS) > 0 &&
+    compradorNombre.trim().length >= 2 &&
+    /\S+@\S+\.\S+/.test(compradorEmail.trim())
+
+  const enviar = async () => {
+    if (!bici || !aliadoId || !listo || enviando) return
+    setEnviando(true)
+    setError(null)
+    try {
+      const r = await crearAcuerdoPrivado({
+        bicicletaId: bici.id,
+        aliadoId,
+        titulo: titulo.trim(),
+        descripcion: descripcion.trim(),
+        precioARS: Number(precioARS),
+        precioUSD: precioUSD.trim() ? Number(precioUSD) : null,
+        compradorNombre: compradorNombre.trim(),
+        compradorEmail: compradorEmail.trim(),
+      })
+      setResultado(r)
+      onCreado()
+      // "Mis publicaciones" tiene su propio SWR cache, separado del de
+      // activos (useActivosGaraje) que ya refresca onCreado() -- sin esto
+      // la publicacion nueva no aparece ahi hasta el proximo refetch
+      // automatico (focus/intervalo), aunque la bici ya muestre "Ver
+      // publicación".
+      mutateGlobal('/api/marketplace/mis-publicaciones')
+    } catch (err) {
+      setError((err as Error).message || 'No pudimos crear el acuerdo. Probá de nuevo.')
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  if (!bici) return null
+
+  // La ruta real es /marketplace/[id] por UUID (WHERE mp.id = $1, ver
+  // app/api/v1/marketplace/[id]/route.ts) -- el slug nunca se usa para
+  // routing, mismo bug ya encontrado y corregido en mis-publicaciones.tsx
+  // el 2026-07-18. No repetirlo aca tambien.
+  const linkPublicacion = resultado ? `https://rodaid.net/marketplace/${resultado.publicacionId}` : ''
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="rounded-2xl border border-ink/10 bg-paper">
+        <DialogHeader>
+          <span className="flex size-12 items-center justify-center rounded-xl bg-lime/20 text-ink">
+            <Handshake className="size-6" />
+          </span>
+          <DialogTitle className="font-display text-ink">Vender por acuerdo privado</DialogTitle>
+          <DialogDescription className="text-slate-warm">
+            {resultado
+              ? '¡Listo! Le mandamos el link a tu comprador.'
+              : `Ya te pusiste de acuerdo con el comprador de ${etiquetaActivo(bici)} por fuera de RODAID -- elegí el taller que va a certificarla y avisale al comprador. Mismo CIT Completo, mismo precio, misma inspección de 20 puntos que el Marketplace público. No aparece en el grid: solo tu comprador va a poder verla.`}
+          </DialogDescription>
+        </DialogHeader>
+
+        {resultado ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 rounded-xl bg-lime/15 px-3.5 py-3 text-sm text-ink">
+              <CheckCircle2 className="size-5 shrink-0 text-lime-deep" />
+              <span>
+                {resultado.compradorCuentaNueva
+                  ? 'Le creamos una cuenta a tu comprador y le mandamos un mail para que elija su contraseña, junto con el link de la publicación.'
+                  : 'Tu comprador ya tenía cuenta en RODAID -- le mandamos un mail con el link de la publicación.'}{' '}
+                {resultado.aliadoNombre} va a ver la verificación pendiente en su panel apenas se pague la seña.
+              </span>
+            </div>
+            <div className="flex items-center gap-2 rounded-xl border border-ink/12 bg-white px-3.5 py-2.5">
+              <Link2 className="size-4 shrink-0 text-slate-warm" />
+              <span className="min-w-0 flex-1 truncate text-xs text-ink">{linkPublicacion}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard?.writeText(linkPublicacion)
+                  toast.success('Link copiado')
+                }}
+                className="shrink-0 rounded-full border border-ink/15 px-2.5 py-1 text-[11px] font-semibold text-ink transition-colors hover:border-ink/40"
+              >
+                Copiar
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => onOpenChange(false)}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-ink px-5 py-3 text-sm font-semibold text-paper transition-colors hover:bg-ink-soft"
+            >
+              Listo
+            </button>
+          </div>
+        ) : talleres === null ? (
+          <div className="flex items-center justify-center gap-2 py-6 text-sm text-slate-warm">
+            <Loader2 className="size-4 animate-spin" />
+            Cargando talleres…
+          </div>
+        ) : talleres.length === 0 ? (
+          <p className="py-4 text-sm text-slate-warm">
+            Todavía no hay talleres aliados aprobados disponibles.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            <div>
+              <p className="mb-1.5 text-xs font-semibold text-slate-warm">Taller que va a certificar</p>
+              <div className="max-h-40 space-y-2 overflow-y-auto">
+                {talleres.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setAliadoId(t.id)}
+                    className={`flex w-full items-center gap-3 rounded-2xl border px-3.5 py-3 text-left transition-colors ${
+                      aliadoId === t.id
+                        ? 'border-ink bg-ink/5'
+                        : 'border-ink/12 bg-white hover:border-ink/30'
+                    }`}
+                  >
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-lime/20 text-ink">
+                      <Store className="size-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-ink">{t.nombre}</p>
+                      <p className="truncate text-xs text-slate-warm">
+                        {[t.tipo, t.ciudad].filter(Boolean).join(' · ')}
+                      </p>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <input
+              value={titulo}
+              onChange={(e) => setTitulo(e.target.value)}
+              placeholder="Título de la publicación (ej. Trek Marlin 7 2022)"
+              className="w-full rounded-xl border border-ink/15 bg-white px-3.5 py-2.5 text-sm text-ink outline-none focus:border-ink/40"
+            />
+            <textarea
+              value={descripcion}
+              onChange={(e) => setDescripcion(e.target.value)}
+              placeholder="Descripción (mínimo 20 caracteres)"
+              rows={2}
+              className="w-full resize-none rounded-xl border border-ink/15 bg-white px-3.5 py-2.5 text-sm text-ink outline-none focus:border-ink/40"
+            />
+            <div className="flex gap-2">
+              <input
+                value={precioARS}
+                onChange={(e) => setPrecioARS(e.target.value.replace(/[^\d]/g, ''))}
+                placeholder="Precio ARS"
+                inputMode="numeric"
+                className="w-full rounded-xl border border-ink/15 bg-white px-3.5 py-2.5 text-sm text-ink outline-none focus:border-ink/40"
+              />
+              <input
+                value={precioUSD}
+                onChange={(e) => setPrecioUSD(e.target.value.replace(/[^\d]/g, ''))}
+                placeholder="Precio USD (opcional)"
+                inputMode="numeric"
+                className="w-full rounded-xl border border-ink/15 bg-white px-3.5 py-2.5 text-sm text-ink outline-none focus:border-ink/40"
+              />
+            </div>
+            <div className="flex gap-2">
+              <input
+                value={compradorNombre}
+                onChange={(e) => setCompradorNombre(e.target.value)}
+                placeholder="Nombre del comprador"
+                className="w-full rounded-xl border border-ink/15 bg-white px-3.5 py-2.5 text-sm text-ink outline-none focus:border-ink/40"
+              />
+              <input
+                value={compradorEmail}
+                onChange={(e) => setCompradorEmail(e.target.value)}
+                placeholder="Email del comprador"
+                type="email"
+                className="w-full rounded-xl border border-ink/15 bg-white px-3.5 py-2.5 text-sm text-ink outline-none focus:border-ink/40"
+              />
+            </div>
+
+            {error && <p className="text-xs text-clay">{error}</p>}
+
+            <button
+              type="button"
+              onClick={enviar}
+              disabled={!listo || enviando}
+              className="mt-1 inline-flex w-full items-center justify-center gap-2 rounded-full bg-ink px-5 py-3 text-sm font-semibold text-paper transition-colors hover:bg-ink-soft disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {enviando ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Creando…
+                </>
+              ) : (
+                <>
+                  <Handshake className="size-4" />
+                  Crear acuerdo
+                </>
+              )}
+            </button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 const MAX_AUTORIZADOS = 2
 
 /**
@@ -1112,6 +1382,7 @@ function ActivoCard({
   onReservarCit,
   onAutorizarUso,
   onGestionarTalleres,
+  onAcuerdoPrivado,
 }: {
   activo: ActivoGaraje
   onVerificar: () => void
@@ -1121,6 +1392,7 @@ function ActivoCard({
   onReservarCit: () => void
   onAutorizarUso: () => void
   onGestionarTalleres: () => void
+  onAcuerdoPrivado: () => void
 }) {
   const visual = ESTADO_VISUAL[activo.estado]
   const specs = [
@@ -1258,6 +1530,16 @@ function ActivoCard({
           >
             <Users className="size-3.5" />
             Talleres con acceso
+          </button>
+        )}
+
+        {activo.estado === 'verificado' && (
+          <button
+            onClick={onAcuerdoPrivado}
+            className="inline-flex items-center gap-1.5 rounded-full border border-ink/15 bg-white px-3.5 py-2 text-xs font-semibold text-ink transition-colors hover:border-ink/40"
+          >
+            <Handshake className="size-3.5" />
+            Vender por acuerdo privado
           </button>
         )}
 

@@ -252,7 +252,12 @@ export async function crearAcuerdoPrivado(
     // Best-effort, fuera de la transaccion: un fallo de envio no debe tumbar
     // el tramite ya creado -- el vendedor igual ve el link en su Garaje y se
     // lo puede pasar a mano.
-    const linkPublicacion = `https://rodaid.net/marketplace/${publicacion.slug}`
+    // /marketplace/[id] busca por mp.id = $1 (UUID), nunca por slug -- ver
+    // el fix identico en mis-publicaciones.tsx (2026-07-18) y en
+    // AcuerdoPrivadoModal (garaje-digital.tsx). Bug real: todo email
+    // mandado por esta funcion desde que se mergeo PR #175 tenia un link
+    // roto ("Algo salió mal / No pudimos cargar la publicación").
+    const linkPublicacion = `https://rodaid.net/marketplace/${publicacion.id}`
     try {
       const reclamarUrl = tokenInvitacion
         ? `https://rodaid.net/reclamar-cuenta?token=${tokenInvitacion}`
