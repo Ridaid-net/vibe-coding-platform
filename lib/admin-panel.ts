@@ -23,7 +23,10 @@ import { urlDocumentoSeguro } from '@/src/services/denuncia-mpf.service'
 import {
   confirmarNaranja,
   desestimarDisputa,
+  devolverCanon,
+  listarColaCanonPendiente,
   listarColaRevisionHumana,
+  type DisputaCitCompleto,
   type DisputaEnCola,
 } from '@/src/services/disputas-cit-completo.service'
 import {
@@ -1762,6 +1765,11 @@ export async function obtenerColaRevisionDisputasCit(): Promise<DisputaEnCola[]>
   return listarColaRevisionHumana()
 }
 
+/** Cola de canon retenido pendiente de devolucion -- ver listarColaCanonPendiente(). */
+export async function obtenerColaCanonPendienteDisputasCit(): Promise<DisputaCitCompleto[]> {
+  return listarColaCanonPendiente()
+}
+
 export type DecisionDisputaCit = 'confirmar_naranja' | 'desestimar'
 
 /**
@@ -1772,6 +1780,13 @@ export type DecisionDisputaCit = 'confirmar_naranja' | 'desestimar'
  * el Taller Aliado de esa transacción puede haber actuado de mala fe sin
  * importar si el vendedor termina sancionado o desestimado -- reusa la
  * misma evidencia ya presentada en la disputa, sin canal de denuncia nuevo.
+ *
+ * `compradorBuenaFe` (mecanismo de canon, confirmado 2026-07-24) es TAMBIÉN
+ * independiente de `decision` -- la sanción al vendedor y el juicio de
+ * buena fe del comprador son dos decisiones separadas del mismo admin, no
+ * una derivada de la otra. No dispara ninguna devolución de canon por sí
+ * sola: eso siempre requiere la acción manual aparte,
+ * `devolverCanonDisputaCit()`.
  */
 export async function resolverDisputaCitCompletoHumano(
   ctx: AdminContext,
@@ -1779,15 +1794,18 @@ export async function resolverDisputaCitCompletoHumano(
   decision: DecisionDisputaCit,
   nota: string | null,
   sancionarTaller = false,
-  tallerNota: string | null = null
+  tallerNota: string | null = null,
+  compradorBuenaFe: boolean | null = null
 ): Promise<{ vendedorId: string; deudaId: string | null; deudaTallerId: string | null }> {
   const resultado =
     decision === 'confirmar_naranja'
-      ? await confirmarNaranja(disputaId, ctx.userId, nota, sancionarTaller, tallerNota)
-      : await desestimarDisputa(disputaId, ctx.userId, nota, sancionarTaller, tallerNota).then((r) => ({
-          ...r,
-          deudaId: null,
-        }))
+      ? await confirmarNaranja(disputaId, ctx.userId, nota, sancionarTaller, tallerNota, compradorBuenaFe)
+      : await desestimarDisputa(disputaId, ctx.userId, nota, sancionarTaller, tallerNota, compradorBuenaFe).then(
+          (r) => ({
+            ...r,
+            deudaId: null,
+          })
+        )
 
   await auditarAdmin(ctx, {
     accion: decision === 'confirmar_naranja' ? 'disputa_cit.confirmar_naranja' : 'disputa_cit.desestimar',
@@ -1799,7 +1817,29 @@ export async function resolverDisputaCitCompletoHumano(
       sancionarTaller,
       tallerNota: sancionarTaller ? tallerNota ?? null : null,
       deudaTallerId: resultado.deudaTallerId,
+      compradorBuenaFe,
     },
+  })
+
+  return resultado
+}
+
+/**
+ * Devuelve el canon retenido de una disputa -- SIEMPRE manual (confirmado
+ * 2026-07-24), nunca disparado por ninguna resolución. Mismo permiso que
+ * resolver la disputa (`moderacion:accion`).
+ */
+export async function devolverCanonDisputaCit(
+  ctx: AdminContext,
+  disputaId: string
+): Promise<{ montoDevueltoArs: number }> {
+  const resultado = await devolverCanon(disputaId, ctx.userId)
+
+  await auditarAdmin(ctx, {
+    accion: 'disputa_cit.devolver_canon',
+    recursoTipo: 'disputa_cit_completo',
+    recursoId: disputaId,
+    detalle: { montoDevueltoArs: resultado.montoDevueltoArs },
   })
 
   return resultado

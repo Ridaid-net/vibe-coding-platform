@@ -48,6 +48,8 @@ import {
   obtenerApiKeys,
   obtenerBitacora,
   invitarInspector,
+  devolverCanonDisputaCit,
+  obtenerColaCanonPendiente,
   obtenerColaDisputasCit,
   obtenerColaImpugnacionesDenuncia,
   obtenerColaReclamosTitularidad,
@@ -547,6 +549,7 @@ function ModeracionDisputasCit() {
   const [notas, setNotas] = useState<Record<string, string>>({})
   const [sancionarTaller, setSancionarTaller] = useState<Record<string, boolean>>({})
   const [tallerNotas, setTallerNotas] = useState<Record<string, string>>({})
+  const [compradorBuenaFe, setCompradorBuenaFe] = useState<Record<string, boolean | null>>({})
   const accionar = puede('moderacion:accion')
 
   const resolver = async (id: string, decision: 'confirmar_naranja' | 'desestimar') => {
@@ -557,7 +560,8 @@ function ModeracionDisputasCit() {
         decision,
         notas[id]?.trim() || undefined,
         sancionarTaller[id] || undefined,
-        sancionarTaller[id] ? tallerNotas[id]?.trim() || undefined : undefined
+        sancionarTaller[id] ? tallerNotas[id]?.trim() || undefined : undefined,
+        compradorBuenaFe[id] ?? null
       )
       toast.success(decision === 'confirmar_naranja' ? 'Disputa confirmada' : 'Disputa desestimada')
       recargar()
@@ -600,6 +604,13 @@ function ModeracionDisputasCit() {
               {d.montoReembolsadoArs !== null && (
                 <p className="mt-1 text-xs text-slate-warm">Reembolsado: {fmtARS(d.montoReembolsadoArs)}</p>
               )}
+              {d.canonRetenidoArs > 0 && (
+                <p className="mt-1 text-xs font-semibold text-clay">
+                  Canon retenido: {fmtARS(d.canonRetenidoArs)}
+                  {d.canonRetenidoArs < d.canonTeoricoArs &&
+                    ` (teórico ${fmtARS(d.canonTeoricoArs)} — capado a lo retenido)`}
+                </p>
+              )}
               {accionar && (
                 <div className="mt-3 space-y-2">
                   <textarea
@@ -609,6 +620,37 @@ function ModeracionDisputasCit() {
                     placeholder="Nota de resolución (opcional)"
                     className="w-full rounded-xl border border-ink/15 bg-white px-3 py-2 text-xs text-ink outline-none focus:border-ink/40"
                   />
+                  <div className="rounded-xl border border-ink/10 bg-paper-dim/40 p-3">
+                    <p className="text-xs font-semibold text-ink">
+                      ¿El comprador actuó de buena fe al abrir esta disputa?
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-slate-warm">
+                      Independiente de la sanción al vendedor — solo decide si corresponde devolverle el canon más
+                      adelante (la devolución en sí siempre es una acción manual aparte).
+                    </p>
+                    <div className="mt-2 flex gap-2">
+                      {(
+                        [
+                          { v: true, label: 'Buena fe' },
+                          { v: false, label: 'Mala fe' },
+                          { v: null, label: 'Sin decidir' },
+                        ] as const
+                      ).map((opt) => (
+                        <button
+                          key={String(opt.v)}
+                          type="button"
+                          onClick={() => setCompradorBuenaFe((prev) => ({ ...prev, [d.id]: opt.v }))}
+                          className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                            (compradorBuenaFe[d.id] ?? null) === opt.v
+                              ? 'border-ink bg-ink text-paper'
+                              : 'border-ink/15 bg-white text-ink hover:border-ink/40'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   {d.aliadoId && (
                     <div className="rounded-xl border border-ink/10 bg-paper-dim/40 p-3">
                       <label className="flex items-start gap-2 text-xs font-semibold text-ink">
@@ -660,6 +702,81 @@ function ModeracionDisputasCit() {
                     />
                   </div>
                 </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="mt-6">
+        <CanonPendienteDevolucion />
+      </div>
+    </>
+  )
+}
+
+/**
+ * Cola de canon retenido pendiente de devolución -- deliberadamente
+ * separada de la cola de revisión humana de arriba, porque una disputa
+ * RESUELTA_AMARILLO (1ra cancelación, automática) también retiene canon
+ * pero nunca pasa por revisión humana, así que nunca aparecería ahí.
+ * Devolución siempre manual (confirmado 2026-07-24) -- ninguna resolución
+ * la dispara sola.
+ */
+function CanonPendienteDevolucion() {
+  const { data, error, recargar } = useCarga<DisputaCitCompletoAdmin[]>(obtenerColaCanonPendiente)
+  const [busy, setBusy] = useState<string | null>(null)
+  const accionar = puede('moderacion:accion')
+
+  const devolver = async (id: string) => {
+    setBusy(id)
+    try {
+      const r = await devolverCanonDisputaCit(id)
+      toast.success('Canon devuelto', { description: fmtARS(r.montoDevueltoArs) })
+      recargar()
+    } catch (err) {
+      toast.error('No se pudo devolver el canon', { description: (err as Error).message })
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <>
+      <CabeceraSeccion
+        titulo="Canon pendiente de devolución"
+        desc="Disputas con canon retenido sin devolver todavía -- incluye las resueltas automáticamente (1ra cancelación)."
+        onRefresh={recargar}
+      />
+      {error ? (
+        <ErrorBox msg={error} />
+      ) : !data ? (
+        <Cargando />
+      ) : data.length === 0 ? (
+        <Vacio icon={CheckCircle2} texto="No hay canon pendiente de devolver." />
+      ) : (
+        <ul className="space-y-2">
+          {data.map((d) => (
+            <li
+              key={d.id}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-ink/12 bg-white p-3"
+            >
+              <div>
+                <p className="text-sm font-semibold text-ink">{fmtARS(d.canonRetenidoArs)}</p>
+                <p className="text-[11px] text-slate-warm">
+                  {d.estado} · abierta {fmtFecha(d.abiertaEn)}
+                  {d.compradorBuenaFe === true && ' · comprador marcado de buena fe'}
+                  {d.compradorBuenaFe === false && ' · comprador marcado de mala fe'}
+                </p>
+              </div>
+              {accionar && (
+                <BtnAccion
+                  onClick={() => devolver(d.id)}
+                  busy={busy === d.id}
+                  icon={CheckCircle2}
+                  label="Devolver canon"
+                  variant="dark"
+                />
               )}
             </li>
           ))}
